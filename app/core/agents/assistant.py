@@ -90,10 +90,10 @@ logger = logging.getLogger("aiops.assistant")
 def is_test_environment() -> bool:
     """
     检查当前是否在测试环境中运行
-    
+
     通过检查pytest模块是否已加载来判断是否在测试环境中。
     测试环境下会使用内存数据库而不是持久化存储，以避免测试数据污染。
-    
+
     Returns:
         bool: True表示在测试环境，False表示在生产环境
     """
@@ -105,18 +105,18 @@ def is_test_environment() -> bool:
 class TaskManager:
     """
     异步任务管理器 - 管理和协调异步任务的生命周期
-    
+
     该类负责创建、跟踪和清理异步任务，确保系统资源得到正确管理。
     它提供了任务创建、监控、超时处理和优雅关闭等功能，防止任务泄漏
     和资源浪费。
-    
+
     主要功能：
     1. 任务创建和注册
     2. 任务生命周期跟踪
     3. 异常处理和错误恢复
     4. 优雅关闭和资源清理
     5. 防止任务泄漏
-    
+
     Attributes:
         _tasks (set): 当前活跃的任务集合
         _lock (threading.Lock): 线程安全锁
@@ -126,7 +126,7 @@ class TaskManager:
     def __init__(self):
         """
         初始化任务管理器
-        
+
         设置任务集合、线程锁和关闭标志，准备任务管理环境。
         """
         self._tasks = set()  # 存储所有活跃任务的引用
@@ -136,17 +136,17 @@ class TaskManager:
     def create_task(self, coro, description="未命名任务"):
         """
         创建并管理异步任务
-        
+
         包装协程为异步任务，添加错误处理和生命周期管理。
         任务完成后会自动从管理器中移除，避免内存泄漏。
-        
+
         Args:
             coro: 要执行的协程对象
             description (str): 任务描述，用于日志和调试
-            
+
         Returns:
             asyncio.Task: 创建的任务对象，如果系统已关闭则返回None
-            
+
         Features:
         1. 自动异常捕获和日志记录
         2. 任务完成后自动清理
@@ -185,14 +185,14 @@ class TaskManager:
     async def shutdown(self, timeout=5.0):
         """
         优雅关闭任务管理器，等待或取消所有任务
-        
+
         首先设置关闭标志，然后尝试等待所有任务完成。如果超时，
         会强制取消未完成的任务。这确保了系统能够优雅地关闭而
         不会留下悬挂的任务。
-        
+
         Args:
             timeout (float): 等待任务完成的超时时间（秒）
-            
+
         Process:
         1. 设置关闭标志，防止新任务创建
         2. 获取当前所有活跃任务
@@ -245,10 +245,10 @@ _task_manager = None
 def get_task_manager():
     """
     获取全局任务管理器实例
-    
+
     使用单例模式确保整个应用程序共享同一个任务管理器，
     这样可以统一管理所有异步任务的生命周期。
-    
+
     Returns:
         TaskManager: 全局任务管理器实例
     """
@@ -260,14 +260,14 @@ def get_task_manager():
 def create_safe_task(coro, description="未命名任务"):
     """
     创建一个安全的异步任务
-    
+
     使用全局任务管理器创建任务，确保任务被正确跟踪和管理。
     这是创建异步任务的推荐方式，提供了统一的错误处理和资源管理。
-    
+
     Args:
         coro: 要执行的协程
         description (str): 任务描述
-        
+
     Returns:
         asyncio.Task: 创建的任务对象
     """
@@ -282,10 +282,10 @@ def create_safe_task(coro, description="未命名任务"):
 class DocumentMetadata:
     """
     文档元数据数据类
-    
+
     存储文档的元信息，包括来源、类型、修改时间等，用于文档管理和排序。
     这些元数据在文档检索和结果展示时非常有用，可以帮助用户理解信息来源。
-    
+
     Attributes:
         source (str): 文档来源路径或URL
         filename (str): 文件名称
@@ -307,15 +307,15 @@ class DocumentMetadata:
 class CacheEntry:
     """
     缓存条目数据类
-    
+
     表示一个缓存条目，包含时间戳和存储的数据。用于管理响应缓存，
     提高系统响应速度和减少重复计算。缓存条目包含过期时间管理，
     确保数据的时效性。
-    
+
     Attributes:
         timestamp (float): 缓存创建时间戳
         data (Dict[str, Any]): 缓存的数据内容
-        
+
     Methods:
         is_expired(expiry_seconds): 检查缓存是否过期
     """
@@ -325,10 +325,10 @@ class CacheEntry:
     def is_expired(self, expiry_seconds: int) -> bool:
         """
         检查缓存条目是否已过期
-        
+
         Args:
             expiry_seconds (int): 过期时间（秒）
-            
+
         Returns:
             bool: True表示已过期，False表示仍有效
         """
@@ -338,10 +338,10 @@ class CacheEntry:
 class SessionData:
     """
     会话数据数据类
-    
+
     存储用户会话的完整信息，包括会话 ID、创建时间、对话历史和元数据。
     支持多轮对话的上下文保持，使得助手能够理解对话上下文和历史信息。
-    
+
     Attributes:
         session_id (str): 唯一的会话标识符
         created_at (str): 会话创建时间（ISO格式）
@@ -356,11 +356,11 @@ class SessionData:
 class GradeDocuments(BaseModel):
     """
     文档相关性评估模型
-    
+
     用于LLM评估文档与用户问题的相关性。这个模型使用Pydantic验证，
     确保输出格式的一致性和可靠性。相关性评估用于过滤无关文档，
     提高答案的准确性和相关性。
-    
+
     Attributes:
         binary_score (str): 二元评分，'yes'表示相关，'no'表示不相关
     """
@@ -369,11 +369,11 @@ class GradeDocuments(BaseModel):
 class GradeHallucinations(BaseModel):
     """
     幻觉检测模型
-    
+
     用于检测LLM生成的回答是否存在幻觉（即编造或不准确的信息）。
     通过检查回答是否基于提供的文档事实，确保答案的可靠性和真实性。
     这是保证RAG系统输出质量的重要组件。
-    
+
     Attributes:
         binary_score (str): 二元评分，'yes'表示基于事实，'no'表示可能存在幻觉
     """
@@ -384,14 +384,14 @@ class GradeHallucinations(BaseModel):
 class FallbackEmbeddings(Embeddings):
     """
     备用嵌入实现 - 在主要嵌入模型不可用时的备选方案
-    
+
     使用简单的哈希和随机数生成来模拟嵌入向量。虽然这不是一个真正的
     语义嵌入，但能确保系统在没有外部嵌入服务的情况下仍然可以运行。
     这个实现使用确定性的哈希算法，确保相同的文本始终产生相同的向量。
-    
+
     Attributes:
         dimensions (int): 嵌入向量的维度，默认384
-    
+
     Methods:
         embed_documents: 为文档列表生成嵌入向量
         embed_query: 为单个查询生成嵌入向量
@@ -400,7 +400,7 @@ class FallbackEmbeddings(Embeddings):
     def __init__(self, dimensions: int = 384):
         """
         初始化备用嵌入实现
-        
+
         Args:
             dimensions (int): 嵌入向量的维度大小
         """
@@ -409,10 +409,10 @@ class FallbackEmbeddings(Embeddings):
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
         """
         为文档列表生成嵌入向量
-        
+
         Args:
             texts (List[str]): 要嵌入的文本列表
-            
+
         Returns:
             List[List[float]]: 每个文本对应的嵌入向量列表
         """
@@ -421,13 +421,13 @@ class FallbackEmbeddings(Embeddings):
     def embed_query(self, text: str) -> List[float]:
         """
         为单个文本生成嵌入向量
-        
+
         使用文本的哈希值作为随机数种子，生成确定性的向量。
         这确保相同的文本始终产生相同的向量。
-        
+
         Args:
             text (str): 要嵌入的文本
-            
+
         Returns:
             List[float]: 生成的嵌入向量
         """
@@ -439,11 +439,11 @@ class FallbackEmbeddings(Embeddings):
 class FallbackChatModel(BaseChatModel):
     """
     备用聊天模型 - 在主要LLM不可用时的备选方案
-    
+
     提供基本的应急响应能力，当所有主要的LLM服务都不可用时使用。
     虽然这不是一个真正的智能模型，但能确保系统不会完全失败，
     并向用户提供明确的错误信息和指导。
-    
+
     Methods:
         _llm_type: 返回模型类型标识
         _generate: 生成备用响应
@@ -453,7 +453,7 @@ class FallbackChatModel(BaseChatModel):
     def _llm_type(self) -> str:
         """
         返回模型类型标识
-        
+
         Returns:
             str: 模型类型名称
         """
@@ -462,15 +462,15 @@ class FallbackChatModel(BaseChatModel):
     def _generate(self, messages, stop=None, run_manager=None, **kwargs):
         """
         生成备用响应
-        
+
         创建一个通用的错误响应，告知用户主要模型不可用的情况。
-        
+
         Args:
             messages: 输入消息列表
             stop: 停止条件（未使用）
             run_manager: 运行管理器（未使用）
             **kwargs: 其他参数
-            
+
         Returns:
             ChatResult: 包含备用响应的结果对象
         """
@@ -485,11 +485,11 @@ class FallbackChatModel(BaseChatModel):
 class VectorStoreManager:
     """
     向量存储管理器 - 负责向量数据库的创建、维护和查询
-    
+
     这个类封装了所有与向量数据库相关的操作，包括数据库创建、文档存储、
     相似性搜索等。它支持内存和持久化两种模式，能够处理大量文档的
     分批处理，并提供完善的错误处理和恢复机制。
-    
+
     主要功能：
     1. 数据库创建和初始化
     2. 文档分割和向量化
@@ -497,7 +497,7 @@ class VectorStoreManager:
     4. 相似性搜索和检索
     5. 数据库维护和优化
     6. 错误处理和数据恢复
-    
+
     Attributes:
         vector_db_path (str): 向量数据库存储路径
         collection_name (str): 集合名称
@@ -510,7 +510,7 @@ class VectorStoreManager:
     def __init__(self, vector_db_path: str, collection_name: str, embedding_model):
         """
         初始化向量存储管理器
-        
+
         Args:
             vector_db_path (str): 向量数据库的文件系统路径
             collection_name (str): ChromaDB集合名称
@@ -529,15 +529,15 @@ class VectorStoreManager:
     def _get_client_settings(self, persistent: bool = True) -> Settings:
         """
         获取ChromaDB客户端配置设置
-        
+
         根据使用场景（持久化或内存）配置ChromaDB的参数，优化性能和存储。
-        
+
         Args:
             persistent (bool): 是否使用持久化存储，默认True
-            
+
         Returns:
             Settings: ChromaDB配置对象
-            
+
         配置选项：
         - anonymized_telemetry: 禁用遥测数据收集
         - allow_reset: 允许数据库重置
@@ -554,10 +554,10 @@ class VectorStoreManager:
     def _cleanup_temp_files(self):
         """
         清理临时文件，避免数据库锁定问题
-        
+
         删除可能导致数据库访问问题的临时文件，包括锁文件、
         WAL文件和其他临时文件。这些文件可能在系统异常关闭时残留。
-        
+
         清理的文件类型：
         - .lock: 数据库锁文件
         - .uuid: UUID文件
@@ -582,13 +582,13 @@ class VectorStoreManager:
     def load_existing_db(self) -> bool:
         """
         加载现有的向量数据库
-        
+
         尝试从磁盘加载已存在的向量数据库，如果数据库不存在或损坏，
         会返回False。成功加载后会创建检索器并进行基本测试。
-        
+
         Returns:
             bool: True表示成功加载，False表示需要创建新数据库
-            
+
         加载流程：
         1. 检查数据库文件是否存在
         2. 初始化ChromaDB实例
@@ -631,13 +631,13 @@ class VectorStoreManager:
     def _backup_corrupted_db(self, db_file: str):
         """
         备份损坏的数据库文件
-        
+
         当数据库文件损坏无法加载时，将其备份到特殊目录并删除原文件。
         这样可以保留损坏数据供后续分析，同时允许系统创建新的数据库。
-        
+
         Args:
             db_file (str): 损坏的数据库文件路径
-            
+
         备份流程：
         1. 创建带时间戳的备份目录
         2. 复制损坏的数据库文件
@@ -648,13 +648,13 @@ class VectorStoreManager:
             # 创建带时间戳的备份目录
             backup_dir = os.path.join(self.vector_db_path, f"backup_corrupt_{int(time.time())}")
             os.makedirs(backup_dir, exist_ok=True)
-            
+
             # 复制损坏的数据库文件到备份目录
             shutil.copy2(db_file, backup_dir)
-            
+
             # 删除损坏的原文件，为新数据库让路
             os.remove(db_file)
-            
+
             logger.info(f"已备份并删除损坏的数据库文件: {backup_dir}")
         except Exception as e:
             logger.error(f"备份损坏数据库失败: {e}")
@@ -708,7 +708,7 @@ class VectorStoreManager:
                     # 分批添加文档，每批使用更小的批量来防止API限制
                     for i in range(0, total_docs, batch_size):
                         batch = splits[i:i+batch_size]
-                        logger.info(f"处理批次 {i//batch_size + 1}/{(total_docs+batch_size-1)//batch_size}，{len(batch)}个文档")
+                        logger.info(f"处理批次 {i//batch_size + 1}/{(total_docs+batch_size-1)//batch_size}，{len(batch)}个文档块")
 
                         try:
                             # 对于大批量，进一步拆分为更小的子批次
@@ -753,10 +753,10 @@ class VectorStoreManager:
     def get_retriever(self):
         """
         获取文档检索器实例
-        
+
         返回配置好的文档检索器，用于执行相似性搜索。
         检索器已经配置了适当的参数，包括返回的文档数量等。
-        
+
         Returns:
             文档检索器实例，如果数据库未初始化则返回None
         """
@@ -765,17 +765,17 @@ class VectorStoreManager:
     def search_documents(self, query: str, max_retries: int = 3) -> List[Document]:
         """
         搜索相关文档
-        
+
         使用向量相似性搜索找到与查询最相关的文档。支持重试机制，
         在遇到临时问题时自动重试。返回的文档按相似度排序。
-        
+
         Args:
             query (str): 搜索查询字符串
             max_retries (int): 最大重试次数，默认3次
-            
+
         Returns:
             List[Document]: 相关文档列表，按相似度降序排列
-            
+
         搜索流程：
         1. 检查检索器是否已初始化
         2. 执行向量相似性搜索
@@ -1417,6 +1417,14 @@ class AssistantAgent:
         return False
 
     # ==================== 知识库管理 ====================
+
+    def _load_documents(self) -> List[Document]:
+        """加载文档（测试兼容方法）"""
+        return self.document_loader.load_documents()
+
+    def _get_relevant_docs(self, question: str) -> List[Document]:
+        """获取相关文档（测试兼容方法）"""
+        return self.vector_store_manager.search_documents(question)
 
     async def refresh_knowledge_base(self) -> Dict[str, Any]:
         """刷新知识库"""

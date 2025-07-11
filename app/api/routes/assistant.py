@@ -53,13 +53,46 @@ def init_websocket(app):
 def safe_async_run(coroutine):
     """安全地运行异步函数，处理不同环境下的运行方式"""
     try:
-        # 创建新的事件循环，避免在没有事件循环的线程中执行异步代码
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        # 检查是否已有事件循环在运行
         try:
-            return loop.run_until_complete(coroutine)
-        finally:
-            loop.close()
+            loop = asyncio.get_running_loop()
+            # 如果有运行中的事件循环，使用 asyncio.create_task 或直接同步调用
+            # 对于Flask同步环境，我们需要在新线程中运行事件循环
+            import threading
+            import concurrent.futures
+            
+            result = None
+            exception = None
+            
+            def run_in_thread():
+                nonlocal result, exception
+                try:
+                    new_loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(new_loop)
+                    try:
+                        result = new_loop.run_until_complete(coroutine)
+                    finally:
+                        new_loop.close()
+                except Exception as e:
+                    exception = e
+            
+            thread = threading.Thread(target=run_in_thread)
+            thread.start()
+            thread.join()
+            
+            if exception:
+                raise exception
+            return result
+            
+        except RuntimeError:
+            # 没有运行中的事件循环，可以安全创建新的
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                return loop.run_until_complete(coroutine)
+            finally:
+                loop.close()
+                
     except Exception as e:
         logger.error(f"执行异步函数失败: {str(e)}")
         raise e
