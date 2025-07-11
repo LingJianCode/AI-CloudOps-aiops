@@ -88,6 +88,8 @@ pids
 # Models and data
 data/models/*.pkl
 data/models/*.joblib
+data/models/*.png
+data/models/*.json
 data/sample/*.csv
 
 # Temporary files
