@@ -1,0 +1,36 @@
+{
+  "version": "2.0",
+  "created_at": "2025-07-07T21:46:31.702972",
+  "features": [
+    "QPS",
+    "sin_time",
+    "cos_time",
+    "sin_day",
+    "cos_day",
+    "is_business_hour",
+    "is_weekend",
+    "QPS_1h_ago",
+    "QPS_1d_ago",
+    "QPS_1w_ago",
+    "QPS_change",
+    "QPS_avg_6h"
+  ],
+  "target": "instances",
+  "algorithm": "\u968f\u673a\u68ee\u6797\u56de\u5f52",
+  "performance": {
+    "r2": 0.8283714241978896,
+    "rmse": 0.42820688932386025,
+    "mae": 0.23985624997174254
+  },
+  "parameters": "{'bootstrap': True, 'ccp_alpha': 0.0, 'criterion': 'squared_error', 'max_depth': 10, 'max_features': 1.0, 'max_leaf_nodes': None, 'max_samples': None, 'min_impurity_decrease': 0.0, 'min_samples_leaf': 1, 'min_samples_split': 5, 'min_weight_fraction_leaf': 0.0, 'monotonic_cst': None, 'n_estimators': 100, 'n_jobs': None, 'oob_score': False, 'random_state': 42, 'verbose': 0, 'warm_start': False}",
+  "data_stats": {
+    "n_samples": 8760,
+    "mean_qps": 105.53581171869912,
+    "std_qps": 24.35892640266475,
+    "min_qps": 37.978320254646846,
+    "max_qps": 173.33218468401722,
+    "mean_instances": 2.644977168949772,
+    "min_instances": 1,
+    "max_instances": 5
+  }
+}

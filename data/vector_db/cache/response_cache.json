@@ -1,0 +1,655 @@
+{
+  "76dc71621ab3a8d53205f875be94dc26f4890e16d6f453724c0a6a4a5ddcce7d": {
+    "timestamp": 1752070423.445717,
+    "data": {
+      "answer": "根据文档内容，AIOps平台包含以下核心功能：\n1. 智能根因分析\n2. 预测性扩缩容\n3. 自动修复\n4. 智能小助手（提供问答服务和文档检索）\n\n以上信息来源于知识库文件 aiops_guide.md。",
+      "source_documents": [
+        {
+          "content": "这是一个测试文档，用于测试AI小助手的知识库功能。",
+          "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/5644119a-8241-4208-b5ea-08d52cc840e4.txt",
+          "is_web_result": false,
+          "metadata": {
+            "filename": "5644119a-8241-4208-b5ea-08d52cc840e4.txt",
+            "filetype": "text",
+            "modified_time": 1752058861.403362,
+            "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/5644119a-8241-4208-b5ea-08d52cc840e4.txt"
+          }
+        },
+        {
+          "content": "这是一个测试文档，用于测试AI小助手的知识库功能。",
+          "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/c4d76e10-68c4-4c1e-84a0-13c57672fc3b.txt",
+          "is_web_result": false,
+          "metadata": {
+            "filename": "c4d76e10-68c4-4c1e-84a0-13c57672fc3b.txt",
+            "filetype": "text",
+            "modified_time": 1752059626.9952357,
+            "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/c4d76e10-68c4-4c1e-84a0-13c57672fc3b.txt"
+          }
+        },
+        {
+          "content": "AIOps 平台包含以下核心功能:\n1. 智能根因分析 - 自动检测并定位系统问题根源\n2. 预测性扩缩容 - 根据历史数据预测资源需求\n3. 自动修复 - 自动解决常见系统问题\n4. 智能小助手 - 提供问答服务和文档检索",
+          "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/aiops_guide.md",
+          "is_web_result": false,
+          "metadata": {
+            "Header 1": "AIOps 平台使用指南",
+            "Header 2": "功能简介",
+            "filename": "aiops_guide.md",
+            "filetype": "markdown",
+            "modified_time": 1751888360.917224,
+            "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/aiops_guide.md"
+          }
+        }
+      ],
+      "relevance_score": 1.0,
+      "recall_rate": 0.6,
+      "follow_up_questions": [
+        "这个平台的智能根因分析是如何工作的呢?",
+        "预测性扩缩容功能是如何根据系统负载进行调整的?",
+        "智能小助手能够提供哪些类型的文档检索服务呢?"
+      ]
+    }
+  },
+  "d78bc6142512a5b677ab6f66d1c8d08930b8521aa2752e634cf14f3e5525a4b1": {
+    "timestamp": 1752070449.4629812,
+    "data": {
+      "answer": "根据当前提供的文档内容，未提及我的具体身份信息。我是AI助手，用于回答问题和提供帮助，但文档中未包含关于我的详细描述。建议参考平台功能说明或相关知识库文件以获取更多信息。",
+      "source_documents": [
+        {
+          "content": "这是一个测试文档，用于验证文档加载功能。",
+          "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/test.md",
+          "is_web_result": false,
+          "metadata": {
+            "Header 1": "测试文档",
+            "filename": "test.md",
+            "filetype": "markdown",
+            "modified_time": 1751893009.1592832,
+            "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/test.md"
+          }
+        },
+        {
+          "content": "这是一个测试文档，用于验证文档加载功能。",
+          "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/test.md",
+          "is_web_result": false,
+          "metadata": {
+            "Header 1": "测试文档",
+            "filename": "test.md",
+            "filetype": "markdown",
+            "modified_time": 1751893009.1592832,
+            "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/test.md"
+          }
+        },
+        {
+          "content": "这是一个测试文档，用于验证文档加载功能。",
+          "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/test.md",
+          "is_web_result": false,
+          "metadata": {
+            "Header 1": "测试文档",
+            "filename": "test.md",
+            "filetype": "markdown",
+            "modified_time": 1751893009.1592832,
+            "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/test.md"
+          }
+        }
+      ],
+      "relevance_score": 0.5,
+      "recall_rate": 0.6,
+      "follow_up_questions": [
+        "AIOps平台有哪些核心功能？",
+        "如何部署和配置AIOps系统？",
+        "AIOps如何帮助解决运维问题？"
+      ]
+    }
+  },
+  "7d5de5aa97771be11515306a678bd7dc415db9ce3d574831cbaa888dc5f7b347": {
+    "timestamp": 1752071421.2816792,
+    "data": {
+      "answer": "根据提供的文档内容，无法确定您所指的平台具体是什么。文档中仅提到“这是一个测试文档，用于验证文档加载功能”，并未涉及平台类型或用途的说明。建议您补充更多上下文信息或检查其他相关文档。",
+      "source_documents": [
+        {
+          "content": "这是一个测试文档，用于验证文档加载功能。",
+          "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/test.md",
+          "is_web_result": false,
+          "metadata": {
+            "Header 1": "测试文档",
+            "filename": "test.md",
+            "filetype": "markdown",
+            "modified_time": 1751893009.1592832,
+            "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/test.md"
+          }
+        },
+        {
+          "content": "这是一个测试文档，用于验证文档加载功能。",
+          "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/test.md",
+          "is_web_result": false,
+          "metadata": {
+            "Header 1": "测试文档",
+            "filename": "test.md",
+            "filetype": "markdown",
+            "modified_time": 1751893009.1592832,
+            "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/test.md"
+          }
+        },
+        {
+          "content": "这是一个测试文档，用于验证文档加载功能。",
+          "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/test.md",
+          "is_web_result": false,
+          "metadata": {
+            "Header 1": "测试文档",
+            "filename": "test.md",
+            "filetype": "markdown",
+            "modified_time": 1751893009.1592832,
+            "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/test.md"
+          }
+        }
+      ],
+      "relevance_score": 0.5,
+      "recall_rate": 0.6,
+      "follow_up_questions": [
+        "AIOps平台有哪些核心功能？",
+        "如何部署和配置AIOps系统？",
+        "AIOps如何帮助解决运维问题？"
+      ]
+    }
+  },
+  "2eb84da67c1aae123941da3e69fcd968ac509442762578b6f58bfaa09d52b827": {
+    "timestamp": 1752071447.801056,
+    "data": {
+      "answer": "根据提供的文档内容，ai-cloudops平台包含以下功能：\n1. 查看API文档\n2. 了解扩展机制\n3. 开发自定义Agent\n4. 集成现有系统\n\n文档中未提供更多具体功能细节，建议补充更多上下文信息或查阅其他相关技术文档以获取完整功能说明。",
+      "source_documents": [
+        {
+          "content": "- 查看 API 文档\n- 了解扩展机制\n- 开发自定义 Agent\n- 集成现有系统",
+          "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/aiops_guide.md",
+          "is_web_result": false,
+          "metadata": {
+            "Header 1": "AI-CloudOps 平台快速入门指南",
+            "Header 2": "📖 下一步",
+            "Header 3": "3. 定制开发",
+            "filename": "aiops_guide.md",
+            "filetype": "markdown",
+            "modified_time": 1752055157.4101138,
+            "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/aiops_guide.md"
+          }
+        },
+        {
+          "content": "- 查看 API 文档\n- 了解扩展机制\n- 开发自定义 Agent\n- 集成现有系统",
+          "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/aiops_guide.md",
+          "is_web_result": false,
+          "metadata": {
+            "Header 1": "AI-CloudOps 平台快速入门指南",
+            "Header 2": "📖 下一步",
+            "Header 3": "3. 定制开发",
+            "filename": "aiops_guide.md",
+            "filetype": "markdown",
+            "modified_time": 1752055157.4101138,
+            "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/aiops_guide.md"
+          }
+        },
+        {
+          "content": "- 查看 API 文档\n- 了解扩展机制\n- 开发自定义 Agent\n- 集成现有系统",
+          "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/aiops_guide.md",
+          "is_web_result": false,
+          "metadata": {
+            "Header 1": "AI-CloudOps 平台快速入门指南",
+            "Header 2": "📖 下一步",
+            "Header 3": "3. 定制开发",
+            "filename": "aiops_guide.md",
+            "filetype": "markdown",
+            "modified_time": 1752055157.4101138,
+            "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/aiops_guide.md"
+          }
+        }
+      ],
+      "relevance_score": 0.5,
+      "recall_rate": 0.6,
+      "follow_up_questions": [
+        "该平台是否支持自动化部署和管理云资源?",
+        "它是否提供了监控和日志管理的功能?",
+        "用户能否通过该平台进行成本优化分析?"
+      ]
+    }
+  },
+  "2ae5132317634f90a3ffbd9f8b45c29c6eaa2d26a799643fb46df01eec5ca797": {
+    "timestamp": 1752071464.315373,
+    "data": {
+      "answer": "根据提供的文档内容，未提及 **ai-cloudops** 平台与云服务器状态相关的功能或模块。文档主要聚焦于 **Agent 架构**、**修复能力**（如 Pod 启动失败修复、网络问题修复等）和 **安全保障** 机制，但未明确说明是否包含云服务器状态监控、管理或告警功能。\n\n建议补充更多上下文信息或查阅其他相关技术文档以确认具体功能。",
+      "source_documents": [
+        {
+          "content": "#### Agent 架构\n- **Supervisor Agent**: 协调决策和流程管理\n- **K8s Fixer Agent**: Kubernetes 专项修复\n- **Researcher Agent**: 解决方案研究和搜索\n- **Coder Agent**: 代码分析和数据处理\n- **Notifier Agent**: 通知和告警管理  \n#### 修复能力\n- Pod 启动...",
+          "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/aiops_info.md",
+          "is_web_result": false,
+          "metadata": {
+            "Header 1": "AI-CloudOps 平台技术架构与功能概述",
+            "Header 2": "🔧 核心功能模块",
+            "Header 3": "3. 多 Agent 自动修复",
+            "filename": "aiops_info.md",
+            "filetype": "markdown",
+            "modified_time": 1752055095.2010722,
+            "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/aiops_info.md"
+          }
+        },
+        {
+          "content": "#### Agent 架构\n- **Supervisor Agent**: 协调决策和流程管理\n- **K8s Fixer Agent**: Kubernetes 专项修复\n- **Researcher Agent**: 解决方案研究和搜索\n- **Coder Agent**: 代码分析和数据处理\n- **Notifier Agent**: 通知和告警管理  \n#### 修复能力\n- Pod 启动...",
+          "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/aiops_info.md",
+          "is_web_result": false,
+          "metadata": {
+            "Header 1": "AI-CloudOps 平台技术架构与功能概述",
+            "Header 2": "🔧 核心功能模块",
+            "Header 3": "3. 多 Agent 自动修复",
+            "filename": "aiops_info.md",
+            "filetype": "markdown",
+            "modified_time": 1752055095.2010722,
+            "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/aiops_info.md"
+          }
+        },
+        {
+          "content": "#### Agent 架构\n- **Supervisor Agent**: 协调决策和流程管理\n- **K8s Fixer Agent**: Kubernetes 专项修复\n- **Researcher Agent**: 解决方案研究和搜索\n- **Coder Agent**: 代码分析和数据处理\n- **Notifier Agent**: 通知和告警管理  \n#### 修复能力\n- Pod 启动...",
+          "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/aiops_info.md",
+          "is_web_result": false,
+          "metadata": {
+            "Header 1": "AI-CloudOps 平台技术架构与功能概述",
+            "Header 2": "🔧 核心功能模块",
+            "Header 3": "3. 多 Agent 自动修复",
+            "filename": "aiops_info.md",
+            "filetype": "markdown",
+            "modified_time": 1752055095.2010722,
+            "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/aiops_info.md"
+          }
+        }
+      ],
+      "relevance_score": 0.5,
+      "recall_rate": 0.6,
+      "follow_up_questions": [
+        "云服务器状态监控功能是否包含在ai-cloudops平台中?",
+        "该平台是否提供了关于云服务器状态的告警功能?",
+        "除了修复能力和安全保障,ai-cloudops平台是否还提供了其他管理云服务器的功能?"
+      ]
+    }
+  },
+  "d75e773d3e2e93452d21ff54af37a688991857dcbf8d9141e02017a98bf1d9ea": {
+    "timestamp": 1752072864.211617,
+    "data": {
+      "answer": "你好！欢迎使用AI-CloudOps助手。我目前可以基于提供的根因分析（RCA）算法参数配置文档，为你解答相关技术问题。请问有什么需要帮助的吗？",
+      "source_documents": [
+        {
+          "content": "```yaml\nalgorithms:\nz_score:\nthreshold: 2.5\nwindow_size: 100\n\nisolation_forest:\ncontamination: 0.1\nn_estimators: 100\nmax_samples: \"auto\"\n\ndbscan:\neps: 0.5\nmin_samples: 5\nmetric: \"euclidean\"\n```",
+          "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/rca_analysis_guide.md",
+          "is_web_result": false,
+          "metadata": {
+            "Header 1": "AI-CloudOps 根因分析 (RCA) 完整指南",
+            "Header 2": "🔧 配置管理",
+            "Header 3": "3. 算法参数调优",
+            "filename": "rca_analysis_guide.md",
+            "filetype": "markdown",
+            "modified_time": 1752055028.1075628,
+            "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/rca_analysis_guide.md"
+          }
+        },
+        {
+          "content": "```yaml\nalgorithms:\nz_score:\nthreshold: 2.5\nwindow_size: 100\n\nisolation_forest:\ncontamination: 0.1\nn_estimators: 100\nmax_samples: \"auto\"\n\ndbscan:\neps: 0.5\nmin_samples: 5\nmetric: \"euclidean\"\n```",
+          "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/rca_analysis_guide.md",
+          "is_web_result": false,
+          "metadata": {
+            "Header 1": "AI-CloudOps 根因分析 (RCA) 完整指南",
+            "Header 2": "🔧 配置管理",
+            "Header 3": "3. 算法参数调优",
+            "filename": "rca_analysis_guide.md",
+            "filetype": "markdown",
+            "modified_time": 1752055028.1075628,
+            "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/rca_analysis_guide.md"
+          }
+        },
+        {
+          "content": "```yaml\nalgorithms:\nz_score:\nthreshold: 2.5\nwindow_size: 100\n\nisolation_forest:\ncontamination: 0.1\nn_estimators: 100\nmax_samples: \"auto\"\n\ndbscan:\neps: 0.5\nmin_samples: 5\nmetric: \"euclidean\"\n```",
+          "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/rca_analysis_guide.md",
+          "is_web_result": false,
+          "metadata": {
+            "Header 1": "AI-CloudOps 根因分析 (RCA) 完整指南",
+            "Header 2": "🔧 配置管理",
+            "Header 3": "3. 算法参数调优",
+            "filename": "rca_analysis_guide.md",
+            "filetype": "markdown",
+            "modified_time": 1752055028.1075628,
+            "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/rca_analysis_guide.md"
+          }
+        }
+      ],
+      "relevance_score": 1.0,
+      "recall_rate": 0.6,
+      "follow_up_questions": [
+        "AIOps平台有哪些核心功能？",
+        "如何部署和配置AIOps系统？",
+        "AIOps如何帮助解决运维问题？"
+      ]
+    }
+  },
+  "60a4a61db9c0d62558a58345f2ce8486fe39eaf0143a997327e5c9dc83f78683": {
+    "timestamp": 1752073339.34919,
+    "data": {
+      "answer": "根据您提供的文档内容，目前仅提及这些文档是\"用于验证文档加载功能的测试文档\"，未包含任何关于平台功能的具体描述。建议补充提供包含平台功能说明的文档内容，或参考平台官方功能列表以获取详细信息。",
+      "source_documents": [
+        {
+          "content": "这是一个测试文档，用于验证文档加载功能。",
+          "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/test.md",
+          "is_web_result": false,
+          "metadata": {
+            "Header 1": "测试文档",
+            "filename": "test.md",
+            "filetype": "markdown",
+            "modified_time": 1751893009.1592832,
+            "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/test.md"
+          }
+        },
+        {
+          "content": "这是一个测试文档，用于验证文档加载功能。",
+          "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/test.md",
+          "is_web_result": false,
+          "metadata": {
+            "Header 1": "测试文档",
+            "filename": "test.md",
+            "filetype": "markdown",
+            "modified_time": 1751893009.1592832,
+            "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/test.md"
+          }
+        },
+        {
+          "content": "这是一个测试文档，用于验证文档加载功能。",
+          "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/test.md",
+          "is_web_result": false,
+          "metadata": {
+            "Header 1": "测试文档",
+            "filename": "test.md",
+            "filetype": "markdown",
+            "modified_time": 1751893009.1592832,
+            "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/test.md"
+          }
+        }
+      ],
+      "relevance_score": 0.5,
+      "recall_rate": 0.6,
+      "follow_up_questions": [
+        "AIOps平台有哪些核心功能？",
+        "如何部署和配置AIOps系统？",
+        "AIOps如何帮助解决运维问题？"
+      ]
+    }
+  },
+  "1814acd905436ead8163ebdce7b9c5094065aefceb3da194227368ad05e1f32c": {
+    "timestamp": 1752073370.7632508,
+    "data": {
+      "answer": "根据您提供的文档内容，目前仅提及AI-CloudOps平台包含**根因分析（Root Cause Analysis, RCA）系统**功能，具体表现为：\n1. 基于人工智能的智能分析引擎\n2. 自动检测系统异常\n3. 分析指标相关性\n4. 通过多种机器学习算法快速定位问题根因\n\n文档未包含平台其他功能模块的说明。如需了解更全面的功能信息，建议补充提供完整的产品文档或参考AI-CloudOps官方功能列表。",
+      "source_documents": [
+        {
+          "content": "AI-CloudOps 根因分析 (Root Cause Analysis, RCA) 系统是一个基于人工智能的智能分析引擎，能够自动检测系统异常，分析指标相关性，并通过多种机器学习算法快速定位问题根因。",
+          "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/rca_analysis_guide.md",
+          "is_web_result": false,
+          "metadata": {
+            "Header 1": "AI-CloudOps 根因分析 (RCA) 完整指南",
+            "Header 2": "概述",
+            "filename": "rca_analysis_guide.md",
+            "filetype": "markdown",
+            "modified_time": 1752055028.1075628,
+            "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/rca_analysis_guide.md"
+          }
+        },
+        {
+          "content": "AI-CloudOps 根因分析 (Root Cause Analysis, RCA) 系统是一个基于人工智能的智能分析引擎，能够自动检测系统异常，分析指标相关性，并通过多种机器学习算法快速定位问题根因。",
+          "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/rca_analysis_guide.md",
+          "is_web_result": false,
+          "metadata": {
+            "Header 1": "AI-CloudOps 根因分析 (RCA) 完整指南",
+            "Header 2": "概述",
+            "filename": "rca_analysis_guide.md",
+            "filetype": "markdown",
+            "modified_time": 1752055028.1075628,
+            "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/rca_analysis_guide.md"
+          }
+        },
+        {
+          "content": "AI-CloudOps 根因分析 (Root Cause Analysis, RCA) 系统是一个基于人工智能的智能分析引擎，能够自动检测系统异常，分析指标相关性，并通过多种机器学习算法快速定位问题根因。",
+          "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/rca_analysis_guide.md",
+          "is_web_result": false,
+          "metadata": {
+            "Header 1": "AI-CloudOps 根因分析 (RCA) 完整指南",
+            "Header 2": "概述",
+            "filename": "rca_analysis_guide.md",
+            "filetype": "markdown",
+            "modified_time": 1752055028.1075628,
+            "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/rca_analysis_guide.md"
+          }
+        }
+      ],
+      "relevance_score": 0.5,
+      "recall_rate": 0.6,
+      "follow_up_questions": [
+        "AI-CloudOps平台除了根因分析系统外，还有哪些功能模块?",
+        "这个平台是如何利用机器学习算法来提高运维效率的?",
+        "用户在使用AI-CloudOps平台时，通常会遇到哪些挑战?"
+      ]
+    }
+  },
+  "56005afd76c75e474ddc1eaba77ccb0cb3168408f8bd2be55adef2126f6965b2": {
+    "timestamp": 1752073406.544447,
+    "data": {
+      "answer": "根据提供的文档内容，AI-CloudOps平台的核心功能是**根因分析（Root Cause Analysis, RCA）**，具体包括以下能力：\n\n1. **系统异常自动检测**  \n   通过人工智能技术实时监控并识别系统中的异常状态。\n\n2. **指标相关性分析**  \n   分析不同指标之间的关联性，辅助理解异常的潜在影响范围。\n\n3. **机器学习算法驱动的根因定位**  \n   利用多种机器学习模型快速定位问题的根本原因。\n\n需要注意的是，当前文档内容仅聚焦于根因分析功能的描述，未涉及平台的其他可能功能（如预测性维护、自动化修复等）。如需更全面的介绍，建议补充更多相关文档或技术说明。",
+      "source_documents": [
+        {
+          "content": "AI-CloudOps 根因分析 (Root Cause Analysis, RCA) 系统是一个基于人工智能的智能分析引擎，能够自动检测系统异常，分析指标相关性，并通过多种机器学习算法快速定位问题根因。",
+          "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/rca_analysis_guide.md",
+          "is_web_result": false,
+          "metadata": {
+            "Header 1": "AI-CloudOps 根因分析 (RCA) 完整指南",
+            "Header 2": "概述",
+            "filename": "rca_analysis_guide.md",
+            "filetype": "markdown",
+            "modified_time": 1752055028.1075628,
+            "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/rca_analysis_guide.md"
+          }
+        },
+        {
+          "content": "AI-CloudOps 根因分析 (Root Cause Analysis, RCA) 系统是一个基于人工智能的智能分析引擎，能够自动检测系统异常，分析指标相关性，并通过多种机器学习算法快速定位问题根因。",
+          "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/rca_analysis_guide.md",
+          "is_web_result": false,
+          "metadata": {
+            "Header 1": "AI-CloudOps 根因分析 (RCA) 完整指南",
+            "Header 2": "概述",
+            "filename": "rca_analysis_guide.md",
+            "filetype": "markdown",
+            "modified_time": 1752055028.1075628,
+            "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/rca_analysis_guide.md"
+          }
+        },
+        {
+          "content": "AI-CloudOps 根因分析 (Root Cause Analysis, RCA) 系统是一个基于人工智能的智能分析引擎，能够自动检测系统异常，分析指标相关性，并通过多种机器学习算法快速定位问题根因。",
+          "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/rca_analysis_guide.md",
+          "is_web_result": false,
+          "metadata": {
+            "Header 1": "AI-CloudOps 根因分析 (RCA) 完整指南",
+            "Header 2": "概述",
+            "filename": "rca_analysis_guide.md",
+            "filetype": "markdown",
+            "modified_time": 1752055028.1075628,
+            "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/rca_analysis_guide.md"
+          }
+        }
+      ],
+      "relevance_score": 0.5,
+      "recall_rate": 0.6,
+      "follow_up_questions": [
+        "平台是否还包括自动化修复和预测性维护等功能？",
+        "除了机器学习算法外，平台还使用了哪些技术来提高根因分析的准确性？",
+        "该平台如何确保用户数据的安全性和隐私保护？"
+      ]
+    }
+  },
+  "8cb462603035ae846c249f7c69d04926433500311b230eb6f1ec7ac074c93f36": {
+    "timestamp": 1752073586.075233,
+    "data": {
+      "answer": "根据当前提供的文档内容，未提及AI-CloudOps平台具备**多agent自动修复**功能。文档信息仅聚焦于日志存储路径及查看方式（`/path/to/aiops/logs`目录或通过`docker logs -f aiops-backend`命令），未涉及平台的自动化修复机制、多agent架构或相关技术细节。\n\n如需了解该功能，建议补充更多技术文档或联系平台开发团队获取详细说明。",
+      "source_documents": [
+        {
+          "content": "平台日志存储在`/path/to/aiops/logs`目录下，也可以通过以下命令查看：  \n```bash\ndocker logs -f aiops-backend\n```",
+          "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/aiops_info.md",
+          "is_web_result": false,
+          "metadata": {
+            "Header 1": "AIOps 平台知识库",
+            "Header 2": "常见问题",
+            "Header 3": "2. 如何查看平台日志？",
+            "filename": "aiops_info.md",
+            "filetype": "markdown",
+            "modified_time": 1751885641.6103437,
+            "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/aiops_info.md"
+          }
+        },
+        {
+          "content": "平台日志存储在`/path/to/aiops/logs`目录下，也可以通过以下命令查看：  \n```bash\ndocker logs -f aiops-backend\n```",
+          "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/aiops_info.md",
+          "is_web_result": false,
+          "metadata": {
+            "Header 1": "AIOps 平台知识库",
+            "Header 2": "常见问题",
+            "Header 3": "2. 如何查看平台日志？",
+            "filename": "aiops_info.md",
+            "filetype": "markdown",
+            "modified_time": 1751885641.6103437,
+            "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/aiops_info.md"
+          }
+        },
+        {
+          "content": "平台日志存储在`/path/to/aiops/logs`目录下，也可以通过以下命令查看：  \n```bash\ndocker logs -f aiops-backend\n```",
+          "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/aiops_info.md",
+          "is_web_result": false,
+          "metadata": {
+            "Header 1": "AIOps 平台知识库",
+            "Header 2": "常见问题",
+            "Header 3": "2. 如何查看平台日志？",
+            "filename": "aiops_info.md",
+            "filetype": "markdown",
+            "modified_time": 1751885641.6103437,
+            "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/aiops_info.md"
+          }
+        }
+      ],
+      "relevance_score": 1.0,
+      "recall_rate": 0.6,
+      "follow_up_questions": [
+        "AI-CloudOps的多agent自动修复功能是如何实现的?",
+        "这个功能在实际操作中能解决哪些具体问题?",
+        "AI-CloudOps平台支持哪些类型的agent来实现自动修复?"
+      ]
+    }
+  },
+  "d2033138c3b3be1321ad29d0aff15a4b1b47934a2b91afcea6f59b96a9fed115": {
+    "timestamp": 1752073726.001569,
+    "data": {
+      "answer": "你好！文档中未提供关于如何回应问候的具体信息，但根据常规礼仪，很高兴与你交流！如有任何问题，欢迎随时提问。",
+      "source_documents": [
+        {
+          "content": "1. 在 `app/core/agents/` 目录下创建新的 Agent 类\n2. 实现必要的接口方法\n3. 在 SupervisorAgent 中注册新 Agent",
+          "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/aiops_complete_guide.md",
+          "is_web_result": false,
+          "metadata": {
+            "Header 1": "AI-CloudOps 智能运维平台完整指南",
+            "Header 2": "🛠 开发指南",
+            "Header 3": "添加新 Agent",
+            "filename": "aiops_complete_guide.md",
+            "filetype": "markdown",
+            "modified_time": 1752053170.6033487,
+            "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/aiops_complete_guide.md"
+          }
+        },
+        {
+          "content": "1. 在 `app/core/agents/` 目录下创建新的 Agent 类\n2. 实现必要的接口方法\n3. 在 SupervisorAgent 中注册新 Agent",
+          "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/aiops_complete_guide.md",
+          "is_web_result": false,
+          "metadata": {
+            "Header 1": "AI-CloudOps 智能运维平台完整指南",
+            "Header 2": "🛠 开发指南",
+            "Header 3": "添加新 Agent",
+            "filename": "aiops_complete_guide.md",
+            "filetype": "markdown",
+            "modified_time": 1752053170.6033487,
+            "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/aiops_complete_guide.md"
+          }
+        },
+        {
+          "content": "1. 在 `app/core/agents/` 目录下创建新的 Agent 类\n2. 实现必要的接口方法\n3. 在 SupervisorAgent 中注册新 Agent",
+          "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/aiops_complete_guide.md",
+          "is_web_result": false,
+          "metadata": {
+            "Header 1": "AI-CloudOps 智能运维平台完整指南",
+            "Header 2": "🛠 开发指南",
+            "Header 3": "添加新 Agent",
+            "filename": "aiops_complete_guide.md",
+            "filetype": "markdown",
+            "modified_time": 1752053170.6033487,
+            "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/aiops_complete_guide.md"
+          }
+        }
+      ],
+      "relevance_score": 1.0,
+      "recall_rate": 0.6,
+      "follow_up_questions": [
+        "AIOps平台有哪些核心功能？",
+        "如何部署和配置AIOps系统？",
+        "AIOps如何帮助解决运维问题？"
+      ]
+    }
+  },
+  "28510ae8a81d96ac53f5234345db8b1703dc873ee18e5c64b8ba9185c5700cdb": {
+    "timestamp": 1752073912.9949,
+    "data": {
+      "answer": "你好！欢迎使用AI助手。如果你有关于根因分析（RCA）算法参数配置的问题，或需要基于文档内容进行异常检测、聚类分析等操作的指导，可以随时告诉我。当前文档提供了z-score、孤立森林（isolation_forest）和DBSCAN算法的参数设置，例如z-score的阈值为2.5，孤立森林的污染率设为0.1，DBSCAN的eps为0.5等。请提出具体问题以便我为你解答。",
+      "source_documents": [
+        {
+          "content": "```yaml\nalgorithms:\nz_score:\nthreshold: 2.5\nwindow_size: 100\n\nisolation_forest:\ncontamination: 0.1\nn_estimators: 100\nmax_samples: \"auto\"\n\ndbscan:\neps: 0.5\nmin_samples: 5\nmetric: \"euclidean\"\n```",
+          "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/rca_analysis_guide.md",
+          "is_web_result": false,
+          "metadata": {
+            "Header 1": "AI-CloudOps 根因分析 (RCA) 完整指南",
+            "Header 2": "🔧 配置管理",
+            "Header 3": "3. 算法参数调优",
+            "filename": "rca_analysis_guide.md",
+            "filetype": "markdown",
+            "modified_time": 1752055028.1075628,
+            "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/rca_analysis_guide.md"
+          }
+        },
+        {
+          "content": "```yaml\nalgorithms:\nz_score:\nthreshold: 2.5\nwindow_size: 100\n\nisolation_forest:\ncontamination: 0.1\nn_estimators: 100\nmax_samples: \"auto\"\n\ndbscan:\neps: 0.5\nmin_samples: 5\nmetric: \"euclidean\"\n```",
+          "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/rca_analysis_guide.md",
+          "is_web_result": false,
+          "metadata": {
+            "Header 1": "AI-CloudOps 根因分析 (RCA) 完整指南",
+            "Header 2": "🔧 配置管理",
+            "Header 3": "3. 算法参数调优",
+            "filename": "rca_analysis_guide.md",
+            "filetype": "markdown",
+            "modified_time": 1752055028.1075628,
+            "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/rca_analysis_guide.md"
+          }
+        },
+        {
+          "content": "```yaml\nalgorithms:\nz_score:\nthreshold: 2.5\nwindow_size: 100\n\nisolation_forest:\ncontamination: 0.1\nn_estimators: 100\nmax_samples: \"auto\"\n\ndbscan:\neps: 0.5\nmin_samples: 5\nmetric: \"euclidean\"\n```",
+          "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/rca_analysis_guide.md",
+          "is_web_result": false,
+          "metadata": {
+            "Header 1": "AI-CloudOps 根因分析 (RCA) 完整指南",
+            "Header 2": "🔧 配置管理",
+            "Header 3": "3. 算法参数调优",
+            "filename": "rca_analysis_guide.md",
+            "filetype": "markdown",
+            "modified_time": 1752055028.1075628,
+            "source": "/Users/wangzijian/golangProject/Bamboo/AI-CloudOps-backend/python/data/knowledge_base/rca_analysis_guide.md"
+          }
+        }
+      ],
+      "relevance_score": 0.5,
+      "recall_rate": 0.6,
+      "follow_up_questions": [
+        "你想要了解哪种异常检测算法的参数配置细节?",
+        "你希望对文档进行哪种类型的聚类分析?",
+        "你对当前文档中提到的z-score阈值2.5有什么疑问吗?"
+      ]
+    }
+  }
+}
