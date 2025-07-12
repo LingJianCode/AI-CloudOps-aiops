@@ -1,3 +1,14 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+AI-CloudOps-aiops
+Author: Bamboo
+Email: bamboocloudops@gmail.com
+License: Apache 2.0
+Description: 验证器模块 - 提供输入数据验证、格式检查和安全性验证的工具函数
+"""
+
 from datetime import datetime
 from typing import List, Optional
 import re

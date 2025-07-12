@@ -1,5 +1,12 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 """
-服务模块 - 外部服务集成
+AI-CloudOps-aiops
+Author: Bamboo
+Email: bamboocloudops@gmail.com
+License: Apache 2.0
+Description: 服务模块初始化文件，集成Prometheus、Kubernetes等外部服务
 """
 
 from .prometheus import PrometheusService

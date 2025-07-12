@@ -1,5 +1,12 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 """
-核心业务逻辑模块
+AI-CloudOps-aiops
+Author: Bamboo
+Email: bamboocloudops@gmail.com
+License: Apache 2.0
+Description: 核心业务逻辑模块初始化文件，提供主要业务组件的访问接口
 """
 
 from .rca.analyzer import RCAAnalyzer

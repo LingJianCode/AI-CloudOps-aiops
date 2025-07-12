@@ -1,3 +1,14 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+AI-CloudOps-aiops
+Author: Bamboo
+Email: bamboocloudops@gmail.com
+License: Apache 2.0
+Description: 通知服务模块 - 提供多渠道通知功能，支持飞书、邮件等通知方式的集成
+"""
+
 import logging
 import requests
 import json

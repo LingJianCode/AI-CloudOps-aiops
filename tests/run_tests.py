@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 """
-AIOps平台测试运行脚本
-运行测试并生成简单的Markdown格式测试报告
+AI-CloudOps-aiops
+Author: Bamboo
+Email: bamboocloudops@gmail.com
+License: Apache 2.0
+Description: 测试运行脚本，执行所有测试并生成详细的Markdown报告
 """
 
 import os

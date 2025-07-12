@@ -1,3 +1,14 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+AI-CloudOps-aiops
+Author: Bamboo
+Email: bamboocloudops@gmail.com
+License: Apache 2.0
+Description: 异常检测器 - 使用多种算法检测监控指标中的异常模式和突变点
+"""
+
 import logging
 import numpy as np
 import pandas as pd

@@ -1,3 +1,14 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+AI-CloudOps-aiops
+Author: Bamboo
+Email: bamboocloudops@gmail.com
+License: Apache 2.0
+Description: 通知代理 - 发送运维告警和消息通知
+"""
+
 import logging
 from typing import Dict, Any, List, Optional
 from langchain_core.tools import tool
@@ -7,12 +18,13 @@ from app.config.settings import config
 logger = logging.getLogger("aiops.notifier")
 
 class NotifierAgent:
+    """Notification agent for sending operational alerts and messages"""
     def __init__(self):
         self.notification_service = NotificationService()
-        logger.info("Notifier Agent初始化完成")
+        logger.info("Notifier Agent initialized")
     
     async def send_human_help_request(self, problem_description: str, urgency: str = "medium") -> str:
-        """发送人工帮助请求"""
+        """Send human assistance request"""
         try:
             urgency_emoji = {
                 "low": "🔵",
@@ -63,7 +75,7 @@ class NotifierAgent:
         affected_services: List[str], 
         severity: str = "medium"
     ) -> str:
-        """发送事件告警"""
+        """Send incident alert"""
         try:
             severity_config = {
                 "low": {"emoji": "🟢", "color": "green"},
@@ -119,7 +131,7 @@ class NotifierAgent:
         solution_summary: str, 
         actions_taken: List[str]
     ) -> str:
-        """发送问题解决通知"""
+        """Send problem resolution notification"""
         try:
             actions_list = "\n".join([f"- {action}" for action in actions_taken])
             
@@ -162,7 +174,7 @@ class NotifierAgent:
     
     @tool
     async def send_system_health_report(self, health_data: Dict[str, Any]) -> str:
-        """发送系统健康报告"""
+        """Send system health report"""
         try:
             healthy_components = [k for k, v in health_data.get('components', {}).items() if v]
             unhealthy_components = [k for k, v in health_data.get('components', {}).items() if not v]
@@ -220,7 +232,7 @@ class NotifierAgent:
         estimated_duration: str,
         affected_services: List[str]
     ) -> str:
-        """发送维护通知"""
+        """Send maintenance notification"""
         try:
             services_list = "\n".join([f"- {service}" for service in affected_services])
             
@@ -260,7 +272,7 @@ class NotifierAgent:
             return f"❌ 发送维护通知异常: {str(e)}"
     
     async def check_notification_health(self) -> Dict[str, Any]:
-        """检查通知服务健康状态"""
+        """Check notification service health status"""
         try:
             # 确保数据可序列化的函数
             def ensure_serializable(obj):
@@ -292,7 +304,7 @@ class NotifierAgent:
             }
     
     def get_available_tools(self) -> List[str]:
-        """获取可用工具列表"""
+        """Get available tools list"""
         return [
             "send_human_help_request",
             "send_incident_alert",
@@ -302,13 +314,13 @@ class NotifierAgent:
         ]
         
     async def process_agent_state(self, state) -> Any:
-        """处理Agent状态，支持工作流处理
+        """Process agent state for workflow handling
         
         Args:
-            state: 工作流状态
+            state: Workflow state
             
         Returns:
-            更新后的状态
+            Updated state
         """
         try:
             from dataclasses import replace

@@ -78,7 +78,7 @@ echo ""
 
 # 4. 测试上下文查询
 echo -e "${YELLOW}4. 测试上下文查询...${NC}"
-CONTEXT_DATA='{"question":"它有哪些核心功能?","session_id":"'$SESSION_ID'"}'
+CONTEXT_DATA='{"question":"核心功能模块有哪些?","session_id":"'$SESSION_ID'"}'
 echo -e "${BLUE}发送上下文查询: $CONTEXT_DATA${NC}"
 
 CONTEXT_RESPONSE=$(curl -s -X POST "${BASE_URL}/query" -H "${HEADER}" -d "$CONTEXT_DATA")
@@ -95,27 +95,8 @@ else
 fi
 echo ""
 
-# 5. 测试网络搜索增强查询 (如果支持)
-echo -e "${YELLOW}5. 测试网络搜索增强查询...${NC}"
-WEB_DATA='{"question":"什么是人工智能运维?","use_web_search":true,"session_id":"'$SESSION_ID'"}'
-echo -e "${BLUE}发送网络搜索查询: $WEB_DATA${NC}"
-
-WEB_RESPONSE=$(curl -s -X POST "${BASE_URL}/query" -H "${HEADER}" -d "$WEB_DATA")
-WEB_CODE=$(echo $WEB_RESPONSE | python3 -c "import sys, json; print(json.load(sys.stdin)['code'])" 2>/dev/null)
-
-if [ "$WEB_CODE" = "0" ]; then
-  echo -e "${GREEN}网络搜索查询成功!${NC}"
-  # 提取并显示回答
-  ANSWER=$(echo $WEB_RESPONSE | python3 -c "import sys, json; print(json.load(sys.stdin)['data']['answer'])" 2>/dev/null)
-  echo -e "${BLUE}回答:${NC} $ANSWER"
-else
-  echo -e "${RED}网络搜索查询失败或未启用!${NC}"
-  echo $WEB_RESPONSE
-fi
-echo ""
-
-# 6. 测试清除缓存
-echo -e "${YELLOW}6. 测试清除缓存...${NC}"
+# 5. 测试清除缓存
+echo -e "${YELLOW}5. 测试清除缓存...${NC}"
 CACHE_RESPONSE=$(curl -s -X POST "${BASE_URL}/clear-cache" -H "${HEADER}")
 CACHE_CODE=$(echo $CACHE_RESPONSE | python3 -c "import sys, json; print(json.load(sys.stdin)['code'])" 2>/dev/null)
 
@@ -127,4 +108,4 @@ else
 fi
 echo ""
 
-echo -e "${GREEN}测试完成!${NC}" 
+echo -e "${GREEN}测试完成!${NC}"

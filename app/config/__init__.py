@@ -1,5 +1,12 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 """
-配置模块 - 管理所有配置信息
+AI-CloudOps-aiops
+Author: Bamboo
+Email: bamboocloudops@gmail.com
+License: Apache 2.0
+Description: 配置模块初始化文件，提供配置设置和日志配置的访问接口
 """
 
 from .settings import config

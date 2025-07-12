@@ -1,3 +1,14 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+AI-CloudOps-aiops
+Author: Bamboo
+Email: bamboocloudops@gmail.com
+License: Apache 2.0
+Description: 时间工具模块 - 提供时间处理、特征提取和时间序列相关的工具函数
+"""
+
 from datetime import datetime, timedelta, timezone
 from typing import Tuple, Optional
 import pandas as pd

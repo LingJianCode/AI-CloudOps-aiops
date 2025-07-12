@@ -1,3 +1,14 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+AI-CloudOps-aiops
+Author: Bamboo
+Email: bamboocloudops@gmail.com
+License: Apache 2.0
+Description: 研究代理 - 提供问题调查和解决方案分析服务
+"""
+
 import logging
 from typing import Dict, Any, List, Optional
 from langchain_core.tools import tool
@@ -8,6 +19,7 @@ from app.services.llm import LLMService
 logger = logging.getLogger("aiops.researcher")
 
 class ResearcherAgent:
+    """Research agent for problem investigation and solution analysis"""
     def __init__(self):
         # 使用我们自己的LLM服务
         self.llm_service = LLMService()
@@ -20,11 +32,11 @@ class ResearcherAgent:
                     api_key=config.tavily.api_key
                 )
                 self.search_enabled = True
-                logger.info("Researcher Agent初始化完成（支持网络搜索）")
+                logger.info("Researcher Agent initialized (with web search)")
             else:
                 self.search_tool = None
                 self.search_enabled = False
-                logger.info("Researcher Agent初始化完成（无网络搜索）")
+                logger.info("Researcher Agent initialized (no web search)")
         except Exception as e:
             logger.warning(f"搜索工具初始化失败: {str(e)}")
             self.search_tool = None
@@ -32,7 +44,7 @@ class ResearcherAgent:
     
     @tool
     async def search_kubernetes_solutions(self, query: str) -> str:
-        """搜索Kubernetes问题解决方案"""
+        """Search Kubernetes problem solutions"""
         try:
             if not self.search_enabled:
                 return await self._provide_local_knowledge(query)
@@ -67,7 +79,7 @@ class ResearcherAgent:
             return await self._provide_local_knowledge(query)
     
     async def _summarize_search_results(self, query: str, results: List[Dict]) -> str:
-        """总结搜索结果"""
+        """Summarize search results"""
         try:
             context = "\n".join([
                 f"标题: {r.get('title', '')}\n内容: {r.get('content', '')}"
@@ -99,7 +111,7 @@ class ResearcherAgent:
             return "\n**AI总结:** 无法生成总结"
     
     async def _provide_local_knowledge(self, query: str) -> str:
-        """提供本地知识库的解决方案"""
+        """Provide local knowledge base solutions"""
         try:
             # 基于查询关键词提供本地知识
             query_lower = query.lower()
@@ -120,7 +132,7 @@ class ResearcherAgent:
             return "无法提供相关的故障排除指南"
     
     def _get_resource_troubleshooting_guide(self) -> str:
-        """资源问题故障排除指南"""
+        """Resource problem troubleshooting guide"""
         return """
 **Kubernetes资源问题故障排除指南:**
 

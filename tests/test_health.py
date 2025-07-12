@@ -1,11 +1,12 @@
-#!/usr/bin/env python
-"""
-健康检查测试模块
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 
-测试项目:
-1. 健康检查API
-2. 各组件健康状态
-3. 服务正常启动和响应
+"""
+AI-CloudOps-aiops
+Author: Bamboo
+Email: bamboocloudops@gmail.com
+License: Apache 2.0
+Description: 健康检查模块测试，验证系统健康状态和组件可用性
 """
 
 import os

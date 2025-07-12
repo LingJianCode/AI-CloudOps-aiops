@@ -1,3 +1,14 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+AI-CloudOps-aiops
+Author: Bamboo
+Email: bamboocloudops@gmail.com
+License: Apache 2.0
+Description: API请求模型 - 定义用于验证和解析传入API请求的Pydantic模型，包含适当的验证规则
+"""
+
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Dict
 from pydantic import BaseModel, Field, validator

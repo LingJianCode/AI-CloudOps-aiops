@@ -1,3 +1,14 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+AI-CloudOps-aiops
+Author: Bamboo
+Email: bamboocloudops@gmail.com
+License: Apache 2.0
+Description: 错误处理中间件 - 提供统一的HTTP错误响应格式和异常处理机制
+"""
+
 import logging
 import traceback
 from flask import jsonify, request

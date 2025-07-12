@@ -1,5 +1,12 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 """
-健康检查API模块 - AI-CloudOps 系统的服务健康监控和状态检查中心
+AI-CloudOps-aiops
+Author: Bamboo
+Email: bamboocloudops@gmail.com
+License: Apache 2.0
+Description: 健康检查API模块，提供AI-CloudOps系统的服务健康监控和状态检查功能。支持系统综合健康检查、组件详细健康检查和系统指标监控。
 
 本模块提供了一套完整的健康检查API接口，用于监控和验证AI-CloudOps系统各个组件的运行状态。
 通过这些接口，管理员和监控系统可以实时了解系统的健康状况，及时发现和解决问题。

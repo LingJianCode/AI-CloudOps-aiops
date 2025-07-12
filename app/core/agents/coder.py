@@ -1,8 +1,19 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+AI-CloudOps-aiops
+Author: Bamboo
+Email: bamboocloudops@gmail.com
+License: Apache 2.0
+Description: 代码生成代理 - 自动生成运维问题修复脚本和配置文件
+"""
+
+
 import logging
 import sys
 import io
-import contextlib
-from typing import Dict, Any, List, Optional
+from typing import List
 from langchain_core.tools import tool
 from langchain_experimental.tools import PythonAstREPLTool
 from langchain_openai import ChatOpenAI
@@ -14,6 +25,7 @@ from app.config.settings import config
 logger = logging.getLogger("aiops.coder")
 
 class CoderAgent:
+    """Code generation agent for operations automation"""
     def __init__(self):
         self.llm = ChatOpenAI(
             model=config.llm.model,
@@ -22,11 +34,11 @@ class CoderAgent:
         )
         self.python_tool = PythonAstREPLTool()
         self.execution_context = {}
-        logger.info("Coder Agent初始化完成")
+        logger.info("Coder Agent initialized")
     
     @tool
     async def analyze_metrics_data(self, metrics_data: str) -> str:
-        """分析指标数据并提供洞察"""
+        """Analyze metrics data and provide insights"""
         try:
             # 解析指标数据
             if isinstance(metrics_data, str):

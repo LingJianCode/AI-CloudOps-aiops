@@ -1,3 +1,14 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+AI-CloudOps-aiops
+Author: Bamboo
+Email: bamboocloudops@gmail.com
+License: Apache 2.0
+Description: 相关性分析器 - 计算监控指标间的相关性关系，识别关联异常模式
+"""
+
 import logging
 import numpy as np
 import pandas as pd

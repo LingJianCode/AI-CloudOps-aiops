@@ -1,5 +1,12 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 """
-中间件模块
+AI-CloudOps-aiops
+Author: Bamboo
+Email: bamboocloudops@gmail.com
+License: Apache 2.0
+Description: 中间件模块初始化文件，配置CORS和错误处理中间件
 """
 
 from .cors import setup_cors

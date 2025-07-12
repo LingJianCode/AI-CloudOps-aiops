@@ -1,5 +1,12 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 """
-API模块 - 处理HTTP请求和响应
+AI-CloudOps-aiops
+Author: Bamboo
+Email: bamboocloudops@gmail.com
+License: Apache 2.0
+Description: API模块初始化文件，提供路由注册和中间件配置功能
 """
 
 from .routes import register_routes

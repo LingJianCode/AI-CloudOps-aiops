@@ -1,24 +1,18 @@
-#!/usr/bin/env python
-"""
-WebSocket智能小助手测试模块
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 
-测试项目:
-1. WebSocket连接建立
-2. 消息发送
-3. 流式响应接收
-4. 会话管理
+"""
+AI-CloudOps-aiops
+Author: Bamboo
+Email: bamboocloudops@gmail.com
+License: Apache 2.0
+Description: WebSocket智能助手测试模块，验证实时通信功能
 """
 
 import os
 import sys
 import pytest
-import pytest_asyncio
-import json
-import asyncio
-import websockets
 import logging
-import uuid
-from pathlib import Path
 
 # 添加项目路径到sys.path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))

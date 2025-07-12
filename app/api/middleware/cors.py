@@ -1,3 +1,14 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+AI-CloudOps-aiops
+Author: Bamboo
+Email: bamboocloudops@gmail.com
+License: Apache 2.0
+Description: CORS中间件配置 - 处理跨域资源共享，支持浏览器端API访问
+"""
+
 from flask_cors import CORS
 import logging
 

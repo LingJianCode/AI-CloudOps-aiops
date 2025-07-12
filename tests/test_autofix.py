@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 """
-Kubernetes自动修复功能测试脚本
-该脚本用于测试AI驱动的Kubernetes自动修复功能，包括:
-1. 健康检查API测试
-2. 集群诊断API测试 
-3. 正常部署自动修复API测试
-4. 问题部署自动修复API测试
-5. 探针问题自动修复API测试
-6. 通知API测试
-7. 完整工作流API测试
+AI-CloudOps-aiops
+Author: Bamboo
+Email: bamboocloudops@gmail.com
+License: Apache 2.0
+Description: Kubernetes自动修复功能测试脚本，验证AI驱动的自动修复功能
 """
+
 
 import requests
 import json

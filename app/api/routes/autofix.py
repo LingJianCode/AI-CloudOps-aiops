@@ -1,3 +1,14 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+AI-CloudOps-aiops
+Author: Bamboo
+Email: bamboocloudops@gmail.com
+License: Apache 2.0
+Description: 自动修复API路由 - 提供Kubernetes问题自动诊断、修复和工作流管理
+"""
+
 from flask import Blueprint, request, jsonify
 from datetime import datetime
 import asyncio

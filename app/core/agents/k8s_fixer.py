@@ -1,3 +1,14 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+AI-CloudOps-aiops
+Author: Bamboo
+Email: bamboocloudops@gmail.com
+License: Apache 2.0
+Description: Kubernetes集群问题诊断和自动修复代理
+"""
+
 import logging
 import json
 import yaml
@@ -14,6 +25,7 @@ from app.config.settings import config
 logger = logging.getLogger("aiops.k8s_fixer")
 
 class K8sFixerAgent:
+    """Kubernetes fixer agent for cluster issue diagnosis and automatic repair"""
     def __init__(self):
         self.k8s_service = KubernetesService()
         self.llm_service = LLMService()
@@ -21,7 +33,7 @@ class K8sFixerAgent:
         # 不再使用langchain_openai直接初始化LLM
         self.max_retries = 3
         self.retry_delay = 2
-        logger.info("K8s修复Agent初始化完成")
+        logger.info("K8s Fixer Agent initialized")
         
         # 测试LLM服务是否正常
         try:

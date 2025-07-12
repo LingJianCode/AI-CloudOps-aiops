@@ -1,3 +1,14 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+AI-CloudOps-aiops
+Author: Bamboo
+Email: bamboocloudops@gmail.com
+License: Apache 2.0
+Description: 指标工具模块 - 提供指标数据处理、统计分析和异常检测相关的工具函数
+"""
+
 import pandas as pd
 import numpy as np
 from typing import List, Dict, Any, Optional

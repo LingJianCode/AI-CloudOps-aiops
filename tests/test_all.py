@@ -1,13 +1,14 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 """
-AIOps平台全量测试脚本
-运行所有测试模块，包括:
-1. 健康检查测试
-2. 根因分析测试
-3. 负载预测测试
-4. 自动修复测试
-5. 智能小助手测试
+AI-CloudOps-aiops
+Author: Bamboo
+Email: bamboocloudops@gmail.com
+License: Apache 2.0
+Description: AIOps平台全量测试脚本，运行所有测试模块
 """
+
 
 import os
 import sys
@@ -35,7 +36,6 @@ def run_all_tests():
         "test_rca.py",
         "test_prediction.py",
         "test_autofix.py",
-        "test_assistant.py",
         "test_knowledge_load.py"
     ]
     

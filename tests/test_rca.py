@@ -1,30 +1,23 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 """
-Kubernetes根因分析(RCA)功能测试脚本
-该脚本用于测试AI驱动的Kubernetes根因分析功能，包括:
-1. RCA API健康检查测试
-2. 异常检测API测试
-3. 相关性分析API测试
-4. 根因分析API测试
-5. 指标查询API测试
-6. 完整RCA工作流测试
-7. 性能压力测试
+AI-CloudOps-aiops
+Author: Bamboo
+Email: bamboocloudops@gmail.com
+License: Apache 2.0
+Description: 根因分析功能测试脚本，验证AI驱动的RCA分析能力
 """
 
 import requests
 import json
-import sys
 import time
 import os
-import yaml
 import subprocess
 from datetime import datetime, timedelta
 import logging
 from pathlib import Path
-import numpy as np
-import pandas as pd
 from concurrent.futures import ThreadPoolExecutor
-import threading
 
 # 配置日志
 logging.basicConfig(

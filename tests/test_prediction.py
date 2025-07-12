@@ -1,27 +1,20 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 """
-Kubernetes预测服务功能测试脚本
-该脚本用于测试AI驱动的Kubernetes预测服务功能，包括:
-1. 健康检查API测试
-2. 预测API测试（GET和POST）
-3. 零QPS预测测试
-4. 低QPS预测测试
-5. 高QPS预测测试
-6. 趋势预测API测试
-7. 模型验证测试
-8. 完整工作流API测试
+AI-CloudOps-aiops
+Author: Bamboo
+Email: bamboocloudops@gmail.com
+License: Apache 2.0
+Description: Kubernetes预测服务测试脚本，验证AI驱动的负载预测功能
 """
 
+
 import requests
-import json
-import sys
+import json 
 import time
-import os
-import subprocess
-from datetime import datetime, timedelta
+from datetime import datetime
 import logging
-from pathlib import Path
-import numpy as np
 
 # 配置日志
 logging.basicConfig(

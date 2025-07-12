@@ -1,3 +1,14 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+AI-CloudOps-aiops
+Author: Bamboo
+Email: bamboocloudops@gmail.com
+License: Apache 2.0
+Description: 核心数据模型 - 定义系统中使用的指标、异常、相关性和智能体状态等内部数据结构
+"""
+
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass

@@ -1,3 +1,14 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+AI-CloudOps-aiops
+Author: Bamboo
+Email: bamboocloudops@gmail.com
+License: Apache 2.0
+Description: 负载预测API路由 - 提供QPS预测、实例数建议和负载趋势分析接口
+"""
+
 from flask import Blueprint, request, jsonify
 import datetime
 import logging

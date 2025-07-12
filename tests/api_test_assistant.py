@@ -1,6 +1,12 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 """
-测试智能小助手API端点
+AI-CloudOps-aiops
+Author: Bamboo
+Email: bamboocloudops@gmail.com
+License: Apache 2.0
+Description: 智能助手API端点测试脚本，验证API接口功能
 """
 
 import os

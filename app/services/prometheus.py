@@ -1,3 +1,14 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+AI-CloudOps-aiops
+Author: Bamboo
+Email: bamboocloudops@gmail.com
+License: Apache 2.0
+Description: Prometheus服务模块 - 提供监控数据查询、时间序列数据获取和指标分析功能
+"""
+
 import logging
 import requests
 import pandas as pd

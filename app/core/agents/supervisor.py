@@ -1,24 +1,12 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 """
-主管代理模块 - AI-CloudOps 系统的智能代理协调器
-
-本模块实现了一个智能的主管代理(SupervisorAgent)，负责协调和管理多个AI代理的工作流程。
-主管代理能够根据当前问题的类型和上下文，智能地选择合适的工作代理来处理具体任务。
-
-主要功能：
-1. 智能路由决策 - 根据问题类型选择合适的代理
-2. 工作流程控制 - 管理代理间的协作和迭代
-3. 上下文管理 - 维护对话历史和问题状态
-4. 迭代控制 - 防止无限循环和资源浪费
-5. 决策分析 - 提供问题分析和处理建议
-
-支持的工作代理类型：
-- Researcher: 信息搜索和技术文档收集
-- Coder: 代码分析和数据处理
-- K8sFixer: Kubernetes问题诊断和修复
-- Notifier: 通知发送和人工介入
-
-Author: AI-CloudOps Team
-Date: 2024
+AI-CloudOps-aiops
+Author: Bamboo
+Email: bamboocloudops@gmail.com
+License: Apache 2.0
+Description: 主管代理 - 协调多个智能代理进行问题解决
 """
 
 import logging
@@ -34,53 +22,15 @@ from app.models.data_models import AgentState
 logger = logging.getLogger("aiops.supervisor")
 
 class RouteResponse(BaseModel):
-    """
-    路由响应数据模型
-    
-    定义主管代理的决策结果，包含下一步要执行的代理类型和决策理由。
-    
-    Attributes:
-        next (Literal): 下一个要执行的代理类型
-            - "Researcher": 研究员代理，负责信息搜索
-            - "Coder": 编程代理，负责代码分析和执行
-            - "K8sFixer": Kubernetes修复代理，负责K8s问题处理
-            - "Notifier": 通知代理，负责发送通知和警报
-            - "FINISH": 完成标记，表示任务结束
-        reasoning (Optional[str]): 决策理由，可选的文本说明
-    """
+    """Route response data model for supervisor decisions"""
     next: Literal["Researcher", "Coder", "K8sFixer", "Notifier", "FINISH"]
     reasoning: Optional[str] = None
 
 class SupervisorAgent:
-    """
-    主管代理类 - AIOps系统的智能协调器
-    
-    主管代理是整个AIOps系统的核心协调组件，负责分析问题并决策下一步的行动。
-    它通过LLM分析当前的问题上下文和对话历史，智能地选择最合适的工作代理来处理具体任务。
-    
-    核心职责：
-    1. 问题分析和分类
-    2. 代理选择和路由
-    3. 工作流程控制
-    4. 迭代管理和循环检测
-    5. 上下文维护和状态管理
-    
-    工作流程：
-    用户问题 -> 主管分析 -> 选择代理 -> 执行任务 -> 评估结果 -> 继续或结束
-    
-    Attributes:
-        llm_service (LLMService): LLM服务实例，用于智能决策
-        members (List[str]): 可用的工作代理列表
-        prompt_template (str): 决策用的提示词模板
-    """
+    """Supervisor agent - AIOps system intelligent coordinator"""
     
     def __init__(self):
-        """
-        初始化主管代理
-        
-        设置LLM服务、工作代理列表和决策提示词模板。
-        主管代理在初始化时会准备好所有必要的组件和配置。
-        """
+        """Initialize supervisor agent"""
         # 使用我们自己的LLM服务进行智能决策
         self.llm_service = LLMService()
         
@@ -90,21 +40,10 @@ class SupervisorAgent:
         # 设置决策提示词模板
         self._setup_prompt()
         
-        logger.info("Supervisor Agent初始化完成")
+        logger.info("Supervisor Agent initialized")
     
     def _setup_prompt(self):
-        """
-        设置决策提示词模板
-        
-        配置主管代理用于决策的提示词模板，包含各个工作代理的职责说明、
-        决策原则和选择逻辑。这个模板是主管代理智能决策的基础。
-        
-        提示词包含：
-        1. 各工作代理的职责定义
-        2. 决策原则和优先级
-        3. 问题分类和路由规则
-        4. 结束条件判断
-        """
+        """Setup decision prompt template"""
         system_prompt = """你是一个AIOps系统的主管，负责协调以下工作人员来解决Kubernetes相关问题：
 
 工作人员及其职责：
@@ -140,32 +79,7 @@ class SupervisorAgent:
 """
     
     async def route_next_action(self, state: AgentState) -> Dict[str, Any]:
-        """
-        智能路由决策 - 决定下一个执行的Agent
-        
-        这是主管代理的核心方法，负责分析当前状态并决定下一步的行动。
-        该方法会考虑多个因素：
-        1. 当前问题的类型和复杂度
-        2. 已有的对话历史和上下文
-        3. 迭代次数和循环检测
-        4. 各代理的能力和适用场景
-        
-        Args:
-            state (AgentState): 当前的代理状态，包含消息历史、上下文等信息
-            
-        Returns:
-            Dict[str, Any]: 决策结果，包含：
-                - next: 下一个要执行的代理名称
-                - reasoning: 决策理由
-                - iteration_count: 更新后的迭代计数
-                
-        决策流程：
-        1. 检查迭代次数限制
-        2. 构建消息历史上下文
-        3. 调用LLM进行智能分析
-        4. 解析LLM响应并提取决策
-        5. 返回结构化的决策结果
-        """
+        """Intelligent routing decision - decide next agent to execute"""
         try:
             # 检查迭代次数限制，防止无限循环消耗资源
             if state.iteration_count >= state.max_iterations:

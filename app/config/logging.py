@@ -1,3 +1,14 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+AI-CloudOps-aiops
+Author: Bamboo
+Email: bamboocloudops@gmail.com
+License: Apache 2.0
+Description: 日志配置模块 - 为整个应用程序提供集中的日志设置和配置管理
+"""
+
 import logging
 import sys
 from typing import Optional

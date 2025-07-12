@@ -1,19 +1,18 @@
-#!/usr/bin/env python
-"""
-知识库文档召回率测试模块
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 
-测试项目:
-1. 文档加载功能
-2. 文档召回率测试
+"""
+AI-CloudOps-aiops
+Author: Bamboo
+Email: bamboocloudops@gmail.com
+License: Apache 2.0
+Description: 知识库文档召回率测试模块，验证文档加载和检索功能
 """
 
 import os
 import sys
 import pytest
 import logging
-import json
-import random
-from pathlib import Path
 
 # 添加项目路径到sys.path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -54,7 +53,6 @@ async def test_document_recall_rate():
     logger.info("测试文档召回率")
     
     from app.core.agents.assistant import AssistantAgent
-    import time
     
     # 创建助手代理实例
     agent = AssistantAgent()

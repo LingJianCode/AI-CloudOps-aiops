@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 """
-AIOps 机器学习模型训练脚本
-用于构建QPS-实例数预测模型
+AI-CloudOps-aiops
+Author: Bamboo
+Email: bamboocloudops@gmail.com
+License: Apache 2.0
+Description: 机器学习模块 - 提供负载预测和机器学习模型功能
 """
 
 import os

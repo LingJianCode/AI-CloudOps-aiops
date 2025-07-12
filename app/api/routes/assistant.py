@@ -1,5 +1,12 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 """
-智能小助手API路由
+AI-CloudOps-aiops
+Author: Bamboo
+Email: bamboocloudops@gmail.com
+License: Apache 2.0
+Description: AI助手API路由模块，提供智能问答和流式对话功能
 """
 
 import asyncio
@@ -104,7 +111,6 @@ def assistant_query():
     try:
         data = request.json
         question = data.get('question', '')
-        use_web_search = data.get('use_web_search', False)
         session_id = data.get('session_id')
         max_context_docs = data.get('max_context_docs', 4)
         
@@ -127,7 +133,6 @@ def assistant_query():
         try:
             result = safe_async_run(agent.get_answer(
                 question=question,
-                use_web_search=use_web_search,
                 session_id=session_id,
                 max_context_docs=max_context_docs
             ))

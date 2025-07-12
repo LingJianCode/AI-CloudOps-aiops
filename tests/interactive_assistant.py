@@ -1,6 +1,12 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 """
-交互式智能小助手测试工具
+AI-CloudOps-aiops
+Author: Bamboo
+Email: bamboocloudops@gmail.com
+License: Apache 2.0
+Description: 交互式智能助手测试工具，提供命令行交互界面
 """
 
 import os

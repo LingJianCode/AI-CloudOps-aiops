@@ -1,5 +1,12 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 """
-根因分析核心模块
+AI-CloudOps-aiops
+Author: Bamboo
+Email: bamboocloudops@gmail.com
+License: Apache 2.0
+Description: 根因分析模块初始化文件，提供智能故障诊断和根因分析功能
 """
 
 from .analyzer import RCAAnalyzer

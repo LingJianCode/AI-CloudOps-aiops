@@ -1,3 +1,14 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+AI-CloudOps-aiops
+Author: Bamboo
+Email: bamboocloudops@gmail.com
+License: Apache 2.0
+Description: Kubernetes服务模块 - 提供Kubernetes集群管理、Pod操作和自动化修复功能
+"""
+
 import logging
 import json
 import yaml

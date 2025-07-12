@@ -1,3 +1,14 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+AI-CloudOps-aiops
+Author: Bamboo
+Email: bamboocloudops@gmail.com
+License: Apache 2.0
+Description: 根因分析API路由 - 提供异常检测、相关性分析和根本原因识别功能
+"""
+
 from flask import Blueprint, request, jsonify
 from datetime import datetime, timedelta
 import asyncio

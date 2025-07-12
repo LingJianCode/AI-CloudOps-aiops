@@ -1,5 +1,12 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 """
-AIOps平台 - 根因分析与自动化修复系统
+AI-CloudOps-aiops
+Author: Bamboo
+Email: bamboocloudops@gmail.com
+License: Apache 2.0
+Description: 应用程序包初始化文件，定义包版本和基本信息
 """
 
 __version__ = "1.0.0"
