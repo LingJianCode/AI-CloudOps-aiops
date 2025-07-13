@@ -1044,7 +1044,8 @@ class RedisVectorStoreManager:
                     self.vector_store = RedisVectorStore(
                         redis_config=self.redis_config,
                         collection_name=self.collection_name,
-                        embedding_model=self.embedding_model,
+                        embedding_model=None,  # 设为None，避免参数不匹配错误
+                        vector_dim=self.embedding_dimensions,  # 使用维度代替嵌入模型
                         local_storage_path=self.local_storage_path
                     )
         return self.vector_store
@@ -1127,10 +1128,14 @@ class VectorStoreManager:
             
             # 创建Redis管理器
             redis_config['decode_responses'] = False  # 向量存储需要设为False
+            
+            # 获取嵌入维度
+            embedding_dimensions = self._get_embedding_dimensions()
+            
             self.redis_manager = RedisVectorStoreManager(
                 redis_config=redis_config,
                 collection_name=self.collection_name,
-                embedding_dimensions=self._get_embedding_dimensions()
+                embedding_dimensions=embedding_dimensions
             )
             
         except ImportError:
