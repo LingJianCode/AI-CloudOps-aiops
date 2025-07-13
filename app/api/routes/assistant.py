@@ -334,26 +334,24 @@ def clear_cache():
                 'data': {}
             }), 500
         
-        # 清空缓存
-        old_cache_size = len(agent.response_cache)
-        agent.response_cache = {}
-        logger.info(f"已清空响应缓存，原有 {old_cache_size} 条缓存项")
-        
-        # 保存空缓存
+        # 使用新的Redis缓存清空功能
         try:
-            agent._save_cache()
-            logger.info("已保存空缓存文件")
-        except Exception as cache_error:
-            logger.warning(f"保存空缓存失败: {str(cache_error)}")
-        
-        return jsonify({
-            'code': 0,
-            'message': '缓存清除成功',
-            'data': {
-                'cleared_items': old_cache_size,
-                'timestamp': datetime.now().isoformat()
-            }
-        })
+            result = agent.clear_cache()
+            return jsonify({
+                'code': 0,
+                'message': result.get('message', '缓存清除成功'),
+                'data': {
+                    'cleared_items': result.get('cleared_count', 0),
+                    'success': result.get('success', True)
+                }
+            })
+        except Exception as e:
+            logger.error(f"清空缓存失败: {str(e)}")
+            return jsonify({
+                'code': 500,
+                'message': f'清空缓存失败: {str(e)}',
+                'data': {}
+            }), 500
     except Exception as e:
         logger.error(f"清除缓存失败: {str(e)}")
         return jsonify({

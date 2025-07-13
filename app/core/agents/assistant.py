@@ -15,28 +15,25 @@ import uuid
 import logging
 import re
 import time
-import json
 import asyncio
 from asyncio import CancelledError
-import hashlib
-import shutil
 from datetime import datetime
-from typing import List, Dict, Any, Optional, Tuple, Set
+from typing import List, Dict, Any, Optional, Tuple
 from pathlib import Path
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 import threading
 from concurrent.futures import ThreadPoolExecutor
-import pickle
-from collections import defaultdict, Counter
-import math
+from collections import Counter
 
 from app.constants import EMBEDDING_BATCH_SIZE
 
-from langchain_chroma import Chroma
+# Redis向量存储
+from app.core.vector.redis_vector_store import RedisVectorStoreManager, OptimizedRedisVectorStore
+# Redis缓存管理器
+from app.core.cache.redis_cache_manager import RedisCacheManager
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_ollama import OllamaEmbeddings, ChatOllama
 from langchain.text_splitter import RecursiveCharacterTextSplitter, MarkdownHeaderTextSplitter
-from langchain_core.pydantic_v1 import BaseModel, Field
 from langchain_core.documents import Document
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from langchain_core.embeddings import Embeddings
@@ -55,7 +52,7 @@ except ImportError:
   ADVANCED_LOADERS_AVAILABLE = False
 
 import numpy as np
-from chromadb.config import Settings
+# Redis配置
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
@@ -90,20 +87,34 @@ class QueryRewriter:
     """扩展查询，生成多个相关查询变体"""
     expanded_queries = [query]  # 原始查询
 
-    # 1. 同义词替换
+    # 1. 同义词替换 - 增加更多变体
     for word, synonyms in self.synonyms.items():
       if word in query:
-        for synonym in synonyms[:2]:  # 限制同义词数量
+        for synonym in synonyms[:3]:  # 增加同义词数量
           expanded_queries.append(query.replace(word, synonym))
 
     # 2. 关键词提取和重组
     keywords = self._extract_keywords(query)
-    if len(keywords) > 1:
+    if len(keywords) >= 2:
       # 关键词组合
       expanded_queries.append(' '.join(keywords))
+      # 部分关键词组合
+      if len(keywords) >= 3:
+        expanded_queries.append(' '.join(keywords[:2]))
+        expanded_queries.append(' '.join(keywords[-2:]))
 
-    # 3. 去重并限制数量
-    unique_queries = list(dict.fromkeys(expanded_queries))[:5]  # 减少查询数量
+    # 3. 添加语义相关的扩展
+    if '部署' in query or '安装' in query:
+      expanded_queries.extend(['配置方法', '安装步骤', '部署指南'])
+    elif '监控' in query:
+      expanded_queries.extend(['监控配置', '指标采集', '告警设置'])
+    elif '故障' in query or '错误' in query:
+      expanded_queries.extend(['问题排查', '故障诊断', '错误解决'])
+    elif '性能' in query:
+      expanded_queries.extend(['性能调优', '优化方法', '性能分析'])
+
+    # 4. 去重并适当增加数量
+    unique_queries = list(dict.fromkeys(expanded_queries))[:8]  # 增加查询数量
     return unique_queries
 
   def _extract_keywords(self, text: str) -> List[str]:
@@ -141,11 +152,11 @@ class DocumentRanker:
     except Exception as e:
       logger.error(f"文档排序器训练失败: {e}")
 
-  def rank_documents(self, query: str, documents: List[Document], top_k: int = 8) -> List[
+  def rank_documents(self, query: str, documents: List[Document], top_k: int = 10) -> List[
     Tuple[Document, float]]:
-    """对文档进行相关性排序"""
+    """对文档进行相关性排序 - 提升召回率优化版"""
     if not self.fitted or not documents:
-      return [(doc, 0.5) for doc in documents[:top_k]]
+      return [(doc, 0.7) for doc in documents[:top_k]]  # 提高默认分数
 
     try:
       # 查询向量化
@@ -155,29 +166,54 @@ class DocumentRanker:
       doc_vectors = self.tfidf_vectorizer.transform([doc.page_content for doc in documents])
       similarities = cosine_similarity(query_vector, doc_vectors).flatten()
 
-      # 综合评分
+      # 优化评分算法
       scored_docs = []
       for i, doc in enumerate(documents):
         tfidf_score = similarities[i]
-        length_score = min(len(doc.page_content) / 800, 1.0)  # 调整长度评分
+        
+        # 调整长度评分 - 不过度惩罚短文档
+        content_length = len(doc.page_content)
+        if content_length < 100:
+          length_score = 0.6  # 短文档基础分数
+        elif content_length < 500:
+          length_score = min(content_length / 300, 1.0)
+        else:
+          length_score = 1.0  # 长文档满分
+          
         freshness_score = self._calculate_freshness_score(doc)
+        
+        # 关键词匹配加分
+        query_words = set(query.lower().split())
+        doc_words = set(doc.page_content.lower().split())
+        keyword_overlap = len(query_words & doc_words) / max(len(query_words), 1)
+        
+        # 文档类型加分
+        doc_type_score = 1.0
+        if doc.metadata:
+          filetype = doc.metadata.get('filetype', '').lower()
+          if filetype in ['md', 'markdown', 'txt']:
+            doc_type_score = 1.2  # 文本文档加分
+          elif filetype in ['pdf', 'doc']:
+            doc_type_score = 1.1
 
-        # 综合评分
+        # 综合评分 - 调整权重提升召回率
         final_score = (
-          tfidf_score * 0.7 +
-          length_score * 0.2 +
-          freshness_score * 0.1
+          tfidf_score * 0.4 +           # 降低TF-IDF权重
+          length_score * 0.15 +         # 降低长度权重
+          freshness_score * 0.1 +       # 降低时间权重
+          keyword_overlap * 0.25 +      # 增加关键词权重
+          doc_type_score * 0.1          # 增加文档类型权重
         )
 
         scored_docs.append((doc, final_score))
 
-      # 排序并返回前k个
+      # 排序并返回更多结果
       scored_docs.sort(key=lambda x: x[1], reverse=True)
       return scored_docs[:top_k]
 
     except Exception as e:
       logger.error(f"文档排序失败: {e}")
-      return [(doc, 0.5) for doc in documents[:top_k]]
+      return [(doc, 0.6) for doc in documents[:top_k]]
 
   def _calculate_freshness_score(self, doc: Document) -> float:
     """计算文档新鲜度评分"""
@@ -203,13 +239,13 @@ class ContextAwareRetriever:
     self.conversation_context = {}
 
   def retrieve_with_context(self, query: str, session_id: str = None,
-                            history: List[Dict] = None, top_k: int = 6) -> List[Document]:
-    """带上下文的智能检索"""
+                            history: List[Dict] = None, top_k: int = 8) -> List[Document]:
+    """带上下文的智能检索 - 提升召回率优化版"""
     try:
       # 1. 构建增强查询
       enhanced_query = self._build_enhanced_query(query, history)
 
-      # 2. 多查询检索
+      # 2. 多查询检索 - 降低阈值提升召回率
       all_docs = []
       queries = self.query_rewriter.expand_query(enhanced_query)
 
@@ -221,16 +257,34 @@ class ContextAwareRetriever:
           logger.warning(f"查询检索失败 '{q}': {e}")
           continue
 
-      # 3. 去重
+      # 3. 如果主查询结果太少，尝试部分匹配
+      if len(all_docs) < top_k:
+        # 尝试关键词查询
+        query_words = query.split()
+        if len(query_words) > 1:
+          for word in query_words:
+            if len(word) > 2:  # 跳过太短的词
+              try:
+                word_docs = self.base_retriever.invoke(word)
+                all_docs.extend(word_docs)
+                if len(all_docs) >= top_k * 2:
+                  break
+              except Exception as e:
+                logger.warning(f"关键词查询失败 '{word}': {e}")
+
+      # 4. 去重
       unique_docs = self._deduplicate_documents(all_docs)
 
-      # 4. 智能排序
-      ranked_docs = self.doc_ranker.rank_documents(enhanced_query, unique_docs, top_k)
+      # 5. 智能排序 - 增加返回数量
+      if unique_docs:
+        ranked_docs = self.doc_ranker.rank_documents(enhanced_query, unique_docs, top_k * 2)
+      else:
+        ranked_docs = []
 
-      # 5. 上下文过滤
-      filtered_docs = self._context_filter(ranked_docs, session_id, history)
+      # 6. 宽松的上下文过滤
+      filtered_docs = self._context_filter_lenient(ranked_docs, session_id, history)
 
-      return [doc for doc, score in filtered_docs]
+      return [doc for doc, score in filtered_docs[:top_k]]
 
     except Exception as e:
       logger.error(f"上下文感知检索失败: {e}")
@@ -277,6 +331,33 @@ class ContextAwareRetriever:
         unique_docs.append(doc)
 
     return unique_docs
+
+  def _context_filter_lenient(self, ranked_docs: List[Tuple[Document, float]],
+                      session_id: str = None, history: List[Dict] = None) -> List[
+    Tuple[Document, float]]:
+    """宽松的基于上下文的文档过滤 - 提升召回率"""
+    if not history or not ranked_docs:
+      return ranked_docs
+
+    # 分析对话主题
+    conversation_topics = self._extract_conversation_topics(history)
+
+    # 根据主题调整分数 - 使用更宽松的策略
+    adjusted_docs = []
+    for doc, score in ranked_docs:
+      topic_relevance = self._calculate_topic_relevance(doc, conversation_topics)
+      
+      # 宽松的分数调整 - 避免过度惩罚
+      if topic_relevance > 0.3:  # 降低阈值
+        adjusted_score = score * 0.9 + topic_relevance * 0.1  # 减少调整幅度
+      else:
+        adjusted_score = score * 0.95  # 轻微降低分数而不是大幅惩罚
+      
+      adjusted_docs.append((doc, adjusted_score))
+
+    # 重新排序但保持更多文档
+    adjusted_docs.sort(key=lambda x: x[1], reverse=True)
+    return adjusted_docs
 
   def _context_filter(self, ranked_docs: List[Tuple[Document, float]],
                       session_id: str = None, history: List[Dict] = None) -> List[
@@ -339,34 +420,57 @@ class ContextAwareRetriever:
     return max(relevance_scores) if relevance_scores else 0.5
 
 
-# ==================== 高级答案生成器 ====================
+# ==================== 可靠的答案生成器 ====================
 
-class AdvancedAnswerGenerator:
-  """高级答案生成器，提升回答质量"""
+class ReliableAnswerGenerator:
+  """可靠的答案生成器 - 注重稳定性和回答质量"""
 
   def __init__(self, llm):
     self.llm = llm
+    self._cache = {}  # 简单的内存缓存
+    self._last_cleanup = time.time()
 
   async def generate_structured_answer(self, question: str, docs: List[Document],
                                        context: str = None) -> Dict[str, Any]:
-    """生成结构化答案"""
+    """生成结构化答案 - 强化版本，确保使用文档内容"""
     try:
-      # 1. 分析问题类型
-      question_type = self._classify_question(question)
+      # 1. 输入验证
+      if not question or not question.strip():
+        return self._get_simple_response("问题为空", docs)
+      
+      if not docs:
+        logger.warning("没有相关文档，无法生成答案")
+        return self._get_simple_response("暂时没有找到相关文档，请尝试调整问题描述", docs)
 
-      # 2. 构建上下文
-      structured_context = self._build_structured_context(docs, question_type)
+      logger.debug(f"开始生成答案 - 问题: '{question}', 文档数: {len(docs)}")
 
-      # 3. 生成答案
-      answer = await self._generate_answer_with_template(
-        question, structured_context, question_type, context
+      # 2. 问题类型分类 - 改进版
+      question_type = self._classify_question_enhanced(question)
+      logger.debug(f"问题分类: {question_type}")
+
+      # 3. 构建详细的上下文 - 强制使用文档内容
+      structured_context = self._build_enhanced_context(docs, question, question_type)
+      if not structured_context or len(structured_context.strip()) < 50:
+        logger.warning("构建的上下文内容不足，强制使用文档摘要")
+        structured_context = self._build_document_summary(docs)
+
+      logger.debug(f"构建的上下文长度: {len(structured_context)}")
+
+      # 4. 强制生成基于文档的回答
+      answer = await self._generate_document_based_answer_enhanced(
+        question, structured_context, question_type, context, docs
       )
 
-      # 4. 提取关键信息
-      key_points = self._extract_key_points(answer, docs)
+      # 5. 验证答案质量
+      if self._is_template_answer(answer):
+        logger.warning("检测到模板回答，强制重新生成")
+        answer = await self._force_document_answer(question, docs, question_type)
 
-      # 5. 生成置信度
-      confidence = self._calculate_confidence(question, answer, docs)
+      # 6. 计算置信度
+      confidence = self._calculate_enhanced_confidence(question, answer, docs)
+
+      # 7. 提取关键点
+      key_points = self._extract_enhanced_key_points(answer, docs)
 
       return {
         'answer': answer,
@@ -377,162 +481,448 @@ class AdvancedAnswerGenerator:
       }
 
     except Exception as e:
-      logger.error(f"结构化答案生成失败: {e}")
-      # 降级到基础生成
-      basic_answer = await self._basic_generate(question, docs, context)
-      return {
-        'answer': basic_answer,
-        'question_type': 'general',
-        'key_points': [],
-        'confidence': 0.5,
-        'source_count': len(docs)
-      }
+      logger.error(f"结构化答案生成失败: {str(e)}")
+      # 即使出错也要尝试基于文档生成答案
+      return await self._generate_emergency_document_answer(question, docs)
 
-  def _classify_question(self, question: str) -> str:
-    """分类问题类型"""
-    question_lower = question.lower()
-
-    if any(word in question_lower for word in ['部署', '安装', '配置', '搭建']):
-      return 'deployment'
-    elif any(word in question_lower for word in ['监控', '观察', '检测']):
-      return 'monitoring'
-    elif any(word in question_lower for word in ['故障', '错误', '问题', '异常']):
-      return 'troubleshooting'
-    elif any(word in question_lower for word in ['性能', '优化', '效率']):
-      return 'performance'
-    else:
-      return 'general'
-
-  def _build_structured_context(self, docs: List[Document], question_type: str) -> str:
-    """构建结构化上下文"""
+  def _build_enhanced_context(self, docs: List[Document], question: str, question_type: str) -> str:
+    """构建增强的上下文，确保内容丰富"""
     if not docs:
       return ""
 
-    context = f"基于{len(docs)}个相关文档的信息:\n\n"
-
-    for i, doc in enumerate(docs):
+    context_parts = []
+    max_docs = min(len(docs), 6)  # 增加文档数量
+    
+    for i, doc in enumerate(docs[:max_docs]):
       source = doc.metadata.get('filename', f'文档{i + 1}') if doc.metadata else f'文档{i + 1}'
-      content = doc.page_content
+      
+      # 更智能的内容提取
+      content = self._extract_relevant_content_enhanced(doc.page_content, question, question_type)
+      
+      if content and len(content.strip()) > 20:  # 确保内容有意义
+        context_parts.append(f"[{source}]\n{content}")
+    
+    return "\n\n".join(context_parts)
 
-      # 根据问题类型突出相关内容
-      highlighted_content = self._highlight_relevant_content(content, question_type)
-
-      context += f"【{source}】\n{highlighted_content}\n\n"
-
-    return context
-
-  def _highlight_relevant_content(self, content: str, question_type: str) -> str:
-    """突出显示相关内容"""
+  def _extract_relevant_content_enhanced(self, content: str, question: str, question_type: str) -> str:
+    """增强的相关内容提取"""
+    if not content:
+      return ""
+    
+    # 获取问题关键词
+    question_words = set(question.lower().split())
+    
+    # 根据问题类型添加相关关键词
     type_keywords = {
-      'deployment': ['部署', '安装', '配置', '搭建', '启动'],
-      'monitoring': ['监控', '观察', '检测', '巡检', '指标'],
-      'troubleshooting': ['故障', '错误', '问题', '异常', '解决'],
-      'performance': ['性能', '优化', '效率', '速度', '响应']
+      'core_architecture': ['核心', '功能', '模块', '组件', '架构'],
+      'architecture': ['系统', '架构', '设计', '组件'],
+      'deployment': ['部署', '安装', '配置', '启动'],
+      'monitoring': ['监控', '检测', '指标', '告警'],
+      'troubleshooting': ['故障', '问题', '错误', '排查'],
+      'performance': ['性能', '优化', '效率', '速度'],
+      'features': ['特性', '特点', '功能', '能力'],
+      'technical': ['技术', '实现', '原理', '算法']
     }
+    
+    relevant_keywords = type_keywords.get(question_type, [])
+    all_keywords = question_words.union(set(relevant_keywords))
+    
+    # 按段落分割并评分
+    paragraphs = content.split('\n\n')
+    scored_paragraphs = []
+    
+    for paragraph in paragraphs:
+      if len(paragraph.strip()) < 20:
+        continue
+        
+      paragraph_lower = paragraph.lower()
+      
+      # 计算相关性分数
+      keyword_count = sum(1 for keyword in all_keywords if keyword in paragraph_lower)
+      score = keyword_count / max(len(all_keywords), 1)
+      
+      # 标题和重要标记加分
+      if any(marker in paragraph for marker in ['#', '##', '###', '**', '重要', '核心']):
+        score += 0.3
+        
+      scored_paragraphs.append((paragraph, score))
+    
+    # 排序并选择最相关的段落
+    scored_paragraphs.sort(key=lambda x: x[1], reverse=True)
+    
+    # 选择最多4个最相关的段落
+    selected_paragraphs = [p[0] for p in scored_paragraphs[:4] if p[1] > 0]
+    
+    if not selected_paragraphs:
+      # 如果没有相关段落，返回前几段
+      return '\n'.join(paragraphs[:2])
+    
+    return '\n\n'.join(selected_paragraphs)
 
-    keywords = type_keywords.get(question_type, [])
+  def _build_document_summary(self, docs: List[Document]) -> str:
+    """构建文档摘要作为后备内容"""
+    if not docs:
+      return "无可用文档内容"
+    
+    summaries = []
+    for i, doc in enumerate(docs[:4]):
+      content = doc.page_content
+      source = doc.metadata.get('filename', f'文档{i+1}') if doc.metadata else f'文档{i+1}'
+      
+      # 提取前几行作为摘要
+      lines = [line.strip() for line in content.split('\n') if line.strip()]
+      summary_lines = lines[:5]  # 前5行
+      summary = '\n'.join(summary_lines)
+      
+      if summary:
+        summaries.append(f"[{source}] {summary}")
+    
+    return '\n\n'.join(summaries)
 
-    # 简单的内容截取和关键词突出
-    lines = content.split('\n')
-    relevant_lines = []
-
-    for line in lines:
-      line_lower = line.lower()
-      if any(keyword in line_lower for keyword in keywords):
-        relevant_lines.append(line)
-      elif len(relevant_lines) < 2:  # 确保有足够内容
-        relevant_lines.append(line)
-
-    return '\n'.join(relevant_lines[:4])  # 最多4行
-
-  async def _generate_answer_with_template(self, question: str, context: str,
-                                           question_type: str, history_context: str = None) -> str:
-    """使用模板生成答案"""
-    # 根据问题类型选择系统提示
-    system_prompts = {
-      'deployment': """你是AIOps部署专家。请基于文档内容提供清晰的部署指导，包括前置条件、具体步骤、注意事项和验证方法。回答要简洁实用。""",
-      'monitoring': """你是AIOps监控专家。请基于文档内容提供监控相关建议，包括监控指标、配置方法、阈值设置和告警策略。""",
-      'troubleshooting': """你是AIOps故障排除专家。请基于文档内容提供故障诊断和解决方案，包括问题分析、排查步骤、解决方案和预防措施。""",
-      'performance': """你是AIOps性能优化专家。请基于文档内容提供性能优化建议，包括性能分析、优化策略、最佳实践和效果评估。""",
-      'general': """你是专业的AIOps助手。请基于文档内容准确回答问题，确保信息的完整性和实用性。"""
-    }
-
-    system_prompt = system_prompts.get(question_type, system_prompts['general'])
-
-    user_prompt = f"{history_context}\n\n" if history_context else ""
-    user_prompt += f"问题: {question}\n\n相关文档内容:\n{context}\n\n请提供专业简洁的回答："
-
-    messages = [
-      SystemMessage(content=system_prompt),
-      HumanMessage(content=user_prompt)
-    ]
-
-    response = await asyncio.wait_for(self.llm.ainvoke(messages), timeout=30)
-    return response.content.strip()
-
-  def _extract_key_points(self, answer: str, docs: List[Document]) -> List[str]:
-    """提取答案关键点"""
-    sentences = re.split(r'[。！？.]', answer)
-    key_points = []
-
-    for sentence in sentences:
-      sentence = sentence.strip()
-      if (len(sentence) > 15 and len(sentence) < 100 and
-        any(keyword in sentence for keyword in ['重要', '关键', '注意', '步骤', '方法', '建议'])):
-        key_points.append(sentence)
-
-    return key_points[:3]  # 最多3个关键点
-
-  def _calculate_confidence(self, question: str, answer: str, docs: List[Document]) -> float:
-    """计算回答置信度"""
+  async def _generate_document_based_answer_enhanced(
+    self, question: str, context: str, question_type: str, 
+    history_context: str = None, docs: List[Document] = None
+  ) -> str:
+    """增强的基于文档的答案生成"""
     try:
-      # 多维度置信度计算
-      doc_confidence = min(len(docs) / 4, 1.0)  # 调整基准
-      length_confidence = min(len(answer) / 150, 1.0)  # 调整基准
+      if not context or len(context.strip()) < 20:
+        return await self._force_document_answer(question, docs or [], question_type)
 
-      # 关键词匹配置信度
-      question_words = set(re.findall(r'\w+', question.lower()))
-      answer_words = set(re.findall(r'\w+', answer.lower()))
-      doc_words = set()
-      for doc in docs:
-        doc_words.update(re.findall(r'\w+', doc.page_content.lower()))
+      # 针对不同问题类型的专门提示
+      type_prompts = {
+        'core_architecture': "你是AIOps架构专家。请详细介绍系统的核心功能模块，基于提供的文档内容。",
+        'architecture': "你是系统架构分析师。请基于文档内容详细说明系统架构和组件。",
+        'deployment': "你是部署专家。请基于文档内容提供详细的部署和配置指导。",
+        'monitoring': "你是监控专家。请基于文档内容说明监控相关的功能和配置。",
+        'troubleshooting': "你是故障诊断专家。请基于文档内容提供问题排查和解决方案。",
+        'performance': "你是性能优化专家。请基于文档内容提供性能相关的分析和建议。",
+        'features': "你是产品专家。请基于文档内容详细介绍相关特性和功能。",
+        'technical': "你是技术专家。请基于文档内容详细说明技术实现和原理。",
+        'usage': "你是使用指导专家。请基于文档内容提供详细的使用方法和操作指南。",
+        'general': "你是专业的AIOps助手。请基于文档内容准确回答问题。"
+      }
 
-      qa_overlap = len(question_words & answer_words) / len(question_words) if question_words else 0
-      ad_overlap = len(answer_words & doc_words) / len(answer_words) if answer_words else 0
+      system_prompt = type_prompts.get(question_type, type_prompts['general'])
+      
+      # 构建详细的用户提示
+      user_prompt_parts = []
+      if history_context:
+        user_prompt_parts.append(f"对话背景: {history_context}")
+      
+      user_prompt_parts.extend([
+        f"问题类型: {question_type}",
+        f"用户问题: {question}",
+        "",
+        "==== 相关文档内容 ====",
+        context,
+        "",
+        "==== 回答要求 ====",
+        "1. 严格基于上述文档内容回答",
+        "2. 提供详细、结构化的回答",
+        "3. 如果文档中有具体的功能模块或特性，请逐一列出并说明",
+        "4. 保持专业性和准确性",
+        "5. 不要编造文档中没有的信息",
+        "",
+        "请开始回答："
+      ])
+      
+      user_prompt = "\n".join(user_prompt_parts)
 
-      # 综合置信度
-      confidence = (
-        doc_confidence * 0.3 +
-        length_confidence * 0.2 +
-        qa_overlap * 0.2 +
-        ad_overlap * 0.3
-      )
-
-      return min(max(confidence, 0.1), 1.0)
-
-    except Exception as e:
-      logger.error(f"置信度计算失败: {e}")
-      return 0.5
-
-  async def _basic_generate(self, question: str, docs: List[Document], context: str = None) -> str:
-    """基础答案生成（降级方案）"""
-    try:
-      docs_content = "\n\n".join([doc.page_content[:500] for doc in docs])  # 限制长度
-
-      system_prompt = "你是专业的AI助手。请基于提供的文档内容简洁准确地回答问题。"
-      user_prompt = f"{context}\n\n问题: {question}\n\n文档: {docs_content}" if context else f"问题: {question}\n\n文档: {docs_content}"
-
+      # 调用LLM生成答案
       messages = [
         SystemMessage(content=system_prompt),
         HumanMessage(content=user_prompt)
       ]
 
-      response = await asyncio.wait_for(self.llm.ainvoke(messages), timeout=20)
-      return response.content.strip()
+      try:
+        response = await asyncio.wait_for(self.llm.ainvoke(messages), timeout=25)
+        answer = response.content.strip()
+        
+        # 验证答案质量
+        if len(answer) < 30:
+          raise ValueError("回答过短")
+        
+        if self._is_template_answer(answer):
+          raise ValueError("生成了模板回答")
+          
+        return answer
 
+      except asyncio.TimeoutError:
+        logger.warning("LLM调用超时，使用文档摘要回答")
+        return self._generate_document_summary_answer(question, docs or [], question_type)
+      
     except Exception as e:
-      logger.error(f"基础答案生成失败: {e}")
-      return "抱歉，我暂时无法处理您的问题，请稍后重试。"
+      logger.error(f"增强答案生成失败: {e}")
+      return await self._force_document_answer(question, docs or [], question_type)
+
+  def _is_template_answer(self, answer: str) -> bool:
+    """检测是否为模板回答"""
+    template_indicators = [
+      "基于文档内容，这是一个关于",
+      "请查看相关文档获取详细信息",
+      "抱歉，我找不到",
+      "暂时没有找到相关信息",
+      "请尝试重新表述",
+      "由于主要模型暂时不可用"
+    ]
+    
+    answer_lower = answer.lower()
+    return any(indicator in answer_lower for indicator in template_indicators)
+
+  async def _force_document_answer(self, question: str, docs: List[Document], question_type: str) -> str:
+    """强制基于文档生成答案，不依赖LLM"""
+    if not docs:
+      return "抱歉，没有找到相关文档来回答您的问题。"
+    
+    # 直接从文档中提取和组织答案
+    relevant_content = []
+    
+    for doc in docs[:4]:
+      content = doc.page_content
+      source = doc.metadata.get('filename', '文档') if doc.metadata else '文档'
+      
+      # 提取相关段落
+      relevant_parts = self._extract_relevant_content_enhanced(content, question, question_type)
+      if relevant_parts:
+        relevant_content.append(f"根据{source}：\n{relevant_parts}")
+    
+    if relevant_content:
+      return f"基于相关文档，针对您关于'{question}'的问题，找到以下信息：\n\n" + "\n\n".join(relevant_content)
+    else:
+      # 最后的备选方案
+      return self._generate_document_summary_answer(question, docs, question_type)
+
+  def _generate_document_summary_answer(self, question: str, docs: List[Document], question_type: str) -> str:
+    """生成基于文档摘要的答案"""
+    if not docs:
+      return "抱歉，没有找到相关文档。"
+    
+    summaries = []
+    for doc in docs[:3]:
+      content = doc.page_content
+      # 提取前几个重要句子
+      sentences = [s.strip() for s in content.split('。') if len(s.strip()) > 10]
+      if sentences:
+        summaries.append(sentences[0] + '。')
+    
+    if summaries:
+      return f"关于{question}，根据文档内容：\n\n" + '\n'.join([f"• {s}" for s in summaries])
+    else:
+      return "找到了相关文档，但内容提取遇到问题，建议查看源文档获取详细信息。"
+
+  async def _generate_emergency_document_answer(self, question: str, docs: List[Document]) -> Dict[str, Any]:
+    """紧急情况下基于文档生成答案"""
+    if not docs:
+      answer = "抱歉，没有找到相关文档来回答您的问题。"
+    else:
+      answer = await self._force_document_answer(question, docs, 'general')
+    
+    return {
+      'answer': answer,
+      'question_type': 'general',
+      'key_points': [],
+      'confidence': 0.3,
+      'source_count': len(docs)
+    }
+
+  def _classify_question_enhanced(self, question: str) -> str:
+    """增强的问题分类，更细致的分类"""
+    question_lower = question.lower()
+    
+    # 架构和功能相关
+    if any(word in question_lower for word in ['功能', '模块', '组件', '架构', '结构', '系统', '平台']):
+      if any(word in question_lower for word in ['核心', '主要', '重要', '关键']):
+        return 'core_architecture'
+      return 'architecture'
+    
+    # 部署和安装
+    elif any(word in question_lower for word in ['部署', '安装', '配置', '搭建', '启动', '运行']):
+      return 'deployment'
+    
+    # 监控和观察
+    elif any(word in question_lower for word in ['监控', '观察', '检测', '巡检', '指标', '告警']):
+      return 'monitoring'
+    
+    # 故障和问题
+    elif any(word in question_lower for word in ['故障', '错误', '问题', '异常', '排查', '诊断']):
+      return 'troubleshooting'
+    
+    # 性能和优化
+    elif any(word in question_lower for word in ['性能', '优化', '效率', '调优', '速度']):
+      return 'performance'
+    
+    # 使用和操作
+    elif any(word in question_lower for word in ['使用', '操作', '怎么', '如何', '方法']):
+      return 'usage'
+    
+    # 特性和能力
+    elif any(word in question_lower for word in ['特性', '特点', '能力', '优势', '作用']):
+      return 'features'
+    
+    # 技术和实现
+    elif any(word in question_lower for word in ['技术', '实现', '原理', '算法', '框架']):
+      return 'technical'
+    
+    else:
+      return 'general'
+
+  def _extract_relevant_content_enhanced(self, content: str, question: str, question_type: str) -> str:
+    """增强的相关内容提取"""
+    if not content:
+      return ""
+    
+    # 获取问题关键词
+    question_words = set(question.lower().split())
+    
+    # 根据问题类型添加相关关键词
+    type_keywords = {
+      'core_architecture': ['核心', '功能', '模块', '组件', '架构'],
+      'architecture': ['系统', '架构', '设计', '组件'],
+      'deployment': ['部署', '安装', '配置', '启动'],
+      'monitoring': ['监控', '检测', '指标', '告警'],
+      'troubleshooting': ['故障', '问题', '错误', '排查'],
+      'performance': ['性能', '优化', '效率', '速度'],
+      'features': ['特性', '特点', '功能', '能力'],
+      'technical': ['技术', '实现', '原理', '算法']
+    }
+    
+    relevant_keywords = type_keywords.get(question_type, [])
+    all_keywords = question_words.union(set(relevant_keywords))
+    
+    # 按段落分割并评分
+    paragraphs = content.split('\n\n')
+    scored_paragraphs = []
+    
+    for paragraph in paragraphs:
+      if len(paragraph.strip()) < 20:
+        continue
+        
+      paragraph_lower = paragraph.lower()
+      
+      # 计算相关性分数
+      keyword_count = sum(1 for keyword in all_keywords if keyword in paragraph_lower)
+      score = keyword_count / max(len(all_keywords), 1)
+      
+      # 标题和重要标记加分
+      if any(marker in paragraph for marker in ['#', '##', '###', '**', '重要', '核心']):
+        score += 0.3
+        
+      scored_paragraphs.append((paragraph, score))
+    
+    # 排序并选择最相关的段落
+    scored_paragraphs.sort(key=lambda x: x[1], reverse=True)
+    
+    # 选择最多4个最相关的段落
+    selected_paragraphs = [p[0] for p in scored_paragraphs[:4] if p[1] > 0]
+    
+    if not selected_paragraphs:
+      # 如果没有相关段落，返回前几段
+      return '\n'.join(paragraphs[:2])
+    
+    return '\n\n'.join(selected_paragraphs)
+
+  def _extract_enhanced_key_points(self, answer: str, docs: List[Document]) -> List[str]:
+    """提取增强的关键点"""
+    if len(answer) < 100:
+      return []
+    
+    key_points = []
+    
+    # 寻找项目符号点或编号列表
+    lines = answer.split('\n')
+    for line in lines:
+      line = line.strip()
+      # 检查是否为列表项
+      if (line.startswith('•') or line.startswith('-') or line.startswith('*') or
+          any(line.startswith(f'{i}.') for i in range(1, 10))):
+        if 15 < len(line) < 150:
+          key_points.append(line)
+    
+    # 如果没有找到列表，提取重要句子
+    if not key_points:
+      sentences = [s.strip() for s in answer.split('。') if s.strip()]
+      for sentence in sentences:
+        if (30 < len(sentence) < 120 and 
+            any(keyword in sentence for keyword in ['重要', '关键', '主要', '核心', '包括', '功能', '特性'])):
+          key_points.append(sentence + '。')
+          if len(key_points) >= 3:
+            break
+    
+    return key_points[:3]
+
+  def _calculate_enhanced_confidence(self, question: str, answer: str, docs: List[Document]) -> float:
+    """计算增强的置信度"""
+    try:
+      base_score = 0.5
+      
+      # 文档数量评分
+      doc_score = min(len(docs) / 4, 0.25)
+      
+      # 回答长度评分
+      length_score = min(len(answer) / 300, 0.2)
+      
+      # 内容质量评分
+      quality_score = 0.0
+      if not self._is_template_answer(answer):
+        quality_score += 0.2
+      
+      # 关键词匹配评分
+      question_words = set(question.lower().split())
+      answer_words = set(answer.lower().split())
+      overlap = len(question_words & answer_words) / max(len(question_words), 1)
+      overlap_score = min(overlap, 0.25)
+      
+      total_score = base_score + doc_score + length_score + quality_score + overlap_score
+      return min(total_score, 1.0)
+    except:
+      return 0.5
+
+  def _extract_enhanced_key_points(self, answer: str, docs: List[Document]) -> List[str]:
+    """提取增强的关键点"""
+    if len(answer) < 100:
+      return []
+    
+    key_points = []
+    
+    # 寻找项目符号点或编号列表
+    lines = answer.split('\n')
+    for line in lines:
+      line = line.strip()
+      # 检查是否为列表项
+      if (line.startswith('•') or line.startswith('-') or line.startswith('*') or
+          any(line.startswith(f'{i}.') for i in range(1, 10))):
+        if 15 < len(line) < 150:
+          key_points.append(line)
+    
+    # 如果没有找到列表，提取重要句子
+    if not key_points:
+      sentences = [s.strip() for s in answer.split('。') if s.strip()]
+      for sentence in sentences:
+        if (30 < len(sentence) < 120 and 
+            any(keyword in sentence for keyword in ['重要', '关键', '主要', '核心', '包括', '功能', '特性'])):
+          key_points.append(sentence + '。')
+          if len(key_points) >= 3:
+            break
+    
+    return key_points[:3]
+
+
+
+
+
+
+
+
+  def _get_simple_response(self, message: str, docs: List[Document]) -> Dict[str, Any]:
+    """获取简单响应"""
+    return {
+      'answer': message,
+      'question_type': 'general',
+      'key_points': [],
+      'confidence': 0.3,
+      'source_count': len(docs)
+    }
+
 
 
 # ==================== 任务管理器 ====================
@@ -626,50 +1016,12 @@ def create_safe_task(coro, description="未命名任务"):
 # ==================== 数据类和模型定义 ====================
 
 @dataclass
-class DocumentMetadata:
-  source: str
-  filename: str
-  filetype: str
-  modified_time: float
-  is_web_result: bool = False
-  relevance_score: float = 0.0
-  recall_rate: float = 0.0
-  confidence_score: float = 0.5
-
-
-@dataclass
-class CacheEntry:
-  timestamp: float
-  data: Dict[str, Any]
-  access_count: int = 0
-  last_access: float = field(default_factory=time.time)
-
-  def is_expired(self, expiry_seconds: int) -> bool:
-    return time.time() - self.timestamp > expiry_seconds
-
-  def update_access(self):
-    """更新访问信息"""
-    self.access_count += 1
-    self.last_access = time.time()
-
-
-@dataclass
 class SessionData:
   session_id: str
   created_at: str
   history: List[Dict[str, Any]]
   metadata: Dict[str, Any]
   context_summary: str = ""
-
-
-class GradeDocuments(BaseModel):
-  binary_score: str = Field(description="文档是否与问题相关，'yes'或'no'")
-  confidence: float = Field(description="判断的置信度，0-1之间")
-
-
-class GradeHallucinations(BaseModel):
-  binary_score: str = Field(description="回答是否基于事实，'yes'或'no'")
-  explanation: str = Field(description="判断理由")
 
 
 # ==================== 备用实现类 ====================
@@ -717,85 +1069,80 @@ class FallbackChatModel(BaseChatModel):
 
 # ==================== 向量存储管理器 ====================
 
+# 使用Redis向量存储管理器 (兼容原有接口)
 class VectorStoreManager:
   def __init__(self, vector_db_path: str, collection_name: str, embedding_model):
     self.vector_db_path = vector_db_path
     self.collection_name = collection_name
     self.embedding_model = embedding_model
-    self.db = None
-    self.retriever = None
     self._lock = threading.Lock()
+    
+    # 获取Redis配置
+    redis_config = {
+      'host': config.redis.host,
+      'port': config.redis.port,
+      'db': config.redis.db,
+      'password': config.redis.password,
+      'connection_timeout': config.redis.connection_timeout,
+      'socket_timeout': config.redis.socket_timeout,
+      'max_connections': config.redis.max_connections,
+      'decode_responses': config.redis.decode_responses
+    }
+    
+    # 初始化优化的Redis向量存储管理器
+    self.redis_manager = RedisVectorStoreManager(
+      redis_config=redis_config,
+      collection_name=collection_name,
+      embedding_model=embedding_model,
+      local_storage_path=vector_db_path
+    )
+    
+    # 使用优化的向量存储
+    # 动态获取嵌入维度
+    try:
+      test_embedding = embedding_model.embed_query("测试")
+      vector_dim = len(test_embedding)
+      logger.info(f"检测到嵌入维度: {vector_dim}")
+    except Exception as e:
+      logger.warning(f"无法检测嵌入维度，使用默认值1536: {e}")
+      vector_dim = 1536
+    
+    self.optimized_store = OptimizedRedisVectorStore(
+      redis_config=redis_config,
+      collection_name=collection_name,
+      embedding_model=embedding_model,
+      vector_dim=vector_dim,  # 使用动态检测的维度
+      local_storage_path=vector_db_path,
+      use_faiss=True,
+      faiss_index_type="Flat"  # 可根据数据量调整为IVF或HNSW
+    )
+    
+    self.retriever = None
     os.makedirs(vector_db_path, exist_ok=True)
 
-  def _get_client_settings(self, persistent: bool = True) -> Settings:
-    return Settings(
-      anonymized_telemetry=False,
-      allow_reset=True,
-      is_persistent=persistent,
-      chroma_db_impl="duckdb+parquet" if not persistent else None
-    )
-
-  def _cleanup_temp_files(self):
-    temp_files = [
-      os.path.join(self.vector_db_path, ".lock"),
-      os.path.join(self.vector_db_path, ".uuid"),
-      os.path.join(self.vector_db_path, "chroma.sqlite3-shm"),
-      os.path.join(self.vector_db_path, "chroma.sqlite3-wal")
-    ]
-
-    for file_path in temp_files:
-      try:
-        if os.path.exists(file_path):
-          os.remove(file_path)
-          logger.debug(f"清理临时文件: {file_path}")
-      except Exception as e:
-        logger.warning(f"清理临时文件失败 {file_path}: {e}")
-
   def load_existing_db(self) -> bool:
-    db_file = os.path.join(self.vector_db_path, "chroma.sqlite3")
-
-    if not os.path.exists(db_file):
-      return False
-
+    """加载现有向量数据库"""
     try:
       with self._lock:
-        logger.info(f"加载现有向量数据库: {db_file}")
-        self.db = Chroma(
-          persist_directory=self.vector_db_path,
-          embedding_function=self.embedding_model,
-          collection_name=self.collection_name,
-          client_settings=self._get_client_settings(persistent=True)
-        )
-
-        self.retriever = self.db.as_retriever(
-          search_type="mmr",
-          search_kwargs={
-            "k": config.rag.top_k * 2,
-            "fetch_k": config.rag.top_k * 3,  # 减少fetch_k
-            "lambda_mult": 0.7
-          }
-        )
-
-        self.retriever.invoke("测试查询")
-        logger.info("数据库加载成功")
-        return True
-
+        logger.info(f"检查Redis向量存储，集合: {self.collection_name}")
+        
+        # 检查Redis向量存储健康状态
+        health = self.redis_manager.health_check()
+        if health.get('status') == 'healthy' and health.get('document_count', 0) > 0:
+          # 初始化检索器
+          self.retriever = self.redis_manager.get_retriever()
+          logger.info(f"Redis向量存储加载成功，包含 {health['document_count']} 个文档")
+          return True
+        else:
+          logger.info("Redis向量存储为空或不可用")
+          return False
+          
     except Exception as e:
-      logger.error(f"加载现有数据库失败: {e}")
-      self._backup_corrupted_db(db_file)
+      logger.error(f"加载Redis向量存储失败: {e}")
       return False
 
-  def _backup_corrupted_db(self, db_file: str):
-    try:
-      backup_dir = os.path.join(self.vector_db_path, f"backup_corrupt_{int(time.time())}")
-      os.makedirs(backup_dir, exist_ok=True)
-      shutil.copy2(db_file, backup_dir)
-      os.remove(db_file)
-      logger.info(f"已备份并删除损坏的数据库文件: {backup_dir}")
-    except Exception as e:
-      logger.error(f"备份损坏数据库失败: {e}")
-
   async def create_vector_store(self, documents: List[Document], use_memory: bool = False) -> bool:
+    """创建向量存储"""
     if not documents:
       logger.warning("没有文档可供创建向量存储")
       documents = [Document(
@@ -840,245 +1187,188 @@ class VectorStoreManager:
 
     try:
       with self._lock:
-        self._cleanup_temp_files()
-
-        if use_memory:
-          logger.info("使用内存模式创建向量存储")
-          client_settings = self._get_client_settings(persistent=False)
-        else:
-          logger.info("使用持久化模式创建向量存储")
-          client_settings = self._get_client_settings(persistent=True)
-
-        batch_size = min(EMBEDDING_BATCH_SIZE, 30)  # 减少批次大小
+        logger.info("使用优化的Redis向量存储创建向量数据库")
+        
+        # 使用优化的向量存储添加文档
+        batch_size = min(EMBEDDING_BATCH_SIZE, 30)
         total_docs = len(enhanced_splits)
-        all_success = True
-
+        
         if total_docs > batch_size:
           logger.info(f"文档量较大({total_docs}个)，使用分批处理方式")
-
-          self.db = Chroma(
-            embedding_function=self.embedding_model,
-            persist_directory=None if use_memory else self.vector_db_path,
-            collection_name=self.collection_name,
-            client_settings=client_settings
-          )
-
+          # 分批处理
           for i in range(0, total_docs, batch_size):
             batch = enhanced_splits[i:i + batch_size]
-            logger.info(
-              f"处理批次 {i // batch_size + 1}/{(total_docs + batch_size - 1) // batch_size}，{len(batch)}个文档")
-
+            logger.info(f"处理批次 {i // batch_size + 1}/{(total_docs + batch_size - 1) // batch_size}，{len(batch)}个文档")
+            
             try:
-              max_api_batch = 15  # 减少API批次大小
-              for j in range(0, len(batch), max_api_batch):
-                sub_batch = batch[j:j + max_api_batch]
-                self.db.add_documents(sub_batch)
-                if j > 0:
-                  await asyncio.sleep(0.2)  # 增加延迟
+              self.optimized_store.add_documents(batch)
+              if i > 0:
+                await asyncio.sleep(0.2)  # 增加延迟
             except Exception as e:
               logger.error(f"添加文档批次失败: {e}")
-              all_success = False
-              break
+              return False
         else:
-          # 数量较少，直接创建
-          self.db = Chroma.from_documents(
-            documents=enhanced_splits,
-            embedding=self.embedding_model,
-            persist_directory=None if use_memory else self.vector_db_path,
-            collection_name=self.collection_name,
-            client_settings=client_settings
-          )
+          # 数量较少，直接添加
+          self.optimized_store.add_documents(enhanced_splits)
 
-        if all_success:
-          self.retriever = self.db.as_retriever(
-            search_type="mmr",
-            search_kwargs={
-              "k": config.rag.top_k * 2,
-              "fetch_k": config.rag.top_k * 3,
-              "lambda_mult": 0.7
-            }
-          )
-
-          self.retriever.invoke("测试查询")
-          logger.info(f"向量存储创建成功，包含 {len(enhanced_splits)} 个文档块")
-          return True
-        return False
+        # 初始化检索器
+        self.retriever = self.get_retriever()
+        
+        # 测试检索器
+        test_docs = self.retriever.get_relevant_documents("测试查询")
+        logger.info(f"优化的Redis向量存储创建成功，包含 {len(enhanced_splits)} 个文档块")
+        return True
 
     except Exception as e:
-      logger.error(f"创建向量存储失败: {e}")
-      if not use_memory:
-        logger.info("尝试回退到内存模式")
-        return await self.create_vector_store(documents, use_memory=True)
+      logger.error(f"创建优化的Redis向量存储失败: {e}")
       return False
 
   def get_retriever(self):
+    """获取检索器 - 改进版本"""
+    if self.retriever is None:
+      # 优化的检索器，提升召回率
+      class OptimizedRetriever:
+        def __init__(self, optimized_store, redis_manager):
+          self.optimized_store = optimized_store
+          self.redis_manager = redis_manager
+          
+        def get_relevant_documents(self, query: str, **kwargs) -> List[Document]:
+          try:
+            k = kwargs.get('k', 8)  # 增加默认检索数量
+            similarity_threshold = kwargs.get('similarity_threshold', 0.1)  # 大幅降低阈值
+            
+            logger.debug(f"开始检索相关文档 - 查询: '{query}', k={k}, 阈值={similarity_threshold}")
+            
+            # 首先尝试混合搜索
+            try:
+              results = self.optimized_store.hybrid_similarity_search(
+                query, 
+                k=k,
+                semantic_weight=0.5,  # 降低语义权重
+                lexical_weight=0.5,   # 增加词汇权重
+                similarity_threshold=similarity_threshold
+              )
+              
+              if results:
+                logger.debug(f"混合搜索找到 {len(results)} 个结果")
+                return [doc for doc, score in results]
+              else:
+                logger.debug("混合搜索无结果，尝试纯语义搜索")
+                
+            except Exception as e:
+              logger.warning(f"混合搜索失败: {e}，使用纯语义搜索")
+            
+            # 降级到语义搜索
+            try:
+              results = self.optimized_store.similarity_search(
+                query, 
+                k=k,
+                similarity_threshold=0.05  # 极低阈值确保找到结果
+              )
+              
+              if results:
+                logger.debug(f"语义搜索找到 {len(results)} 个结果")
+                return [doc for doc, score in results]
+              else:
+                logger.debug("语义搜索无结果，尝试关键词搜索")
+                
+            except Exception as e:
+              logger.warning(f"语义搜索失败: {e}，尝试关键词搜索")
+            
+            # 最后尝试关键词搜索
+            try:
+              # 分解查询为关键词
+              query_words = [word for word in query.split() if len(word) > 1]
+              all_results = []
+              
+              for word in query_words[:3]:  # 只用前3个关键词
+                try:
+                  word_results = self.optimized_store.similarity_search(
+                    word,
+                    k=max(2, k//2),
+                    similarity_threshold=0.01  # 最低阈值
+                  )
+                  all_results.extend([doc for doc, score in word_results])
+                except:
+                  continue
+              
+              # 去重
+              unique_results = []
+              seen_content = set()
+              for doc in all_results:
+                content_hash = hash(doc.page_content[:100])
+                if content_hash not in seen_content:
+                  seen_content.add(content_hash)
+                  unique_results.append(doc)
+                  if len(unique_results) >= k:
+                    break
+              
+              logger.debug(f"关键词搜索找到 {len(unique_results)} 个去重结果")
+              return unique_results
+              
+            except Exception as e:
+              logger.error(f"关键词搜索也失败: {e}")
+              return []
+            
+          except Exception as e:
+            logger.error(f"检索器完全失败: {e}")
+            return []
+            
+        def invoke(self, query) -> List[Document]:
+          # 兼容字符串查询和字典输入
+          if isinstance(query, dict):
+            query_str = query.get("query", "")
+          elif isinstance(query, str):
+            query_str = query
+          else:
+            query_str = str(query)
+          return self.get_relevant_documents(query_str)
+      
+      self.retriever = OptimizedRetriever(self.optimized_store, self.redis_manager)
     return self.retriever
 
-  def search_documents(self, query: str, max_retries: int = 2) -> List[Document]:  # 减少重试次数
+  def search_documents(self, query: str, max_retries: int = 3) -> List[Document]:
+    """搜索文档（优化版） - 提升召回率"""
     if not self.retriever:
       logger.warning("检索器未初始化")
       return []
 
+    logger.debug(f"开始搜索文档: '{query}'")
+    
     for attempt in range(max_retries):
       try:
-        docs = self.retriever.invoke(query)
+        # 使用改进的检索器
+        docs = self.retriever.get_relevant_documents(query, k=10, similarity_threshold=0.05)
+        
         if docs:
-          logger.debug(f"搜索到 {len(docs)} 个文档")
+          logger.debug(f"第 {attempt + 1} 次尝试成功，搜索到 {len(docs)} 个文档")
           return docs
         else:
-          logger.warning(f"搜索返回空结果 (尝试 {attempt + 1}/{max_retries})")
+          logger.debug(f"第 {attempt + 1} 次尝试搜索返回空结果")
+          
+          # 如果没有结果，尝试更宽松的查询
+          if attempt < max_retries - 1:
+            # 提取关键词重新搜索
+            keywords = [word for word in query.split() if len(word) > 2]
+            if keywords:
+              expanded_query = " ".join(keywords[:2])  # 用前两个关键词
+              logger.debug(f"尝试关键词查询: '{expanded_query}'")
+              docs = self.retriever.get_relevant_documents(expanded_query, k=8, similarity_threshold=0.01)
+              if docs:
+                logger.debug(f"关键词查询成功，找到 {len(docs)} 个文档")
+                return docs
 
       except Exception as e:
         logger.error(f"文档搜索失败 (尝试 {attempt + 1}/{max_retries}): {e}")
         if attempt < max_retries - 1:
-          time.sleep(0.5)  # 减少等待时间
+          time.sleep(0.5)
 
+    logger.warning(f"搜索 '{query}' 最终无结果")
     return []
 
 
 # ==================== 缓存管理器 ====================
-
-class CacheManager:
-  """优化的缓存管理器，支持智能缓存策略"""
-
-  def __init__(self, cache_dir: str, expiry_seconds: int = 3600, max_cache_size: int = 1000):
-    self.cache_dir = cache_dir
-    self.expiry_seconds = expiry_seconds
-    self.max_cache_size = max_cache_size
-    self.cache: Dict[str, CacheEntry] = {}
-    self.cache_file = os.path.join(cache_dir, "response_cache.json")
-    self._lock = threading.Lock()
-    self._shutdown = False
-
-    os.makedirs(cache_dir, exist_ok=True)
-    self._load_cache()
-
-  def _generate_cache_key(self, question: str, session_id: str = None, history: List = None) -> str:
-    """生成缓存键"""
-    cache_input = question
-
-    if session_id and history:
-      recent_history = history[-1:] if len(history) >= 1 else history  # 减少历史长度
-      if recent_history:
-        history_str = json.dumps([
-          {"role": h["role"], "content": h["content"][:20]}  # 减少内容长度
-          for h in recent_history
-        ], ensure_ascii=False)
-        cache_input = f"{question}|{history_str}"
-
-    return hashlib.sha256(cache_input.encode('utf-8')).hexdigest()
-
-  def _load_cache(self):
-    """加载缓存文件"""
-    try:
-      if os.path.exists(self.cache_file):
-        with open(self.cache_file, 'r', encoding='utf-8') as f:
-          cache_data = json.load(f)
-
-        valid_cache = {}
-        for k, v in cache_data.items():
-          if isinstance(v, dict) and "timestamp" in v:
-            entry = CacheEntry(
-              timestamp=v["timestamp"],
-              data=v["data"],
-              access_count=v.get("access_count", 0),
-              last_access=v.get("last_access", time.time())
-            )
-            if not entry.is_expired(self.expiry_seconds):
-              valid_cache[k] = entry
-
-        self.cache = valid_cache
-        logger.info(f"加载了 {len(self.cache)} 条有效缓存")
-    except Exception as e:
-      logger.warning(f"加载缓存失败: {e}")
-      self.cache = {}
-
-  def save_cache_sync(self):
-    """同步保存缓存到文件"""
-    if self._shutdown:
-      return
-
-    try:
-      with self._lock:
-        valid_cache = {}
-        for k, v in self.cache.items():
-          if not v.is_expired(self.expiry_seconds):
-            valid_cache[k] = v
-
-        # LRU策略清理
-        if len(valid_cache) > self.max_cache_size:
-          sorted_cache = sorted(
-            valid_cache.items(),
-            key=lambda x: (x[1].access_count, x[1].last_access),
-            reverse=True
-          )
-          valid_cache = dict(sorted_cache[:self.max_cache_size])
-
-        # 转换为可序列化格式
-        serializable_cache = {
-          k: {
-            "timestamp": v.timestamp,
-            "data": v.data,
-            "access_count": v.access_count,
-            "last_access": v.last_access
-          }
-          for k, v in valid_cache.items()
-        }
-
-        with open(self.cache_file, 'w', encoding='utf-8') as f:
-          json.dump(serializable_cache, f, ensure_ascii=False, indent=2)
-
-        self.cache = valid_cache
-        logger.debug(f"保存了 {len(valid_cache)} 条缓存")
-    except Exception as e:
-      logger.warning(f"保存缓存失败: {e}")
-
-  def get(self, question: str, session_id: str = None, history: List = None) -> Optional[
-    Dict[str, Any]]:
-    """获取缓存"""
-    cache_key = self._generate_cache_key(question, session_id, history)
-
-    if cache_key in self.cache:
-      entry = self.cache[cache_key]
-      if not entry.is_expired(self.expiry_seconds):
-        entry.update_access()
-        logger.debug(f"缓存命中: {cache_key[:8]}...")
-        return entry.data
-      else:
-        del self.cache[cache_key]
-
-    return None
-
-  def set(self, question: str, response_data: Dict[str, Any], session_id: str = None,
-          history: List = None):
-    """设置缓存"""
-    if self._shutdown:
-      return
-
-    cache_key = self._generate_cache_key(question, session_id, history)
-    entry = CacheEntry(timestamp=time.time(), data=response_data)
-
-    with self._lock:
-      self.cache[cache_key] = entry
-
-  async def save_async(self):
-    """异步保存缓存"""
-    if self._shutdown:
-      return
-
-    try:
-      loop = asyncio.get_event_loop()
-      await loop.run_in_executor(None, self.save_cache_sync)
-    except Exception as e:
-      logger.error(f"异步保存缓存失败: {e}")
-
-  def shutdown(self):
-    """关闭缓存管理器"""
-    self._shutdown = True
-    try:
-      self.save_cache_sync()
-    except Exception as e:
-      logger.warning(f"关闭时保存缓存失败: {e}")
+# 使用Redis缓存管理器，不需要本地CacheManager类
 
 
 # ==================== 文档加载器 ====================
@@ -1369,7 +1659,7 @@ async def _check_hallucination_advanced(question: str, answer: str, docs: List[D
 
 
 async def _evaluate_doc_relevance_advanced(question: str, doc: Document) -> Tuple[bool, float]:
-  """高级文档相关性评估"""
+  """高级文档相关性评估 - 提升召回率版本"""
   try:
     # 基础关键词匹配
     question_words = set(re.findall(r'\w+', question.lower()))
@@ -1384,7 +1674,7 @@ async def _evaluate_doc_relevance_advanced(question: str, doc: Document) -> Tupl
 
     # 文档质量评分
     content_length = len(doc.page_content)
-    quality_score = min(content_length / 400, 1.0)  # 调整基准
+    quality_score = min(content_length / 200, 1.0)  # 降低质量要求
 
     # 综合评分
     final_score = (
@@ -1393,13 +1683,13 @@ async def _evaluate_doc_relevance_advanced(question: str, doc: Document) -> Tupl
       quality_score * 0.2
     )
 
-    is_relevant = final_score > 0.15  # 降低阈值
+    is_relevant = final_score > 0.05  # 大幅降低阈值
 
     return is_relevant, final_score
 
   except Exception as e:
     logger.error(f"高级文档相关性评估失败: {e}")
-    return True, 0.5
+    return True, 0.5  # 默认认为相关
 
 
 def _build_context_with_history(session: Optional['SessionData']) -> Optional[str]:
@@ -1421,8 +1711,8 @@ def _build_context_with_history(session: Optional['SessionData']) -> Optional[st
 
 
 async def _filter_relevant_docs_advanced(question: str, docs: List[Document]) -> List[Document]:
-  """高级文档过滤"""
-  if not docs or len(docs) <= 2:
+  """高级文档过滤 - 提升召回率版本"""
+  if not docs or len(docs) <= 3:  # 降低最小文档数要求
     return docs
 
   try:
@@ -1449,7 +1739,7 @@ async def _filter_relevant_docs_advanced(question: str, docs: List[Document]) ->
         key=lambda x: x.metadata.get("relevance_score", 0),
         reverse=True
       )
-      return all_docs_with_scores[:2]  # 减少返回数量
+      return all_docs_with_scores[:4]  # 增加返回数量
 
     # 按相关性排序
     relevant_docs.sort(
@@ -1461,7 +1751,7 @@ async def _filter_relevant_docs_advanced(question: str, docs: List[Document]) ->
 
   except Exception as e:
     logger.error(f"高级文档过滤失败: {e}")
-    return docs[:2]  # 减少返回数量
+    return docs[:4]  # 增加返回数量
 
 
 # ==================== 主要智能助手类 ====================
@@ -1490,10 +1780,25 @@ class AssistantAgent:
 
     # 管理器
     self.vector_store_manager = None
-    self.cache_manager = CacheManager(
-      str(self.vector_db_path / "cache"),
-      expiry_seconds=3600,  # 减少缓存时间
-      max_cache_size=1000  # 减少缓存容量
+    
+    # 使用Redis缓存管理器
+    redis_config = {
+      'host': config.redis.host,
+      'port': config.redis.port,
+      'db': config.redis.db + 1,  # 使用不同的db用于缓存
+      'password': config.redis.password,
+      'connection_timeout': config.redis.connection_timeout,
+      'socket_timeout': config.redis.socket_timeout,
+      'max_connections': config.redis.max_connections,
+      'decode_responses': config.redis.decode_responses
+    }
+    
+    self.cache_manager = RedisCacheManager(
+      redis_config=redis_config,
+      cache_prefix="aiops_assistant_cache:",
+      default_ttl=3600,
+      max_cache_size=1000,
+      enable_compression=True
     )
     self.document_loader = DocumentLoader(str(self.knowledge_base_path))
 
@@ -1530,60 +1835,125 @@ class AssistantAgent:
       raise
 
   def _init_embedding(self):
-    """初始化嵌入模型"""
-    max_retries = 2  # 减少重试次数
+    """初始化嵌入模型 - 改进版本"""
+    max_retries = 3
+    original_provider = self.llm_provider
 
     for attempt in range(max_retries):
       try:
+        logger.info(f"尝试初始化 {self.llm_provider} 嵌入模型 (第 {attempt + 1}/{max_retries} 次)")
+        
         if self.llm_provider == 'openai':
-          logger.info(f"初始化OpenAI嵌入模型 (尝试 {attempt + 1})")
+          # 验证配置
+          if not config.llm.api_key:
+            raise ValueError("OpenAI API key 未配置")
+          if not config.llm.base_url:
+            raise ValueError("OpenAI base URL 未配置")
+          if not config.rag.openai_embedding_model:
+            raise ValueError("OpenAI embedding model 未配置")
+          
+          logger.info(f"OpenAI嵌入配置 - Model: {config.rag.openai_embedding_model}")
+          
           self.embedding = OpenAIEmbeddings(
             model=config.rag.openai_embedding_model,
             api_key=config.llm.api_key,
             base_url=config.llm.base_url,
-            timeout=10,  # 减少超时时间
-            max_retries=2
+            timeout=20,  # 使用 timeout 而不是 request_timeout
+            max_retries=1
           )
         else:
-          logger.info(f"初始化Ollama嵌入模型 (尝试 {attempt + 1})")
+          # Ollama配置验证
+          if not config.llm.ollama_base_url:
+            raise ValueError("Ollama base URL 未配置")
+          if not config.rag.ollama_embedding_model:
+            raise ValueError("Ollama embedding model 未配置")
+          
+          logger.info(f"Ollama嵌入配置 - Model: {config.rag.ollama_embedding_model}")
+          
           self.embedding = OllamaEmbeddings(
             model=config.rag.ollama_embedding_model,
-            base_url=config.llm.ollama_base_url,
-            timeout=10
+            base_url=config.llm.ollama_base_url
+            # 移除 timeout 参数，因为 OllamaEmbeddings 可能不支持
           )
 
-        # 测试嵌入
-        test_embedding = self.embedding.embed_query("测试")
-        if test_embedding and len(test_embedding) > 0:
-          logger.info(f"嵌入模型初始化成功，维度: {len(test_embedding)}")
-          return
-
+        # 详细的嵌入模型测试
+        logger.info("测试嵌入模型连接...")
+        test_texts = ["测试文本", "embedding test"]
+        
+        # 测试批量嵌入
+        test_embeddings = self.embedding.embed_documents(test_texts)
+        if not test_embeddings or len(test_embeddings) != len(test_texts):
+          raise ValueError("批量嵌入测试失败")
+        
+        # 测试单个嵌入
+        single_embedding = self.embedding.embed_query("查询测试")
+        if not single_embedding or len(single_embedding) == 0:
+          raise ValueError("单个嵌入测试失败")
+        
+        # 验证嵌入维度一致性
+        batch_dim = len(test_embeddings[0]) if test_embeddings[0] else 0
+        single_dim = len(single_embedding)
+        if batch_dim != single_dim or batch_dim == 0:
+          raise ValueError(f"嵌入维度不一致: 批量={batch_dim}, 单个={single_dim}")
+        
+        logger.info(f"嵌入模型测试成功 - 维度: {single_dim}, 提供商: {self.llm_provider}")
+        return
+        
       except Exception as e:
-        logger.error(f"嵌入模型初始化失败 (尝试 {attempt + 1}): {e}")
+        error_msg = str(e)
+        logger.error(f"嵌入模型初始化失败 (尝试 {attempt + 1}): {error_msg}")
+        
+        # 记录详细错误信息
+        if "timeout" in error_msg.lower():
+          logger.warning("嵌入模型连接超时")
+        elif "api_key" in error_msg.lower():
+          logger.warning("API密钥相关问题")
+        elif "model" in error_msg.lower():
+          logger.warning("模型不存在或不可用")
+        elif "connection" in error_msg.lower():
+          logger.warning("网络连接问题")
+        
         if attempt < max_retries - 1:
+          # 切换提供商
           self.llm_provider = 'ollama' if self.llm_provider == 'openai' else 'openai'
-          time.sleep(1)
+          logger.info(f"切换到 {self.llm_provider} 嵌入提供商")
+          time.sleep(2)
+        else:
+          # 最后一次尝试使用原始提供商
+          if self.llm_provider != original_provider:
+            self.llm_provider = original_provider
+            logger.info(f"最后一次尝试使用原始嵌入提供商 {original_provider}")
 
-    # 使用备用嵌入
-    logger.warning("使用备用嵌入模型")
+    # 所有尝试都失败，使用备用嵌入
+    logger.error("所有嵌入提供商初始化失败，使用备用嵌入模型")
+    logger.warning("⚠️  当前使用备用嵌入模型，向量检索质量可能受限")
     self.embedding = FallbackEmbeddings()
 
   def _init_llm(self):
-    """初始化语言模型"""
-    max_retries = 2
+    """初始化语言模型 - 改进版本"""
+    max_retries = 3  # 增加重试次数
+    original_provider = self.llm_provider
 
     for attempt in range(max_retries):
       try:
+        logger.info(f"尝试初始化 {self.llm_provider} 语言模型 (第 {attempt + 1}/{max_retries} 次)")
+        
         if self.llm_provider == 'openai':
-          logger.info(f"初始化OpenAI语言模型 (尝试 {attempt + 1})")
+          # 验证配置
+          if not config.llm.api_key:
+            raise ValueError("OpenAI API key 未配置")
+          if not config.llm.base_url:
+            raise ValueError("OpenAI base URL 未配置")
+          
+          logger.info(f"OpenAI配置 - Model: {config.llm.model}, Base URL: {config.llm.base_url}")
 
           self.llm = ChatOpenAI(
             model=config.llm.model,
             api_key=config.llm.api_key,
             base_url=config.llm.base_url,
             temperature=config.rag.temperature,
-            timeout=30,  # 减少超时时间
-            max_retries=2
+            timeout=45,  # 增加超时时间
+            max_retries=1  # 内部重试减少，由外层控制
           )
 
           task_model = getattr(config.llm, 'task_model', config.llm.model)
@@ -1592,33 +1962,76 @@ class AssistantAgent:
             api_key=config.llm.api_key,
             base_url=config.llm.base_url,
             temperature=0.1,
-            timeout=15,
-            max_retries=2
+            timeout=30,
+            max_retries=1
           )
         else:
-          logger.info(f"初始化Ollama语言模型 (尝试 {attempt + 1})")
+          # Ollama 配置验证
+          if not config.llm.ollama_base_url:
+            raise ValueError("Ollama base URL 未配置")
+          
+          logger.info(f"Ollama配置 - Model: {config.llm.ollama_model}, Base URL: {config.llm.ollama_base_url}")
+          
           self.llm = ChatOllama(
             model=config.llm.ollama_model,
             base_url=config.llm.ollama_base_url,
             temperature=config.rag.temperature,
-            timeout=30
+            timeout=45,
+            keep_alive="5m"  # 保持模型在内存中
           )
           self.task_llm = self.llm
 
-        # 测试模型
-        test_response = self.llm.invoke("返回'OK'")
-        if test_response and test_response.content:
-          logger.info("语言模型初始化成功")
+        # 更严格的模型测试
+        logger.info("测试语言模型连接...")
+        test_messages = [{"role": "user", "content": "请回复'连接成功'"}]
+        
+        if hasattr(self.llm, 'invoke'):
+          test_response = self.llm.invoke(test_messages)
+        else:
+          test_response = self.llm.generate([test_messages])
+          
+        if test_response and hasattr(test_response, 'content') and test_response.content:
+          content = test_response.content.strip()
+          logger.info(f"语言模型测试成功，响应: {content[:50]}...")
+          
+          # 测试任务模型
+          if self.task_llm != self.llm:
+            task_test = self.task_llm.invoke("测试")
+            if not (task_test and task_test.content):
+              logger.warning("任务模型测试失败，使用主模型")
+              self.task_llm = self.llm
+          
+          logger.info(f"语言模型初始化成功 - 提供商: {self.llm_provider}")
           return
+        else:
+          raise ValueError("模型测试返回空响应")
 
       except Exception as e:
-        logger.error(f"语言模型初始化失败 (尝试 {attempt + 1}): {e}")
+        error_msg = str(e)
+        logger.error(f"语言模型初始化失败 (尝试 {attempt + 1}): {error_msg}")
+        
+        # 记录详细错误信息
+        if "timeout" in error_msg.lower():
+          logger.warning("连接超时，可能是网络问题或服务不可用")
+        elif "api_key" in error_msg.lower():
+          logger.warning("API密钥相关问题")
+        elif "connection" in error_msg.lower():
+          logger.warning("连接问题，检查服务地址和端口")
+        
         if attempt < max_retries - 1:
+          # 切换提供商
           self.llm_provider = 'ollama' if self.llm_provider == 'openai' else 'openai'
-          time.sleep(1)
+          logger.info(f"切换到 {self.llm_provider} 提供商")
+          time.sleep(2)  # 增加等待时间
+        else:
+          # 最后一次尝试使用原始提供商
+          if self.llm_provider != original_provider:
+            self.llm_provider = original_provider
+            logger.info(f"最后一次尝试使用原始提供商 {original_provider}")
 
-    # 使用备用模型
-    logger.warning("使用备用语言模型")
+    # 所有尝试都失败，使用备用模型
+    logger.error("所有LLM提供商初始化失败，使用备用模型")
+    logger.warning("⚠️  当前使用备用模型，回答质量可能受限，请检查LLM配置")
     self.llm = FallbackChatModel()
     self.task_llm = self.llm
 
@@ -1640,13 +2053,26 @@ class AssistantAgent:
       import asyncio
       try:
         loop = asyncio.get_event_loop()
+        if loop.is_running():
+          # 如果循环正在运行，使用create_task
+          import concurrent.futures
+          with concurrent.futures.ThreadPoolExecutor() as executor:
+            future = executor.submit(asyncio.run, self.vector_store_manager.create_vector_store(documents, use_memory))
+            success = future.result()
+        else:
+          success = loop.run_until_complete(
+            self.vector_store_manager.create_vector_store(documents, use_memory)
+          )
       except RuntimeError:
+        # 没有事件循环，创建新的
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-
-      success = loop.run_until_complete(
-        self.vector_store_manager.create_vector_store(documents, use_memory)
-      )
+        try:
+          success = loop.run_until_complete(
+            self.vector_store_manager.create_vector_store(documents, use_memory)
+          )
+        finally:
+          loop.close()
 
       if not success:
         logger.error("向量存储初始化失败")
@@ -1657,19 +2083,16 @@ class AssistantAgent:
   def _init_advanced_components(self):
     """初始化高级组件"""
     try:
-      # 初始化文档排序器
-      if self.vector_store_manager and self.vector_store_manager.db:
-        all_docs = []
+      # 初始化文档排序器 - Redis向量存储已自带排序功能
+      if self.vector_store_manager and self.vector_store_manager.redis_manager:
+        # Redis向量存储通过检索器直接获取文档，无需访问底层collection
+        logger.debug("使用Redis向量存储，文档排序由检索器内部处理")
+        # 加载一些示例文档用于训练排序器
         try:
-          collection = self.vector_store_manager.db._collection
-          if hasattr(collection, 'get'):
-            results = collection.get()
-            if results and 'documents' in results:
-              for doc_text in results['documents']:
-                all_docs.append(Document(page_content=doc_text))
+          all_docs = self.document_loader.load_documents()
         except Exception as e:
           logger.warning(f"获取训练文档失败: {e}")
-          all_docs = self.document_loader.load_documents()
+          all_docs = []
 
         if all_docs:
           self.doc_ranker.fit(all_docs)
@@ -1686,8 +2109,8 @@ class AssistantAgent:
 
       # 初始化高级答案生成器
       if self.llm:
-        self.answer_generator = AdvancedAnswerGenerator(self.llm)
-        logger.info("高级答案生成器初始化完成")
+        self.answer_generator = ReliableAnswerGenerator(self.llm)
+        logger.info("可靠答案生成器初始化完成")
 
     except Exception as e:
       logger.error(f"高级组件初始化失败: {e}")
@@ -1769,12 +2192,8 @@ class AssistantAgent:
     try:
       logger.info("开始刷新知识库...")
 
-      # 清理缓存
-      self.cache_manager = CacheManager(
-        str(self.vector_db_path / "cache"),
-        expiry_seconds=3600,
-        max_cache_size=1000
-      )
+      # 清理缓存（Redis缓存管理器自动清理过期项）
+      logger.info("清理缓存（Redis缓存自动管理）")
 
       # 加载文档
       documents = await asyncio.get_event_loop().run_in_executor(
@@ -1825,12 +2244,8 @@ class AssistantAgent:
       with open(file_path, 'w', encoding='utf-8') as f:
         f.write(content)
 
-      # 清理缓存
-      self.cache_manager = CacheManager(
-        str(self.vector_db_path / "cache"),
-        expiry_seconds=3600,
-        max_cache_size=1000
-      )
+      # 清理缓存（Redis缓存管理器自动清理过期项）
+      logger.info("清理缓存（Redis缓存自动管理）")
 
       logger.info(f"文档已添加: {filename}")
       return True
@@ -1845,18 +2260,26 @@ class AssistantAgent:
     self,
     question: str,
     session_id: str = None,
-    max_context_docs: int = 4  # 减少上下文文档数量
+    max_context_docs: int = 10  # 增加上下文文档数量
   ) -> Dict[str, Any]:
-    """获取问题答案 - 优化版核心方法"""
+    """获取问题答案 - 全面优化版核心方法"""
 
     try:
+      # 添加详细日志记录整个流程
+      logger.info(f"=== 开始处理问题 ===")
+      logger.info(f"问题: '{question}'")
+      logger.info(f"会话ID: {session_id}")
+      logger.info(f"最大文档数: {max_context_docs}")
+
       # 获取会话历史
       session = self.get_session(session_id) if session_id else None
       history = session.history if session else []
+      logger.debug(f"会话历史长度: {len(history)}")
 
       # 检查缓存
       cached_response = self.cache_manager.get(question, session_id, history)
       if cached_response:
+        logger.info("使用缓存回答")
         if session_id:
           self.add_message_to_history(session_id, "user", question)
           self.add_message_to_history(session_id, "assistant", cached_response["answer"])
@@ -1866,60 +2289,110 @@ class AssistantAgent:
       if session_id:
         self.add_message_to_history(session_id, "user", question)
 
-      # 使用上下文感知检索
-      relevant_docs = await self._retrieve_relevant_docs_advanced(
+      # 第一阶段：使用优化的检索
+      logger.info("=== 开始文档检索 ===")
+      relevant_docs = await self._retrieve_relevant_docs_optimized(
         question, session_id, history, max_context_docs
       )
+      logger.info(f"检索到文档数量: {len(relevant_docs)}")
 
-      # 如果没有相关文档，尝试查询重写
+      # 第二阶段：如果没有相关文档，使用增强查询策略
       if not relevant_docs:
-        expanded_queries = self.query_rewriter.expand_query(question)
-        for expanded_query in expanded_queries[:2]:  # 减少重写查询数量
-          relevant_docs = await self._retrieve_relevant_docs_advanced(
-            expanded_query, session_id, history, max_context_docs
-          )
-          if relevant_docs:
-            break
+        logger.warning("初始检索无结果，启用增强查询策略")
+        relevant_docs = await self._enhanced_retrieval_strategy(question, max_context_docs)
+        logger.info(f"增强检索后文档数量: {len(relevant_docs)}")
 
-      # 生成回答
+      # 第三阶段：文档质量评估和排序
+      if relevant_docs:
+        logger.info("=== 开始文档质量评估 ===")
+        relevant_docs = await self._evaluate_and_rank_documents(question, relevant_docs)
+        logger.info(f"质量评估后保留文档数量: {len(relevant_docs)}")
+
+      # 第四阶段：生成回答
+      logger.info("=== 开始生成回答 ===")
       if relevant_docs:
         context_with_history = _build_context_with_history(session)
 
-        if self.answer_generator:
-          answer_result = await self.answer_generator.generate_structured_answer(
-            question, relevant_docs, context_with_history
-          )
-          answer = answer_result['answer']
-          confidence = answer_result['confidence']
-          question_type = answer_result['question_type']
-          key_points = answer_result['key_points']
+        # 检查是否使用备用模型
+        using_fallback = isinstance(self.llm, FallbackChatModel)
+        if using_fallback:
+          logger.warning("检测到使用备用模型，将使用文档直接提取策略")
+
+        # 根据模型类型选择生成策略
+        if self.answer_generator and not using_fallback:
+          try:
+            logger.debug("使用高级答案生成器")
+            answer_result = await self.answer_generator.generate_structured_answer(
+              question, relevant_docs, context_with_history
+            )
+            answer = answer_result['answer']
+            confidence = answer_result['confidence']
+            question_type = answer_result['question_type']
+            key_points = answer_result['key_points']
+            
+            logger.info(f"高级生成器结果 - 类型: {question_type}, 置信度: {confidence:.2f}")
+            
+          except Exception as e:
+            logger.warning(f"高级答案生成失败，降级到基础生成: {e}")
+            answer = await self._generate_answer_basic(question, relevant_docs, context_with_history)
+            confidence = 0.6
+            question_type = "general"
+            key_points = []
         else:
-          answer = await self._generate_answer_basic(question, relevant_docs, context_with_history)
-          confidence = 0.7
-          question_type = "general"
-          key_points = []
+          logger.debug("使用基础答案生成或文档直接提取")
+          if using_fallback:
+            # 直接从文档提取答案，不依赖LLM
+            answer = await self._extract_direct_answer_from_docs(question, relevant_docs)
+            confidence = 0.7  # 直接提取的置信度较高
+          else:
+            answer = await self._generate_answer_basic(question, relevant_docs, context_with_history)
+            confidence = 0.6
+          question_type = self._classify_question_enhanced(question)
+          key_points = self._extract_key_points_from_docs(answer, relevant_docs)
       else:
-        answer = _generate_fallback_answer()
+        logger.warning("没有找到相关文档，生成通用回答")
+        answer = "抱歉，我没有找到与您问题相关的具体信息。这可能是因为：\n1. 知识库中暂未包含相关内容\n2. 问题表述可能需要调整\n\n建议您:\n- 尝试使用不同的关键词重新提问\n- 查看AI-CloudOps平台的官方文档\n- 联系技术支持获取帮助"
         confidence = 0.1
         question_type = "unknown"
         key_points = []
 
-      # 高级幻觉检查
-      hallucination_free, hallucination_score = await _check_hallucination_advanced(
-        question, answer, relevant_docs
-      ) if relevant_docs else (False, 0.3)
+      # 第五阶段：答案质量验证
+      logger.info("=== 进行答案质量验证 ===")
+      hallucination_free = True
+      hallucination_score = 0.8
+      if relevant_docs and len(answer) > 50:
+        try:
+          hallucination_free, hallucination_score = await _check_hallucination_advanced(
+            question, answer, relevant_docs
+          )
+          logger.debug(f"幻觉检查结果: 通过={hallucination_free}, 分数={hallucination_score:.2f}")
+        except Exception as e:
+          logger.warning(f"幻觉检查失败: {e}")
 
-      # 生成后续问题
-      follow_up_questions = await self._generate_follow_up_questions_advanced(
-        question, answer, question_type
-      )
+      # 第六阶段：异步生成后续问题
+      follow_up_task = None
+      if len(answer) > 30:
+        follow_up_task = asyncio.create_task(
+          self._generate_follow_up_questions_advanced(question, answer, question_type)
+        )
 
-      # 格式化源文档
+      # 第七阶段：格式化源文档
       source_docs = self._format_source_documents_advanced(relevant_docs)
 
-      # 计算指标
+      # 第八阶段：计算最终指标
       relevance_score = confidence if hallucination_free else confidence * 0.7
       recall_rate = min(len(relevant_docs) / max_context_docs, 1.0) if relevant_docs else 0.0
+
+      logger.info(f"=== 处理完成 ===")
+      logger.info(f"最终指标 - 相关性: {relevance_score:.2f}, 召回率: {recall_rate:.2f}")
+
+      # 等待后续问题生成
+      follow_up_questions = []
+      if follow_up_task:
+        try:
+          follow_up_questions = await asyncio.wait_for(follow_up_task, timeout=3)
+        except:
+          follow_up_questions = self._get_default_follow_up_questions(question_type)
 
       # 构建响应
       result = {
@@ -1942,17 +2415,13 @@ class AssistantAgent:
       # 缓存结果
       self.cache_manager.set(question, result, session_id, history)
 
-      # 异步保存缓存
-      if not self._shutdown:
-        create_safe_task(
-          self.cache_manager.save_async(),
-          description=f"保存缓存: {session_id if session_id else '无会话'}"
-        )
-
       return result
 
     except Exception as e:
       logger.error(f"获取回答失败: {e}")
+      import traceback
+      logger.error(f"错误详情: {traceback.format_exc()}")
+      
       error_answer = "抱歉，处理您的问题时出现了错误，请稍后重试。"
 
       if session_id:
@@ -1971,34 +2440,325 @@ class AssistantAgent:
         "total_docs_found": 0
       }
 
+  async def _retrieve_relevant_docs_optimized(
+    self, question: str, session_id: str = None,
+    history: List[Dict] = None, max_docs: int = 10
+  ) -> List[Document]:
+    """优化的相关文档检索 - 重命名版本"""
+    return await self._retrieve_relevant_docs_advanced(question, session_id, history, max_docs)
+
+  async def _enhanced_retrieval_strategy(self, question: str, max_docs: int = 10) -> List[Document]:
+    """增强的检索策略，当初始检索失败时使用"""
+    try:
+      logger.debug("启动增强检索策略")
+      
+      # 策略1: 查询扩展
+      expanded_queries = self.query_rewriter.expand_query(question)
+      for i, expanded_query in enumerate(expanded_queries[1:3]):  # 尝试前2个扩展查询
+        logger.debug(f"尝试扩展查询 {i+1}: '{expanded_query}'")
+        try:
+          docs = await asyncio.get_event_loop().run_in_executor(
+            self.executor,
+            self._safe_vector_search,
+            expanded_query, max_docs
+          )
+          if docs:
+            logger.debug(f"扩展查询 {i+1} 找到 {len(docs)} 个文档")
+            return docs
+        except Exception as e:
+          logger.warning(f"扩展查询 {i+1} 失败: {e}")
+          continue
+      
+      # 策略2: 关键词分解搜索
+      logger.debug("尝试关键词分解搜索")
+      keywords = [word for word in question.split() if len(word) > 2]
+      if keywords:
+        all_docs = []
+        for keyword in keywords[:3]:  # 前3个关键词
+          try:
+            keyword_docs = await asyncio.get_event_loop().run_in_executor(
+              self.executor,
+              self._safe_vector_search,
+              keyword, max_docs // 2
+            )
+            all_docs.extend(keyword_docs)
+          except:
+            continue
+        
+        if all_docs:
+          # 去重并返回
+          unique_docs = self._deduplicate_documents_simple(all_docs)
+          logger.debug(f"关键词搜索找到 {len(unique_docs)} 个去重文档")
+          return unique_docs[:max_docs]
+      
+      # 策略3: 宽泛搜索（降低相似度阈值）
+      logger.debug("尝试宽泛搜索")
+      try:
+        if hasattr(self.vector_store_manager, 'optimized_store'):
+          results = self.vector_store_manager.optimized_store.similarity_search(
+            question, k=max_docs, similarity_threshold=0.001  # 极低阈值
+          )
+          docs = [doc for doc, score in results]
+          if docs:
+            logger.debug(f"宽泛搜索找到 {len(docs)} 个文档")
+            return docs
+      except Exception as e:
+        logger.warning(f"宽泛搜索失败: {e}")
+      
+      logger.debug("所有增强检索策略都失败")
+      return []
+      
+    except Exception as e:
+      logger.error(f"增强检索策略失败: {e}")
+      return []
+
+  def _deduplicate_documents_simple(self, docs: List[Document]) -> List[Document]:
+    """简单的文档去重"""
+    seen_content = set()
+    unique_docs = []
+    
+    for doc in docs:
+      # 使用内容的前100字符作为去重标准
+      content_hash = hash(doc.page_content[:100])
+      if content_hash not in seen_content:
+        seen_content.add(content_hash)
+        unique_docs.append(doc)
+    
+    return unique_docs
+
+  async def _evaluate_and_rank_documents(self, question: str, docs: List[Document]) -> List[Document]:
+    """评估和排序文档质量"""
+    if not docs:
+      return []
+    
+    try:
+      # 使用现有的文档过滤功能
+      filtered_docs = await _filter_relevant_docs_advanced(question, docs)
+      
+      # 如果过滤后文档太少，保留更多文档
+      if len(filtered_docs) < 3 and len(docs) > len(filtered_docs):
+        logger.debug("过滤后文档太少，保留更多文档")
+        # 按原顺序保留前几个文档
+        additional_docs = [doc for doc in docs if doc not in filtered_docs][:2]
+        filtered_docs.extend(additional_docs)
+      
+      return filtered_docs
+      
+    except Exception as e:
+      logger.warning(f"文档评估排序失败: {e}")
+      return docs[:8]  # 返回前8个文档
+
+  async def _extract_direct_answer_from_docs(self, question: str, docs: List[Document]) -> str:
+    """直接从文档提取答案，不依赖LLM"""
+    if not docs:
+      return "抱歉，没有找到相关文档。"
+    
+    try:
+      # 分析问题类型
+      question_type = self._classify_question_enhanced(question)
+      
+      # 提取相关内容
+      relevant_content = []
+      for doc in docs[:4]:
+        content = self._extract_relevant_content_enhanced(doc.page_content, question, question_type)
+        source = doc.metadata.get('filename', '文档') if doc.metadata else '文档'
+        
+        if content:
+          relevant_content.append(f"根据 {source}:\n{content}")
+      
+      if relevant_content:
+        # 构建结构化答案
+        answer_parts = [
+          f"关于您询问的 '{question}'，基于相关文档找到以下信息：",
+          "",
+          "\n\n".join(relevant_content),
+          "",
+          "以上信息来源于AI-CloudOps平台的相关文档。"
+        ]
+        return "\n".join(answer_parts)
+      else:
+        # 备选方案：提取文档摘要
+        summaries = []
+        for doc in docs[:3]:
+          lines = [line.strip() for line in doc.page_content.split('\n') if line.strip()]
+          if lines:
+            summary = lines[0]
+            if len(summary) > 20:
+              summaries.append(f"• {summary}")
+        
+        if summaries:
+          return f"关于 '{question}' 的相关信息：\n\n" + "\n".join(summaries)
+        else:
+          return "找到了相关文档，但内容提取遇到问题，建议查看完整文档获取详细信息。"
+          
+    except Exception as e:
+      logger.error(f"直接提取答案失败: {e}")
+      return "抱歉，处理文档内容时遇到问题。"
+
+  def _extract_key_points_from_docs(self, answer: str, docs: List[Document]) -> List[str]:
+    """从文档中提取关键点"""
+    key_points = []
+    
+    try:
+      # 首先尝试从答案中提取
+      if answer and len(answer) > 50:
+        key_points = self._extract_enhanced_key_points(answer, docs)
+      
+      # 如果答案中没有足够的关键点，从文档中直接提取
+      if len(key_points) < 2 and docs:
+        for doc in docs[:2]:
+          content = doc.page_content
+          # 查找标题或重要段落
+          lines = content.split('\n')
+          for line in lines:
+            line = line.strip()
+            if (line.startswith('#') or line.startswith('##') or 
+                any(keyword in line for keyword in ['重要', '关键', '核心', '主要'])):
+              if 10 < len(line) < 100:
+                clean_line = line.lstrip('#').strip()
+                if clean_line and clean_line not in key_points:
+                  key_points.append(clean_line)
+                  if len(key_points) >= 3:
+                    break
+          if len(key_points) >= 3:
+            break
+      
+      return key_points[:3]
+      
+    except Exception as e:
+      logger.warning(f"提取关键点失败: {e}")
+      return []
+
+  def _get_default_follow_up_questions(self, question_type: str) -> List[str]:
+    """获取默认的后续问题"""
+    type_questions = {
+      'core_architecture': [
+        "这些功能模块是如何协同工作的？",
+        "如何部署和配置这些核心模块？"
+      ],
+      'architecture': [
+        "系统架构有哪些技术优势？",
+        "如何进行系统扩展和定制？"
+      ],
+      'deployment': [
+        "部署过程中可能遇到哪些问题？",
+        "如何验证部署是否成功？"
+      ],
+      'monitoring': [
+        "如何设置监控告警规则？",
+        "监控数据如何进行分析？"
+      ],
+      'troubleshooting': [
+        "如何预防类似问题再次发生？",
+        "还有其他可能的解决方案吗？"
+      ],
+      'performance': [
+        "如何监控性能优化效果？",
+        "还有哪些性能优化策略？"
+      ]
+    }
+    
+    return type_questions.get(question_type, [
+      "AI-CloudOps平台有哪些核心功能？",
+      "如何开始使用AI-CloudOps平台？"
+    ])
+
   async def _retrieve_relevant_docs_advanced(
     self, question: str, session_id: str = None,
-    history: List[Dict] = None, max_docs: int = 4
+    history: List[Dict] = None, max_docs: int = 10
   ) -> List[Document]:
-    """高级相关文档检索"""
+    """优化的高级相关文档检索"""
     try:
+      # 快速检查输入
+      if not question or not question.strip():
+        return []
+
+      # 优化：减少查询次数，直接使用最优检索器
       if self.context_retriever:
         docs = await asyncio.get_event_loop().run_in_executor(
           self.executor,
-          self.context_retriever.retrieve_with_context,
+          self._safe_context_retrieve,
           question, session_id, history, max_docs
         )
       else:
         docs = await asyncio.get_event_loop().run_in_executor(
           self.executor,
-          self.vector_store_manager.search_documents,
-          question
+          self._safe_vector_search,
+          question, max_docs
         )
 
       if not docs:
         return []
 
-      filtered_docs = await _filter_relevant_docs_advanced(question, docs[:max_docs * 2])
-      return filtered_docs[:max_docs]
+      # 简化的文档过滤，减少处理时间
+      filtered_docs = self._filter_docs_fast(question, docs, max_docs)
+      return filtered_docs
 
     except Exception as e:
-      logger.error(f"高级文档检索失败: {e}")
+      logger.error(f"优化文档检索失败: {e}")
+      # 最简单的降级方案
+      try:
+        return await asyncio.get_event_loop().run_in_executor(
+          self.executor,
+          self._basic_vector_search,
+          question, max_docs
+        )
+      except:
+        return []
+
+  def _safe_context_retrieve(self, question: str, session_id: str = None,
+                           history: List[Dict] = None, max_docs: int = 4) -> List[Document]:
+    """安全的上下文检索"""
+    try:
+      return self.context_retriever.retrieve_with_context(question, session_id, history, max_docs)
+    except Exception as e:
+      logger.warning(f"上下文检索失败，降级到基础检索: {e}")
+      return self._safe_vector_search(question, max_docs)
+
+  def _safe_vector_search(self, question: str, max_docs: int = 6) -> List[Document]:
+    """安全的向量搜索 - 提升召回率版本"""
+    try:
+      return self.vector_store_manager.search_documents(question)[:max_docs]
+    except Exception as e:
+      logger.warning(f"向量搜索失败: {e}")
       return []
+
+  def _basic_vector_search(self, question: str, max_docs: int = 6) -> List[Document]:
+    """基础向量搜索 - 提升召回率版本"""
+    try:
+      if hasattr(self.vector_store_manager, 'optimized_store'):
+        results = self.vector_store_manager.optimized_store.similarity_search(
+          question, k=max_docs, similarity_threshold=0.1  # 极低阈值
+        )
+        return [doc for doc, score in results]
+      return []
+    except Exception as e:
+      logger.warning(f"基础向量搜索失败: {e}")
+      return []
+
+  def _filter_docs_fast(self, question: str, docs: List[Document], max_docs: int) -> List[Document]:
+    """快速文档过滤"""
+    if not docs or len(docs) <= max_docs:
+      return docs
+
+    try:
+      # 简化的相关性评分
+      question_words = set(question.lower().split())
+      scored_docs = []
+
+      for doc in docs:
+        doc_words = set(doc.page_content.lower().split()[:100])  # 只检查前100个词
+        overlap = len(question_words & doc_words)
+        score = overlap / max(len(question_words), 1)
+        scored_docs.append((doc, score))
+
+      # 按分数排序并返回前max_docs个
+      scored_docs.sort(key=lambda x: x[1], reverse=True)
+      return [doc for doc, score in scored_docs[:max_docs]]
+
+    except Exception as e:
+      logger.warning(f"文档过滤失败: {e}")
+      return docs[:max_docs]
 
   async def _generate_answer_basic(
     self, question: str, docs: List[Document], context: str = None
@@ -2166,24 +2926,11 @@ class AssistantAgent:
   # ==================== 缓存管理 ====================
 
   def clear_cache(self) -> Dict[str, Any]:
-    """清空响应缓存 - 修复方法调用"""
+    """清空响应缓存 - 使用Redis缓存管理器"""
     try:
-      cache_count = len(self.cache_manager.cache)
-
-      # 清空缓存
-      with self.cache_manager._lock:
-        self.cache_manager.cache.clear()
-
-      # 同步保存空缓存 - 修复：使用正确的方法名
-      self.cache_manager.save_cache_sync()
-
-      logger.info(f"已清空响应缓存，原有 {cache_count} 条缓存项")
-
-      return {
-        "success": True,
-        "message": f"已清空 {cache_count} 条缓存项",
-        "cleared_count": cache_count
-      }
+      # 使用Redis缓存管理器清空缓存
+      result = self.cache_manager.clear_all()
+      return result
 
     except Exception as e:
       logger.error(f"清空缓存失败: {e}")

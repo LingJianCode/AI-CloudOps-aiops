@@ -194,6 +194,27 @@ class TavilyConfig:
 
 
 @dataclass
+class RedisConfig:
+  """Redis 向量存储配置"""
+  host: str = field(
+    default_factory=lambda: get_env_or_config("REDIS_HOST", "redis.host", "localhost"))
+  port: int = field(
+    default_factory=lambda: get_env_or_config("REDIS_PORT", "redis.port", 6379, int))
+  db: int = field(
+    default_factory=lambda: get_env_or_config("REDIS_DB", "redis.db", 0, int))
+  password: str = field(
+    default_factory=lambda: get_env_or_config("REDIS_PASSWORD", "redis.password", ""))
+  connection_timeout: int = field(
+    default_factory=lambda: get_env_or_config("REDIS_CONNECTION_TIMEOUT", "redis.connection_timeout", 5, int))
+  socket_timeout: int = field(
+    default_factory=lambda: get_env_or_config("REDIS_SOCKET_TIMEOUT", "redis.socket_timeout", 5, int))
+  max_connections: int = field(
+    default_factory=lambda: get_env_or_config("REDIS_MAX_CONNECTIONS", "redis.max_connections", 10, int))
+  decode_responses: bool = field(
+    default_factory=lambda: get_env_or_config("REDIS_DECODE_RESPONSES", "redis.decode_responses", True, bool))
+
+
+@dataclass
 class RAGConfig:
   """RAG 智能助手配置"""
   vector_db_path: str = field(
@@ -247,6 +268,7 @@ class AppConfig:
   prediction: PredictionConfig = field(default_factory=PredictionConfig)
   notification: NotificationConfig = field(default_factory=NotificationConfig)
   tavily: TavilyConfig = field(default_factory=TavilyConfig)
+  redis: RedisConfig = field(default_factory=RedisConfig)
   rag: RAGConfig = field(default_factory=RAGConfig)
 
 
