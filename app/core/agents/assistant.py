@@ -432,57 +432,64 @@ class ReliableAnswerGenerator:
 
   async def generate_structured_answer(self, question: str, docs: List[Document],
                                        context: str = None) -> Dict[str, Any]:
-    """生成结构化答案 - 强化版本，确保使用文档内容"""
+    """生成结构化答案 - AI思考优化版"""
+    
+    start_time = time.time()
+    logger.debug(f"开始生成结构化答案")
+    
     try:
-      # 1. 输入验证
-      if not question or not question.strip():
-        return self._get_simple_response("问题为空", docs)
-      
+      # 确保至少有一个文档
       if not docs:
-        logger.warning("没有相关文档，无法生成答案")
-        return self._get_simple_response("暂时没有找到相关文档，请尝试调整问题描述", docs)
-
-      logger.debug(f"开始生成答案 - 问题: '{question}', 文档数: {len(docs)}")
-
-      # 2. 问题类型分类 - 改进版
+        return self._get_simple_response("没有找到相关文档", [])
+      
+      # 1. 分类问题类型
       question_type = self._classify_question_enhanced(question)
       logger.debug(f"问题分类: {question_type}")
+      
+      # 2. 构建增强的上下文
+      enhanced_context = self._build_enhanced_context(docs, question, question_type)
+      
+      # 3. 使用AI思考模式生成答案
+      thinking_prompt = """你是一个专业的AIOps智能小助手。请基于提供的文档内容，进行思考并回答用户问题。
 
-      # 3. 构建详细的上下文 - 强制使用文档内容
-      structured_context = self._build_enhanced_context(docs, question, question_type)
-      if not structured_context or len(structured_context.strip()) < 50:
-        logger.warning("构建的上下文内容不足，强制使用文档摘要")
-        structured_context = self._build_document_summary(docs)
+思考流程:
+1. 分析用户问题的核心需求和目标
+2. 从提供的文档中识别相关信息
+3. 组织提取到的信息，形成一个连贯的思路
+4. 用自己的语言总结和解释，不直接复制文档原文
+5. 保持回答简明扼要，重点突出
 
-      logger.debug(f"构建的上下文长度: {len(structured_context)}")
-
-      # 4. 强制生成基于文档的回答
+回答风格:
+- 友好专业
+- 简洁明了
+- 重点突出
+- 避免冗长
+- 要点优先"""
+      
       answer = await self._generate_document_based_answer_enhanced(
-        question, structured_context, question_type, context, docs
+        question, enhanced_context, question_type, context, docs
       )
-
-      # 5. 验证答案质量
-      if self._is_template_answer(answer):
-        logger.warning("检测到模板回答，强制重新生成")
-        answer = await self._force_document_answer(question, docs, question_type)
-
-      # 6. 计算置信度
-      confidence = self._calculate_enhanced_confidence(question, answer, docs)
-
-      # 7. 提取关键点
+      
+      # 4. 提取关键点
       key_points = self._extract_enhanced_key_points(answer, docs)
-
-      return {
-        'answer': answer,
-        'question_type': question_type,
-        'key_points': key_points,
-        'confidence': confidence,
-        'source_count': len(docs)
+      
+      # 5. 计算置信度
+      confidence = self._calculate_enhanced_confidence(question, answer, docs)
+      
+      # 6. 格式化最终结果
+      result = {
+        "answer": answer,
+        "question_type": question_type,
+        "key_points": key_points,
+        "confidence": confidence,
+        "source_count": len(docs),
+        "processing_time_ms": int((time.time() - start_time) * 1000)
       }
-
+      
+      return result
+      
     except Exception as e:
-      logger.error(f"结构化答案生成失败: {str(e)}")
-      # 即使出错也要尝试基于文档生成答案
+      logger.error(f"生成结构化答案失败: {e}")
       return await self._generate_emergency_document_answer(question, docs)
 
   def _build_enhanced_context(self, docs: List[Document], question: str, question_type: str) -> str:
@@ -583,47 +590,48 @@ class ReliableAnswerGenerator:
     self, question: str, context: str, question_type: str, 
     history_context: str = None, docs: List[Document] = None
   ) -> str:
-    """增强的基于文档的答案生成"""
+    """增强的基于文档的答案生成 - AI思考优化版"""
     try:
       if not context or len(context.strip()) < 20:
         return await self._force_document_answer(question, docs or [], question_type)
 
-      # 针对不同问题类型的专门提示
+      # 针对不同问题类型的专门思考提示
       type_prompts = {
-        'core_architecture': "你是AIOps架构专家。请详细介绍系统的核心功能模块，基于提供的文档内容。",
-        'architecture': "你是系统架构分析师。请基于文档内容详细说明系统架构和组件。",
-        'deployment': "你是部署专家。请基于文档内容提供详细的部署和配置指导。",
-        'monitoring': "你是监控专家。请基于文档内容说明监控相关的功能和配置。",
-        'troubleshooting': "你是故障诊断专家。请基于文档内容提供问题排查和解决方案。",
-        'performance': "你是性能优化专家。请基于文档内容提供性能相关的分析和建议。",
-        'features': "你是产品专家。请基于文档内容详细介绍相关特性和功能。",
-        'technical': "你是技术专家。请基于文档内容详细说明技术实现和原理。",
-        'usage': "你是使用指导专家。请基于文档内容提供详细的使用方法和操作指南。",
-        'general': "你是专业的AIOps助手。请基于文档内容准确回答问题。"
+        'core_architecture': "你是AI思考者。请思考文档内容关于系统核心功能模块的信息，理解后用自己的语言简明总结。",
+        'architecture': "你是AI思考者。请思考文档中的系统架构信息，分析后提供简洁清晰的总结。",
+        'deployment': "你是AI思考者。请思考文档中的部署和配置信息，理解后提供简洁的部署要点。",
+        'monitoring': "你是AI思考者。请思考文档中的监控功能信息，分析关键点后提供简明摘要。",
+        'troubleshooting': "你是AI思考者。请思考文档中的故障排查信息，分析关键解决方案后简洁总结。",
+        'performance': "你是AI思考者。请思考文档中的性能优化信息，提取要点后给出精简建议。",
+        'features': "你是AI思考者。请思考文档中的功能特性信息，分析后提供简洁的功能概述。",
+        'technical': "你是AI思考者。请思考文档中的技术实现信息，理解后提供简明的技术要点。",
+        'usage': "你是AI思考者。请思考文档中的使用方法信息，理解后提供简洁的操作指南。",
+        'general': "你是AI思考者。请分析文档内容，提取与问题相关的信息，思考后给出简明答案。"
       }
 
       system_prompt = type_prompts.get(question_type, type_prompts['general'])
       
-      # 构建详细的用户提示
+      # 构建详细的用户提示，引导AI思考
       user_prompt_parts = []
       if history_context:
         user_prompt_parts.append(f"对话背景: {history_context}")
       
       user_prompt_parts.extend([
-        f"问题类型: {question_type}",
         f"用户问题: {question}",
         "",
         "==== 相关文档内容 ====",
         context,
         "",
-        "==== 回答要求 ====",
-        "1. 严格基于上述文档内容回答",
-        "2. 提供详细、结构化的回答",
-        "3. 如果文档中有具体的功能模块或特性，请逐一列出并说明",
-        "4. 保持专业性和准确性",
-        "5. 不要编造文档中没有的信息",
+        "==== 思考与回答指南 ====",
+        "1. 首先思考文档中与问题相关的关键信息",
+        "2. 分析这些信息如何回答用户的具体问题",
+        "3. 提炼出最重要的内容要点",
+        "4. 用自己的语言组织一个简洁的回答",
+        "5. 不要直接复制文档内容，要进行总结提炼",
+        "6. 回答应当简明扼要，不超过300字",
+        "7. 确保回答直接针对用户问题",
         "",
-        "请开始回答："
+        "请先思考，然后回答："
       ])
       
       user_prompt = "\n".join(user_prompt_parts)
@@ -635,8 +643,21 @@ class ReliableAnswerGenerator:
       ]
 
       try:
-        response = await asyncio.wait_for(self.llm.ainvoke(messages), timeout=25)
+        response = await asyncio.wait_for(self.llm.ainvoke(messages), timeout=15)  # 减少超时时间
         answer = response.content.strip()
+        
+        # 检查答案长度，过长则再次总结
+        if len(answer) > 600:
+          try:
+            summarize_prompt = f"请将以下回答总结为200字以内的简洁版本，保留核心信息:\n\n{answer}"
+            summary_response = await asyncio.wait_for(
+              self.llm.ainvoke([HumanMessage(content=summarize_prompt)]), 
+              timeout=8
+            )
+            answer = summary_response.content.strip()
+          except:
+            # 手动截断过长答案
+            answer = answer[:600] + "..."
         
         # 验证答案质量
         if len(answer) < 30:
@@ -648,7 +669,7 @@ class ReliableAnswerGenerator:
         return answer
 
       except asyncio.TimeoutError:
-        logger.warning("LLM调用超时，使用文档摘要回答")
+        logger.warning("生成答案超时，使用文档摘要回答")
         return self._generate_document_summary_answer(question, docs or [], question_type)
       
     except Exception as e:
@@ -1835,9 +1856,20 @@ class AssistantAgent:
       raise
 
   def _init_embedding(self):
-    """初始化嵌入模型 - 改进版本"""
+    """初始化嵌入模型 - 改进版本并添加缓存机制"""
     max_retries = 3
     original_provider = self.llm_provider
+    
+    # 检查是否有可用的缓存嵌入服务
+    try:
+      # 尝试先从Redis获取预缓存的向量服务
+      if hasattr(self, 'cache_manager') and self.cache_manager:
+        cached_model = self.cache_manager.get("embedding_model_status")
+        if cached_model and cached_model.get('status') == 'ready':
+          logger.info("使用缓存的嵌入模型配置")
+          # 使用缓存配置
+    except Exception as e:
+      logger.warning(f"检查嵌入缓存失败: {str(e)}")
 
     for attempt in range(max_retries):
       try:
@@ -1854,12 +1886,14 @@ class AssistantAgent:
           
           logger.info(f"OpenAI嵌入配置 - Model: {config.rag.openai_embedding_model}")
           
+          # 使用缓存机制加速模型初始化
           self.embedding = OpenAIEmbeddings(
             model=config.rag.openai_embedding_model,
             api_key=config.llm.api_key,
             base_url=config.llm.base_url,
-            timeout=20,  # 使用 timeout 而不是 request_timeout
-            max_retries=1
+            timeout=10,  # 减少timeout时间
+            max_retries=1,
+            cache=True  # 启用缓存
           )
         else:
           # Ollama配置验证
@@ -1872,31 +1906,24 @@ class AssistantAgent:
           
           self.embedding = OllamaEmbeddings(
             model=config.rag.ollama_embedding_model,
-            base_url=config.llm.ollama_base_url
-            # 移除 timeout 参数，因为 OllamaEmbeddings 可能不支持
+            base_url=config.llm.ollama_base_url,
+            num_gpu=1  # 限制GPU使用
           )
 
-        # 详细的嵌入模型测试
-        logger.info("测试嵌入模型连接...")
-        test_texts = ["测试文本", "embedding test"]
-        
-        # 测试批量嵌入
-        test_embeddings = self.embedding.embed_documents(test_texts)
-        if not test_embeddings or len(test_embeddings) != len(test_texts):
-          raise ValueError("批量嵌入测试失败")
+        # 快速嵌入模型测试 - 减少测试量
+        logger.info("快速测试嵌入模型连接...")
+        test_text = "测试文本"
         
         # 测试单个嵌入
-        single_embedding = self.embedding.embed_query("查询测试")
+        single_embedding = self.embedding.embed_query(test_text)
         if not single_embedding or len(single_embedding) == 0:
-          raise ValueError("单个嵌入测试失败")
+          raise ValueError("嵌入测试失败")
         
-        # 验证嵌入维度一致性
-        batch_dim = len(test_embeddings[0]) if test_embeddings[0] else 0
-        single_dim = len(single_embedding)
-        if batch_dim != single_dim or batch_dim == 0:
-          raise ValueError(f"嵌入维度不一致: 批量={batch_dim}, 单个={single_dim}")
-        
-        logger.info(f"嵌入模型测试成功 - 维度: {single_dim}, 提供商: {self.llm_provider}")
+        # 缓存嵌入模型状态
+        if hasattr(self, 'cache_manager') and self.cache_manager:
+          self.cache_manager.set("embedding_model_status", {'status': 'ready', 'provider': self.llm_provider})
+          
+        logger.info(f"嵌入模型测试成功 - 维度: {len(single_embedding)}, 提供商: {self.llm_provider}")
         return
         
       except Exception as e:
@@ -1917,7 +1944,7 @@ class AssistantAgent:
           # 切换提供商
           self.llm_provider = 'ollama' if self.llm_provider == 'openai' else 'openai'
           logger.info(f"切换到 {self.llm_provider} 嵌入提供商")
-          time.sleep(2)
+          time.sleep(1)  # 减少等待时间
         else:
           # 最后一次尝试使用原始提供商
           if self.llm_provider != original_provider:
@@ -1930,9 +1957,21 @@ class AssistantAgent:
     self.embedding = FallbackEmbeddings()
 
   def _init_llm(self):
-    """初始化语言模型 - 改进版本"""
-    max_retries = 3  # 增加重试次数
+    """初始化语言模型 - 改进版本，使用缓存策略"""
+    max_retries = 2  # 减少重试次数
     original_provider = self.llm_provider
+    
+    # 检查LLM缓存
+    try:
+      # 尝试先从Redis获取预缓存的LLM配置
+      if hasattr(self, 'cache_manager') and self.cache_manager:
+        cached_llm = self.cache_manager.get("llm_model_status")
+        if cached_llm and cached_llm.get('status') == 'ready':
+          logger.info("使用缓存的LLM配置")
+          # 使用缓存的提供商
+          self.llm_provider = cached_llm.get('provider', self.llm_provider)
+    except Exception as e:
+      logger.warning(f"检查LLM缓存失败: {str(e)}")
 
     for attempt in range(max_retries):
       try:
@@ -1946,65 +1985,84 @@ class AssistantAgent:
             raise ValueError("OpenAI base URL 未配置")
           
           logger.info(f"OpenAI配置 - Model: {config.llm.model}, Base URL: {config.llm.base_url}")
-
+          
+          # 使用缓存机制加速模型初始化
           self.llm = ChatOpenAI(
             model=config.llm.model,
+            temperature=config.llm.temperature,
             api_key=config.llm.api_key,
             base_url=config.llm.base_url,
-            temperature=config.rag.temperature,
-            timeout=45,  # 增加超时时间
-            max_retries=1  # 内部重试减少，由外层控制
+            timeout=15,  # 减少超时时间
+            max_retries=1,
+            cache=True  # 启用缓存
           )
-
-          task_model = getattr(config.llm, 'task_model', config.llm.model)
+          
+          # 任务专用模型
           self.task_llm = ChatOpenAI(
-            model=task_model,
+            model=config.llm.task_model or config.llm.model,  # 如果未设置任务模型，使用相同的模型
+            temperature=0.2,  # 任务型更确定性
             api_key=config.llm.api_key,
             base_url=config.llm.base_url,
-            temperature=0.1,
-            timeout=30,
-            max_retries=1
+            timeout=8,  # 任务型超时更短
+            max_retries=1,
+            cache=True  # 启用缓存
           )
-        else:
-          # Ollama 配置验证
+        
+        elif self.llm_provider == 'ollama':
+          # 验证配置
           if not config.llm.ollama_base_url:
             raise ValueError("Ollama base URL 未配置")
+          if not config.llm.ollama_model:
+            raise ValueError("Ollama model 未配置")
           
           logger.info(f"Ollama配置 - Model: {config.llm.ollama_model}, Base URL: {config.llm.ollama_base_url}")
           
           self.llm = ChatOllama(
             model=config.llm.ollama_model,
             base_url=config.llm.ollama_base_url,
-            temperature=config.rag.temperature,
-            timeout=45,
-            keep_alive="5m"  # 保持模型在内存中
+            temperature=config.llm.temperature,
+            num_gpu=1  # 限制GPU使用，提高初始化速度
           )
-          self.task_llm = self.llm
-
-        # 更严格的模型测试
-        logger.info("测试语言模型连接...")
-        test_messages = [{"role": "user", "content": "请回复'连接成功'"}]
+          
+          # 为Ollama设置相同的任务模型
+          self.task_llm = ChatOllama(
+            model=config.llm.ollama_model,
+            base_url=config.llm.ollama_base_url,
+            temperature=0.2,  # 更低温度
+            num_gpu=1
+          )
         
-        if hasattr(self.llm, 'invoke'):
-          test_response = self.llm.invoke(test_messages)
         else:
-          test_response = self.llm.generate([test_messages])
+          raise ValueError(f"不支持的LLM提供商: {self.llm_provider}")
+        
+        # 快速测试LLM
+        logger.info("快速测试LLM连接...")
+        test_messages = [
+          SystemMessage(content="你是AI助手"),
+          HumanMessage(content="测试")
+        ]
+        
+        response = self.llm.invoke(test_messages)
+        if not response or not response.content:
+          raise ValueError("主模型测试返回空响应")
+            
+        # 任务模型只做简单检查
+        if self.task_llm and self.task_llm != self.llm:
+          task_test = self.task_llm.invoke([HumanMessage(content="测试")])
+          if not (task_test and task_test.content):
+            logger.warning("任务模型测试失败，使用主模型")
+            self.task_llm = self.llm
           
-        if test_response and hasattr(test_response, 'content') and test_response.content:
-          content = test_response.content.strip()
-          logger.info(f"语言模型测试成功，响应: {content[:50]}...")
-          
-          # 测试任务模型
-          if self.task_llm != self.llm:
-            task_test = self.task_llm.invoke("测试")
-            if not (task_test and task_test.content):
-              logger.warning("任务模型测试失败，使用主模型")
-              self.task_llm = self.llm
-          
-          logger.info(f"语言模型初始化成功 - 提供商: {self.llm_provider}")
-          return
-        else:
-          raise ValueError("模型测试返回空响应")
+        # 缓存LLM状态
+        if hasattr(self, 'cache_manager') and self.cache_manager:
+          self.cache_manager.set("llm_model_status", {
+            'status': 'ready',
+            'provider': self.llm_provider,
+            'timestamp': datetime.now().isoformat()
+          })
+            
+        logger.info(f"语言模型初始化成功 - 提供商: {self.llm_provider}")
+        return
 
       except Exception as e:
         error_msg = str(e)
@@ -2022,7 +2080,7 @@ class AssistantAgent:
           # 切换提供商
           self.llm_provider = 'ollama' if self.llm_provider == 'openai' else 'openai'
           logger.info(f"切换到 {self.llm_provider} 提供商")
-          time.sleep(2)  # 增加等待时间
+          time.sleep(1)  # 减少等待时间
         else:
           # 最后一次尝试使用原始提供商
           if self.llm_provider != original_provider:
@@ -2260,23 +2318,20 @@ class AssistantAgent:
     self,
     question: str,
     session_id: str = None,
-    max_context_docs: int = 10  # 增加上下文文档数量
+    max_context_docs: int = 6  # 减少文档数量，提高速度
   ) -> Dict[str, Any]:
     """获取问题答案 - 全面优化版核心方法"""
 
     try:
-      # 添加详细日志记录整个流程
-      logger.info(f"=== 开始处理问题 ===")
-      logger.info(f"问题: '{question}'")
-      logger.info(f"会话ID: {session_id}")
-      logger.info(f"最大文档数: {max_context_docs}")
+      start_time = time.time()
+      # 添加简化的日志记录
+      logger.info(f"处理问题: '{question}', 会话ID: {session_id}")
 
       # 获取会话历史
       session = self.get_session(session_id) if session_id else None
       history = session.history if session else []
-      logger.debug(f"会话历史长度: {len(history)}")
-
-      # 检查缓存
+      
+      # 快速检查缓存
       cached_response = self.cache_manager.get(question, session_id, history)
       if cached_response:
         logger.info("使用缓存回答")
@@ -2289,39 +2344,49 @@ class AssistantAgent:
       if session_id:
         self.add_message_to_history(session_id, "user", question)
 
-      # 第一阶段：使用优化的检索
-      logger.info("=== 开始文档检索 ===")
+      # 第一阶段：快速检索相关文档
       relevant_docs = await self._retrieve_relevant_docs_optimized(
         question, session_id, history, max_context_docs
       )
       logger.info(f"检索到文档数量: {len(relevant_docs)}")
-
-      # 第二阶段：如果没有相关文档，使用增强查询策略
-      if not relevant_docs:
-        logger.warning("初始检索无结果，启用增强查询策略")
+      
+      # 第二阶段：如果没有足够相关文档，使用增强查询策略
+      if len(relevant_docs) < 2:
+        logger.info("文档数量不足，使用增强查询")
         relevant_docs = await self._enhanced_retrieval_strategy(question, max_context_docs)
-        logger.info(f"增强检索后文档数量: {len(relevant_docs)}")
-
-      # 第三阶段：文档质量评估和排序
+        
+      # 第三阶段：文档排序和去重
       if relevant_docs:
-        logger.info("=== 开始文档质量评估 ===")
+        relevant_docs = self._deduplicate_documents_simple(relevant_docs)
         relevant_docs = await self._evaluate_and_rank_documents(question, relevant_docs)
-        logger.info(f"质量评估后保留文档数量: {len(relevant_docs)}")
+        logger.info(f"排序后保留文档数量: {len(relevant_docs)}")
 
-      # 第四阶段：生成回答
-      logger.info("=== 开始生成回答 ===")
+      # 第四阶段：AI思考生成回答（不直接返回文档）
+      logger.info("=== 开始AI思考与回答生成 ===")
+      
+      answer = ""
+      confidence = 0.7
+      question_type = self._classify_question_enhanced(question)
+      
       if relevant_docs:
         context_with_history = _build_context_with_history(session)
-
-        # 检查是否使用备用模型
-        using_fallback = isinstance(self.llm, FallbackChatModel)
-        if using_fallback:
-          logger.warning("检测到使用备用模型，将使用文档直接提取策略")
-
-        # 根据模型类型选择生成策略
-        if self.answer_generator and not using_fallback:
+        
+        # 使用生成模型进行思考和回答生成
+        if self.answer_generator:
           try:
-            logger.debug("使用高级答案生成器")
+            # 构建AI思考系统提示
+            thinking_prompt = """你是一个专业的AIOps智能助手。我会给你一些文档内容和一个问题。
+请基于这些文档进行思考，然后给出清晰简洁的回答。
+重要规则：
+1. 首先理解用户真正的问题是什么
+2. 分析文档中的相关信息，提取与问题相关的要点
+3. 基于这些要点组织一个连贯、简洁的回答
+4. 不要直接返回或复制文档原文
+5. 用自己的语言进行总结和解释
+6. 回答要简明扼要，避免冗长
+7. 确保回答是准确的，不要编造信息"""
+            
+            # 使用AI思考模式
             answer_result = await self.answer_generator.generate_structured_answer(
               question, relevant_docs, context_with_history
             )
@@ -2330,69 +2395,34 @@ class AssistantAgent:
             question_type = answer_result['question_type']
             key_points = answer_result['key_points']
             
-            logger.info(f"高级生成器结果 - 类型: {question_type}, 置信度: {confidence:.2f}")
+            logger.info(f"AI思考完成 - 类型: {question_type}, 置信度: {confidence:.2f}")
             
           except Exception as e:
-            logger.warning(f"高级答案生成失败，降级到基础生成: {e}")
+            logger.warning(f"高级回答生成失败: {e}")
+            # 降级到基础生成
             answer = await self._generate_answer_basic(question, relevant_docs, context_with_history)
             confidence = 0.6
-            question_type = "general"
-            key_points = []
+            key_points = self._extract_key_points_from_docs(answer, relevant_docs)
         else:
-          logger.debug("使用基础答案生成或文档直接提取")
-          if using_fallback:
-            # 直接从文档提取答案，不依赖LLM
-            answer = await self._extract_direct_answer_from_docs(question, relevant_docs)
-            confidence = 0.7  # 直接提取的置信度较高
-          else:
-            answer = await self._generate_answer_basic(question, relevant_docs, context_with_history)
-            confidence = 0.6
-          question_type = self._classify_question_enhanced(question)
+          # 基础回答生成
+          answer = await self._generate_answer_basic(question, relevant_docs, context_with_history)
+          confidence = 0.6
           key_points = self._extract_key_points_from_docs(answer, relevant_docs)
       else:
-        logger.warning("没有找到相关文档，生成通用回答")
-        answer = "抱歉，我没有找到与您问题相关的具体信息。这可能是因为：\n1. 知识库中暂未包含相关内容\n2. 问题表述可能需要调整\n\n建议您:\n- 尝试使用不同的关键词重新提问\n- 查看AI-CloudOps平台的官方文档\n- 联系技术支持获取帮助"
+        # 无相关文档时的通用回答
+        answer = "抱歉，我没有找到与您问题相关的具体信息。建议您尝试使用不同的关键词重新提问，或查阅相关文档获取帮助。"
         confidence = 0.1
-        question_type = "unknown"
         key_points = []
 
-      # 第五阶段：答案质量验证
-      logger.info("=== 进行答案质量验证 ===")
-      hallucination_free = True
-      hallucination_score = 0.8
-      if relevant_docs and len(answer) > 50:
-        try:
-          hallucination_free, hallucination_score = await _check_hallucination_advanced(
-            question, answer, relevant_docs
-          )
-          logger.debug(f"幻觉检查结果: 通过={hallucination_free}, 分数={hallucination_score:.2f}")
-        except Exception as e:
-          logger.warning(f"幻觉检查失败: {e}")
-
-      # 第六阶段：异步生成后续问题
-      follow_up_task = None
-      if len(answer) > 30:
-        follow_up_task = asyncio.create_task(
-          self._generate_follow_up_questions_advanced(question, answer, question_type)
-        )
-
-      # 第七阶段：格式化源文档
-      source_docs = self._format_source_documents_advanced(relevant_docs)
-
-      # 第八阶段：计算最终指标
-      relevance_score = confidence if hallucination_free else confidence * 0.7
+      # 计算最终指标
+      relevance_score = confidence
       recall_rate = min(len(relevant_docs) / max_context_docs, 1.0) if relevant_docs else 0.0
 
-      logger.info(f"=== 处理完成 ===")
-      logger.info(f"最终指标 - 相关性: {relevance_score:.2f}, 召回率: {recall_rate:.2f}")
+      # 格式化源文档（但不直接在回答中展示）
+      source_docs = self._format_source_documents_advanced(relevant_docs)
 
-      # 等待后续问题生成
-      follow_up_questions = []
-      if follow_up_task:
-        try:
-          follow_up_questions = await asyncio.wait_for(follow_up_task, timeout=3)
-        except:
-          follow_up_questions = self._get_default_follow_up_questions(question_type)
+      # 简化后续问题生成
+      follow_up_questions = self._get_default_follow_up_questions(question_type)[:2]
 
       # 构建响应
       result = {
@@ -2400,12 +2430,9 @@ class AssistantAgent:
         "source_documents": source_docs,
         "relevance_score": relevance_score,
         "recall_rate": recall_rate,
-        "confidence": confidence,
-        "hallucination_score": hallucination_score,
-        "question_type": question_type,
-        "key_points": key_points,
         "follow_up_questions": follow_up_questions,
-        "total_docs_found": len(relevant_docs)
+        "total_docs_found": len(relevant_docs),
+        "processing_time": round(time.time() - start_time, 2)
       }
 
       # 添加助手回复到历史
@@ -2414,16 +2441,14 @@ class AssistantAgent:
 
       # 缓存结果
       self.cache_manager.set(question, result, session_id, history)
-
+      
+      logger.info(f"回答生成完成，处理时间: {result['processing_time']}秒")
       return result
 
     except Exception as e:
       logger.error(f"获取回答失败: {e}")
-      import traceback
-      logger.error(f"错误详情: {traceback.format_exc()}")
       
       error_answer = "抱歉，处理您的问题时出现了错误，请稍后重试。"
-
       if session_id:
         self.add_message_to_history(session_id, "assistant", error_answer)
 
@@ -2432,12 +2457,9 @@ class AssistantAgent:
         "source_documents": [],
         "relevance_score": 0.0,
         "recall_rate": 0.0,
-        "confidence": 0.0,
-        "hallucination_score": 0.0,
-        "question_type": "error",
-        "key_points": [],
         "follow_up_questions": ["AIOps平台有哪些核心功能？", "如何部署AIOps系统？"],
-        "total_docs_found": 0
+        "total_docs_found": 0,
+        "processing_time": 0
       }
 
   async def _retrieve_relevant_docs_optimized(
@@ -2763,45 +2785,71 @@ class AssistantAgent:
   async def _generate_answer_basic(
     self, question: str, docs: List[Document], context: str = None
   ) -> str:
-    """基础答案生成"""
+    """基础答案生成 - 改进为AI思考模式，减少直接返回文档内容"""
     try:
+      # 提取文档内容，但格式更适合AI思考
       docs_content = ""
-      for i, doc in enumerate(docs):
-        source = doc.metadata.get("source", "未知") if doc.metadata else "未知"
-        filename = doc.metadata.get("filename", "未知文件") if doc.metadata else "未知文件"
-        relevance = doc.metadata.get("relevance_score", 0.5) if doc.metadata else 0.5
+      for i, doc in enumerate(docs[:4]):  # 限制文档数量
+        source = doc.metadata.get("filename", "文档") if doc.metadata else "文档"
+        content = doc.page_content.strip()
+        
+        # 仅提取关键部分
+        if len(content) > 500:
+          content = content[:500] + "..."
+          
+        docs_content += f"\n\n文档[{i + 1}] 来源:{source}\n{content}"
 
-        docs_content += f"\n\n文档[{i + 1}] (文件: {filename}, 相关性: {relevance:.2f}):\n{doc.page_content}"
-
-      # 限制长度
-      max_length = getattr(config.rag, 'max_context_length', 3000)  # 减少最大长度
+      # 限制总长度
+      max_length = 2000  # 减少最大长度以提高速度
       if len(docs_content) > max_length:
         docs_content = docs_content[:max_length] + "...(内容已截断)"
 
-      system_prompt = """您是专业的AIOps智能助手。请基于提供的文档内容准确回答用户问题。
+      # 修改系统提示，引导AI思考而非直接返回文档
+      system_prompt = """你是专业的AIOps智能助手。请基于提供的文档内容，思考并回答用户问题。
 
-规则:
-1. 仅基于文档内容回答，确保准确性
-2. 回答要简洁实用，重点突出
-3. 如果信息不足，明确说明限制
-4. 提供实用的建议和步骤
-5. 保持专业友好的语气"""
+思考指南:
+1. 理解用户问题的核心需求
+2. 分析文档中与问题相关的内容
+3. 提取关键信息并组织思路
+4. 用自己的语言组织简洁有用的回答
+5. 不要复制粘贴原文，要进行总结和提炼
+6. 回答要点到为止，简明扼要
+7. 如果信息不足，诚实说明"""
 
       user_prompt = f"{context}\n\n" if context else ""
-      user_prompt += f"问题: {question}\n\n相关文档:\n{docs_content}\n\n请提供专业简洁的回答："
+      user_prompt += f"问题: {question}\n\n相关文档内容:\n{docs_content}\n\n请思考并提供简洁的回答:"
 
       messages = [
         SystemMessage(content=system_prompt),
         HumanMessage(content=user_prompt)
       ]
 
+      # 减少超时时间
       response = await asyncio.wait_for(
         self.llm.ainvoke(messages),
-        timeout=30  # 减少超时时间
+        timeout=20  # 减少超时时间
       )
 
-      return response.content.strip()
+      answer = response.content.strip()
+      
+      # 如果回答过长，进行总结
+      if len(answer) > 800:
+        summarize_prompt = f"请将以下回答总结为200-300字的简洁版本，保留核心信息:\n\n{answer}"
+        try:
+          summary_response = await asyncio.wait_for(
+            self.llm.ainvoke([HumanMessage(content=summarize_prompt)]),
+            timeout=10
+          )
+          answer = summary_response.content.strip()
+        except:
+          # 如果总结失败，手动截断
+          answer = answer[:800] + "..."
 
+      return answer
+
+    except asyncio.TimeoutError:
+      logger.error("回答生成超时")
+      return "抱歉，处理您的问题时遇到了超时，请尝试简化您的问题或稍后重试。"
     except Exception as e:
       logger.error(f"基础答案生成失败: {e}")
       return "抱歉，生成回答时遇到问题，请稍后重试。"

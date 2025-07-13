@@ -13,6 +13,7 @@ import asyncio
 import logging
 import json
 import sys
+import threading
 from datetime import datetime
 from flask import Blueprint, request, jsonify
 
@@ -35,19 +36,58 @@ except ImportError:
 
 # 创建助手代理全局实例
 _assistant_agent = None
+_init_lock = threading.Lock()
+_is_initializing = False
 
 def get_assistant_agent():
-    """获取助手代理单例实例"""
-    global _assistant_agent
-    if _assistant_agent is None:
+    """获取助手代理单例实例，采用懒加载+锁机制优化初始化性能"""
+    global _assistant_agent, _is_initializing
+    
+    if _assistant_agent is not None:
+        return _assistant_agent
+        
+    # 使用锁避免多线程重复初始化
+    with _init_lock:
+        if _is_initializing:
+            # 如果正在初始化中，等待一小段时间后再检查
+            logger.info("另一个线程正在初始化小助手，等待...")
+            import time
+            for _ in range(10):  # 最多等待5秒
+                time.sleep(0.5)
+                if _assistant_agent is not None:
+                    return _assistant_agent
+        
+        # 标记为正在初始化
+        _is_initializing = True
+        
         try:
             logger.info("初始化智能小助手代理...")
             from app.core.agents.assistant import AssistantAgent
             _assistant_agent = AssistantAgent()
+            logger.info("智能小助手代理初始化完成")
         except Exception as e:
             logger.error(f"初始化智能小助手代理失败: {str(e)}")
+            _is_initializing = False
             return None
-    return _assistant_agent
+            
+        _is_initializing = False
+        return _assistant_agent
+
+# 提前在后台线程初始化小助手
+def init_assistant_in_background():
+    """在后台线程中初始化小助手，避免首次调用时的延迟"""
+    def _init_thread():
+        try:
+            logger.info("开始在后台预初始化智能小助手...")
+            get_assistant_agent()
+            logger.info("小助手后台预初始化完成")
+        except Exception as e:
+            logger.error(f"后台初始化小助手失败: {str(e)}")
+    
+    threading.Thread(target=_init_thread, daemon=True).start()
+
+# 应用启动时自动初始化
+init_assistant_in_background()
 
 def init_websocket(app):
     """初始化WebSocket"""
