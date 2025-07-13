@@ -23,15 +23,44 @@ def setup_error_handlers(app):
     @app.errorhandler(400)
     def bad_request(error):
         """处理400错误"""
-        logger.warning(f"Bad request: {request.url} - {str(error)}")
-        return jsonify(APIResponse(
-            code=400,
-            message=str(error.description) if hasattr(error, 'description') else "请求参数错误",
-            data={
-                "timestamp": datetime.utcnow().isoformat(),
-                "path": request.path
-            }
-        ).dict()), 400
+        try:
+            # 添加详细的调试信息
+            logger.error(f"400错误处理器被触发 - 错误: {str(error)}")
+            logger.error(f"错误类型: {type(error).__name__}")
+            
+            # 安全地获取请求信息
+            try:
+                url = request.url if request else "unknown"
+                path = request.path if request else "unknown"
+                method = request.method if request else "unknown"
+                content_type = request.content_type if request else "unknown"
+                
+                logger.error(f"请求信息 - URL: {url}, Method: {method}, Content-Type: {content_type}")
+            except Exception as req_e:
+                logger.error(f"无法获取请求信息: {req_e}")
+                url = "error"
+                path = "error"
+            
+            error_description = str(error.description) if hasattr(error, 'description') else "请求参数错误"
+            logger.warning(f"Bad request: {url} - {error_description}")
+            
+            return jsonify(APIResponse(
+                code=400,
+                message=error_description,
+                data={
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "path": path
+                }
+            ).dict()), 400
+            
+        except Exception as handler_error:
+            # 如果错误处理器本身出错，返回最基本的响应
+            logger.error(f"400错误处理器本身出错: {handler_error}")
+            return jsonify({
+                "code": 400,
+                "message": "请求错误",
+                "data": {}
+            }), 400
     
     @app.errorhandler(401)
     def unauthorized(error):

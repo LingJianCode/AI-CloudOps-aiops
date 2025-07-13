@@ -75,22 +75,30 @@ class RedisVectorStore:
             vector_dim: 向量维度
             local_storage_path: 本地存储路径（用于向量持久化）
         """
-        self.redis_config = redis_config
+        self.redis_config = redis_config.copy()  # 复制一份避免修改原始配置
         self.collection_name = collection_name
         self.embedding_model = embedding_model
         self.vector_dim = vector_dim
         self.local_storage_path = local_storage_path or "data/vector_storage"
         
+        # 处理Redis连接参数命名不一致
+        # redis-py库使用socket_connect_timeout而不是connection_timeout
+        if 'connection_timeout' in self.redis_config and 'socket_connect_timeout' not in self.redis_config:
+            self.redis_config['socket_connect_timeout'] = self.redis_config.pop('connection_timeout')
+        
+        # 确保decode_responses设置为False以处理二进制数据
+        self.redis_config['decode_responses'] = False
+        
         # Redis连接池
         self.connection_pool = ConnectionPool(
-            host=redis_config.get('host', 'localhost'),
-            port=redis_config.get('port', 6379),
-            db=redis_config.get('db', 0),
-            password=redis_config.get('password', ''),
+            host=self.redis_config.get('host', 'localhost'),
+            port=self.redis_config.get('port', 6379),
+            db=self.redis_config.get('db', 0),
+            password=self.redis_config.get('password', ''),
             decode_responses=False,  # 关闭自动解码，因为要存储二进制数据
-            max_connections=redis_config.get('max_connections', 10),
-            socket_timeout=redis_config.get('socket_timeout', 5),
-            socket_connect_timeout=redis_config.get('connection_timeout', 5)
+            max_connections=self.redis_config.get('max_connections', 10),
+            socket_timeout=self.redis_config.get('socket_timeout', 5),
+            socket_connect_timeout=self.redis_config.get('socket_connect_timeout', 5)
         )
         
         self.redis_client = redis.Redis(connection_pool=self.connection_pool)
@@ -1023,29 +1031,96 @@ class RedisVectorStoreManager:
         self.vector_store = None
         self._lock = threading.Lock()
         self.client = None
+        self.embedding_model = None  # 添加嵌入模型属性
         self._init_client()
 
     def _init_client(self):
-        """初始化Redis客户端连接"""
+        """初始化Redis客户端"""
         try:
-            from redis import Redis
-            self.client = Redis(**self.redis_config)
-            info = self.client.info()
-            logger.info(f"Redis向量存储直接连接成功，使用集合: {self.collection_name}")
-        except Exception as e:
+            # Redis连接配置
+            # 注意：redis-py库使用socket_connect_timeout而不是connection_timeout，需要处理参数名不匹配
+            config_copy = self.redis_config.copy()
+            if 'connection_timeout' in config_copy and 'socket_connect_timeout' not in config_copy:
+                config_copy['socket_connect_timeout'] = config_copy.pop('connection_timeout')
+            
+            # 创建两个不同的客户端：一个用于文本操作（自动解码），一个用于二进制操作（不解码）
+            # 1. 用于向量操作的二进制客户端
+            binary_config = config_copy.copy()
+            binary_config['decode_responses'] = False
+            self.binary_client = redis.Redis(**binary_config)
+            self.binary_client.ping()  # 测试连接
+            
+            # 2. 用于文本操作的客户端（可能自动解码，取决于原始配置）
+            self.client = redis.Redis(**config_copy)
+            self.client.ping()  # 测试连接
+            
+            logger.info(f"Redis连接成功，使用集合: {self.collection_name}")
+            return True
+        except redis.ConnectionError as e:
             logger.error(f"Redis直接连接失败: {e}")
             self.client = None
+            self.binary_client = None
+            return False
+        except Exception as e:
+            logger.error(f"Redis初始化失败: {e}")
+            self.client = None
+            self.binary_client = None
+            return False
+
+    def set_embedding_model(self, embedding_model: Embeddings) -> None:
+        """设置嵌入模型
+        
+        Args:
+            embedding_model: 嵌入模型实例
+        """
+        self.embedding_model = embedding_model
+        # 如果已经创建了向量存储，更新它的embedding_model
+        if self.vector_store:
+            self.vector_store.embedding_model = embedding_model
+            logger.info("已更新向量存储的嵌入模型")
 
     def get_vector_store(self) -> RedisVectorStore:
         """获取向量存储实例（单例模式）"""
         if self.vector_store is None:
             with self._lock:
                 if self.vector_store is None:
+                    # 创建一个默认的嵌入模型，如果未提供
+                    from app.core.agents.assistant import FallbackEmbeddings
+                    
+                    # 获取嵌入模型，优先使用自身的embedding_model属性
+                    embedding_model = self.embedding_model
+                    
+                    # 如果自身没有嵌入模型，尝试从调用栈获取
+                    if embedding_model is None:
+                        # 如果在app.core.agents.assistant模块中的VectorStoreManager中有embedding_model属性
+                        from app.core.agents.assistant import VectorStoreManager as AssistantVSM
+                        
+                        # 使用一个安全的方式获取嵌入模型
+                        try:
+                            # 尝试获取全局实例的嵌入模型
+                            import inspect
+                            stack = inspect.stack()
+                            for frame_info in stack:
+                                frame = frame_info.frame
+                                if 'self' in frame.f_locals:
+                                    obj = frame.f_locals['self']
+                                    if isinstance(obj, AssistantVSM) and hasattr(obj, 'embedding_model'):
+                                        embedding_model = obj.embedding_model
+                                        logger.info("从调用栈获取到嵌入模型")
+                                        break
+                        except:
+                            pass
+                    
+                    # 如果没有找到嵌入模型，使用备用模型
+                    if embedding_model is None:
+                        logger.warning("未找到嵌入模型，使用备用模型")
+                        embedding_model = FallbackEmbeddings(dimensions=self.embedding_dimensions)
+                    
                     self.vector_store = RedisVectorStore(
                         redis_config=self.redis_config,
                         collection_name=self.collection_name,
-                        embedding_model=None,  # 设为None，避免参数不匹配错误
-                        vector_dim=self.embedding_dimensions,  # 使用维度代替嵌入模型
+                        embedding_model=embedding_model,
+                        vector_dim=self.embedding_dimensions,
                         local_storage_path=self.local_storage_path
                     )
         return self.vector_store
@@ -1084,17 +1159,154 @@ class RedisVectorStoreManager:
         
         return RedisRetriever(vector_store)
     
+    def get_document_count(self) -> int:
+        """获取文档数量
+        
+        Returns:
+            int: 文档数量
+        """
+        try:
+            if self.client is None:
+                self._init_client()
+                
+            if self.client is None:
+                return 0
+                
+            # 尝试获取文档数量
+            count = self.client.scard(f"index:{self.collection_name}")
+            return max(0, count - 1)  # 减去空字符串
+        except Exception as e:
+            logger.error(f"获取文档数量失败: {str(e)}")
+            return 0
+    
+    def get_vector_dimension(self) -> Optional[int]:
+        """获取向量维度
+        
+        Returns:
+            Optional[int]: 向量维度，如果没有向量则返回None
+        """
+        try:
+            if not self.client or not hasattr(self, 'binary_client') or not self.binary_client:
+                self._init_client()
+                
+            if not self.client or not hasattr(self, 'binary_client') or not self.binary_client:
+                logger.error("Redis客户端未初始化，无法获取向量维度")
+                return None
+            
+            # 使用二进制客户端处理向量数据
+            # 获取索引中的文档ID
+            index_key = f"index:{self.collection_name}"
+            doc_ids_set = self.binary_client.smembers(index_key)
+            
+            if not doc_ids_set:
+                logger.warning(f"索引 {index_key} 中没有文档ID")
+                return None
+            
+            # 安全地处理文档ID
+            clean_doc_ids = []
+            for doc_id in doc_ids_set:
+                if doc_id == b"" or doc_id == "":  # 跳过空字符串
+                    continue
+                
+                try:
+                    # 尝试作为ASCII处理文档ID
+                    if isinstance(doc_id, bytes):
+                        doc_id_str = doc_id.decode('ascii', errors='ignore')
+                    else:
+                        doc_id_str = str(doc_id)
+                    
+                    if doc_id_str:  # 确保解码后不为空
+                        clean_doc_ids.append(doc_id_str)
+                except Exception as e:
+                    logger.warning(f"跳过无法解码的文档ID: {e}")
+            
+            if not clean_doc_ids:
+                logger.warning(f"索引 {index_key} 中没有有效的文档ID")
+                return None
+            
+            # 尝试获取第一个向量
+            for doc_id in clean_doc_ids[:3]:  # 只尝试前3个文档ID
+                try:
+                    vector_key = f"vector:{self.collection_name}:{doc_id}"
+                    vector_bytes = self.binary_client.get(vector_key)
+                    
+                    if vector_bytes:
+                        # 解析向量维度 - 直接处理二进制数据
+                        vector = np.frombuffer(vector_bytes, dtype=np.float32)
+                        vector_dim = len(vector)
+                        logger.debug(f"向量维度: {vector_dim}")
+                        return vector_dim
+                except Exception as e:
+                    logger.warning(f"尝试获取向量 {doc_id} 的维度时出错: {e}")
+                    continue
+            
+            logger.warning("未找到有效向量数据")
+            return None
+                
+        except Exception as e:
+            logger.error(f"获取向量维度失败: {str(e)}")
+            return None
+    
+    def clear_collection(self) -> bool:
+        """清理整个集合
+        
+        Returns:
+            bool: 清理成功返回True，否则返回False
+        """
+        try:
+            if self.client is None:
+                self._init_client()
+                
+            if self.client is None:
+                return False
+                
+            # 删除所有相关的键
+            prefix = f"*:{self.collection_name}*"
+            cursor = 0
+            deleted = 0
+            
+            while True:
+                cursor, keys = self.client.scan(cursor, prefix, count=100)
+                if keys:
+                    deleted += self.client.delete(*keys)
+                if cursor == 0:
+                    break
+                
+            logger.info(f"已清理 {deleted} 个键")
+            
+            # 重置向量存储
+            self.vector_store = None
+            
+            return True
+        except Exception as e:
+            logger.error(f"清理集合失败: {str(e)}")
+            return False
+    
     def health_check(self) -> Dict[str, Any]:
         """健康检查"""
         if self.vector_store:
             return self.vector_store.health_check()
         else:
-            return {"status": "not_initialized"}
+            # 简化的健康检查
+            try:
+                doc_count = self.get_document_count()
+                return {
+                    "status": "healthy" if doc_count > 0 else "empty",
+                    "document_count": doc_count,
+                    "collection_name": self.collection_name
+                }
+            except Exception as e:
+                return {"status": "unhealthy", "error": str(e)}
     
     def close(self):
         """关闭连接"""
         if self.vector_store:
             self.vector_store.close()
+        elif self.client:
+            try:
+                self.client.close()
+            except:
+                pass
 
 
 class VectorStoreManager:
@@ -1118,7 +1330,7 @@ class VectorStoreManager:
                 'db': config.redis.db,
                 'password': config.redis.password,
                 'socket_timeout': config.redis.socket_timeout,
-                'connection_timeout': config.redis.connection_timeout,
+                'socket_connect_timeout': config.redis.connection_timeout,
                 'decode_responses': config.redis.decode_responses
             }
             
@@ -1135,7 +1347,8 @@ class VectorStoreManager:
             self.redis_manager = RedisVectorStoreManager(
                 redis_config=redis_config,
                 collection_name=self.collection_name,
-                embedding_dimensions=embedding_dimensions
+                embedding_dimensions=embedding_dimensions,
+                local_storage_path=self.vector_db_path
             )
             
         except ImportError:
@@ -1226,10 +1439,23 @@ class VectorStoreManager:
             logger.error("Redis管理器未初始化，无法创建向量存储")
             return False
             
-        # 由于在其他地方已经实现了文档添加的逻辑，这里简化处理
-        logger.info("使用优化的Redis向量存储创建向量数据库")
-        
-        return True
+        try:
+            # 将嵌入模型传递给向量存储
+            vector_store = self.redis_manager.get_vector_store()
+            vector_store.embedding_model = self.embedding_model
+            
+            # 分批处理文档
+            batch_size = 50
+            for i in range(0, len(documents), batch_size):
+                batch = documents[i:i+batch_size]
+                logger.info(f"添加文档批次 {i//batch_size + 1}/{(len(documents)+batch_size-1)//batch_size}")
+                vector_store.add_documents(batch)
+                
+            logger.info(f"成功添加 {len(documents)} 个文档到向量存储")
+            return True
+        except Exception as e:
+            logger.error(f"创建向量存储失败: {e}")
+            return False
         
     def get_retriever(self):
         """获取检索器"""
@@ -1238,89 +1464,3 @@ class VectorStoreManager:
             return None
             
         return self.redis_manager.get_retriever()
-
-    def get_document_count(self) -> int:
-        """获取文档数量
-        
-        Returns:
-            int: 文档数量
-        """
-        try:
-            if self.client is None:
-                self._init_client()
-                
-            if self.client is None:
-                return 0
-                
-            # 尝试获取文档数量
-            count = self.client.hlen(f"{self.collection_name}:docs")
-            return count
-        except Exception as e:
-            logger.error(f"获取文档数量失败: {str(e)}")
-            return 0
-    
-    def get_vector_dimension(self) -> Optional[int]:
-        """获取向量维度
-        
-        Returns:
-            Optional[int]: 向量维度，如果没有向量则返回None
-        """
-        try:
-            if self.client is None:
-                self._init_client()
-                
-            if self.client is None:
-                return None
-                
-            # 获取第一个向量的维度
-            vector_keys = self.client.keys(f"{self.collection_name}:vectors:*")
-            if not vector_keys:
-                return None
-                
-            # 取第一个向量并计算其维度
-            sample_vector = self.client.hget(vector_keys[0], "vector")
-            if not sample_vector:
-                return None
-                
-            # 解析向量维度
-            import numpy as np
-            vector = np.frombuffer(sample_vector, dtype=np.float32)
-            return len(vector)
-        except Exception as e:
-            logger.error(f"获取向量维度失败: {str(e)}")
-            return None
-    
-    def clear_collection(self) -> bool:
-        """清理整个集合
-        
-        Returns:
-            bool: 清理成功返回True，否则返回False
-        """
-        try:
-            if self.client is None:
-                self._init_client()
-                
-            if self.client is None:
-                return False
-                
-            # 删除所有相关的键
-            prefix = f"{self.collection_name}:"
-            cursor = 0
-            deleted = 0
-            
-            while True:
-                cursor, keys = self.client.scan(cursor, f"{prefix}*", count=100)
-                if keys:
-                    deleted += self.client.delete(*keys)
-                if cursor == 0:
-                    break
-                
-            logger.info(f"已清理 {deleted} 个键")
-            
-            # 重置向量存储
-            self.vector_store = None
-            
-            return True
-        except Exception as e:
-            logger.error(f"清理集合失败: {str(e)}")
-            return False

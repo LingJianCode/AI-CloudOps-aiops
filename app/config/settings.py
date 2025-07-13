@@ -87,6 +87,8 @@ class LLMConfig:
     default_factory=lambda: get_env_or_config("LLM_TEMPERATURE", "llm.temperature", 0.7, float))
   max_tokens: int = field(
     default_factory=lambda: get_env_or_config("LLM_MAX_TOKENS", "llm.max_tokens", 2048, int))
+  request_timeout: int = field(
+    default_factory=lambda: get_env_or_config("LLM_REQUEST_TIMEOUT", "llm.request_timeout", 15, int))
 
   ollama_model: str = field(
     default_factory=lambda: get_env_or_config("OLLAMA_MODEL", "llm.ollama_model", "qwen2.5:3b"))
