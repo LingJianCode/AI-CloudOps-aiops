@@ -17,7 +17,7 @@ llm:
   task_model: Qwen/Qwen2.5-14B-Instruct
   temperature: 0.7
   max_tokens: 2048
-  request_timeout: 15 # LLM请求超时时间(秒)
+  request_timeout: 60 # LLM请求超时时间(秒)
   # 备用Ollama模型配置
   ollama_model: qwen2.5:3b # Ollama本地模型名称
   ollama_base_url: http://127.0.0.1:11434/v1 # Ollama API基础URL

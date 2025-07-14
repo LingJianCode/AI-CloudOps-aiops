@@ -56,17 +56,7 @@ def create_app():
         logger.error(f"路由注册失败: {str(e)}")
         logger.warning("将继续启动，但部分路由功能可能不可用")
         
-    # 初始化WebSocket
-    try:
-        from app.api.routes.assistant import init_websocket
-        init_websocket(app)
-        logger.info("WebSocket初始化完成")
-    except ImportError as e:
-        logger.warning(f"WebSocket模块导入失败: {str(e)}")
-        logger.warning("将继续启动，但WebSocket功能不可用")
-    except Exception as e:
-        logger.error(f"WebSocket初始化失败: {str(e)}")
-        logger.warning("将继续启动，但WebSocket功能不可用")
+
     
     def log_startup_info():
         """记录服务启动信息"""
@@ -78,8 +68,7 @@ def create_app():
         logger.info("  - GET  /api/v1/predict       - 负载预测")
         logger.info("  - POST /api/v1/rca           - 根因分析")
         logger.info("  - POST /api/v1/autofix       - 自动修复")
-        logger.info("  - POST /api/v1/assistant/query - 智能小助手")
-        logger.info("  - WS   /api/v1/assistant/stream - 流式智能小助手")
+        logger.info("  - POST /api/v1/assistant     - 智能小助手")
     
     # Flask 2.2+ 兼容性处理
     app_started = False
