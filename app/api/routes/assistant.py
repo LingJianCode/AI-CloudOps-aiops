@@ -16,15 +16,12 @@ logger = logging.getLogger("aiops.api.assistant")
 
 # 从重构后的模块导入所需组件
 from app.api.routes.assistant_routes import assistant_bp
-from app.api.routes.assistant_init import get_assistant_agent, init_assistant_in_background
+from app.api.routes.assistant_init import get_assistant_agent
 
 # 重导出必要的组件，保持向后兼容
 __all__ = [
     'assistant_bp',
     'get_assistant_agent'
 ]
-
-# 应用启动时自动初始化
-init_assistant_in_background()
 
 logger.info("已加载重构后的小助手API路由模块")
