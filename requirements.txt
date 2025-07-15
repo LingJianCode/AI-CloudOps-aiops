@@ -135,7 +135,7 @@ requests-toolbelt==1.0.0
 rich==14.0.0
 rpds-py==0.26.0
 rsa==4.9.1
-scikit-learn==1.7.0
+scikit-learn==1.6.1
 scipy==1.16.0
 setuptools==78.1.1
 shellingham==1.5.4

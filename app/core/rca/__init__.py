@@ -10,7 +10,7 @@ Description: 根因分析模块初始化文件，提供智能故障诊断和根�
 """
 
 from .analyzer import RCAAnalyzer
-from .detector import AnomalyDetector
 from .correlator import CorrelationAnalyzer
+from .detector import AnomalyDetector
 
 __all__ = ["RCAAnalyzer", "AnomalyDetector", "CorrelationAnalyzer"]

@@ -1,4 +1,4 @@
-# AI-CloudOps 项目文档（AIOPS部分）
+# AI-CloudOps 项目文档（AIOPS 部分）
 
 ## 📋 项目概述
 
@@ -8,10 +8,10 @@ AI-CloudOps 是一个基于人工智能的云原生运维平台，提供智能�
 
 1. **智能负载预测** - 基于历史数据和机器学习模型预测系统负载
 2. **根因分析（RCA）** - 自动分析系统故障和性能问题的根本原因
-3. **自动化修复** - 智能化的Kubernetes资源自动修复和优化
-4. **智能小助手** - 基于RAG技术的运维知识问答和建议系统
+3. **自动化修复** - 智能化的 Kubernetes 资源自动修复和优化
+4. **智能小助手** - 基于 RAG 技术的运维知识问答和建议系统
 5. **健康检查** - 全面的系统健康监控和状态报告
-6. **实时监控** - 与Prometheus集成的实时监控和告警
+6. **实时监控** - 与 Prometheus 集成的实时监控和告警
 
 ### 🏗️ 技术架构
 
@@ -129,23 +129,27 @@ AI-CloudOps-backend/python/
 ### 安装步骤
 
 1. **克隆项目**
+
 ```bash
 git clone 'https://github.com/GoSimplicity/AI-CloudOps.git'
 cd AI-CloudOps-backend/python
 ```
 
 2. **安装依赖**
+
 ```bash
 pip install -r requirements.txt
 ```
 
 3. **配置环境变量**
+
 ```bash
 cp env.example .env
 # 编辑 .env 文件，配置必要的环境变量
 ```
 
 4. **启动服务**
+
 ```bash
 # 开发环境
 python app/main.py
@@ -165,18 +169,21 @@ bash scripts/start.sh
 **位置**: `app/core/prediction/`
 
 **功能**:
-- 基于历史QPS数据预测未来负载
+
+- 基于历史 QPS 数据预测未来负载
 - 支持多种时间窗口预测
 - 智能实例数量建议
 - 置信度评估
 
 **主要算法**:
+
 - 时间序列分析
 - 线性回归模型
 - 周期性模式识别
 - 趋势分析
 
 **使用示例**:
+
 ```python
 from app.core.prediction.predictor import PredictionService
 
@@ -193,18 +200,21 @@ result = await predictor.predict_load(
 **位置**: `app/core/rca/`
 
 **功能**:
+
 - 自动化的系统故障分析
 - 多维度相关性分析
 - 异常检测和模式识别
 - 智能化的根因推荐
 
 **主要算法**:
+
 - 统计异常检测
 - 相关性分析
 - 图论分析
 - 机器学习分类
 
 **使用示例**:
+
 ```python
 from app.core.rca.analyzer import RCAAnalyzer
 
@@ -221,18 +231,21 @@ result = await analyzer.analyze_issue(
 **位置**: `app/core/agents/assistant.py`
 
 **功能**:
-- 基于RAG的知识问答
+
+- 基于 RAG 的知识问答
 - 运维建议和最佳实践
 - 上下文理解和记忆
 - 多轮对话支持
 
 **技术特性**:
+
 - 向量数据库检索
 - 语义搜索
 - 上下文管理
 - 流式响应
 
 **使用示例**:
+
 ```python
 from app.core.agents.assistant import AssistantAgent
 
@@ -248,13 +261,15 @@ response = await assistant.process_query(
 **位置**: `app/core/agents/k8s_fixer.py`
 
 **功能**:
-- Kubernetes资源自动修复
+
+- Kubernetes 资源自动修复
 - 配置优化建议
 - 资源扩缩容
 - 健康检查修复
 
 **支持的修复类型**:
-- Pod重启和恢复
+
+- Pod 重启和恢复
 - 资源配额调整
 - 网络连接修复
 - 存储问题解决
@@ -264,12 +279,14 @@ response = await assistant.process_query(
 **位置**: `app/services/prometheus.py`
 
 **功能**:
-- Prometheus指标查询
+
+- Prometheus 指标查询
 - 实时监控数据获取
 - 告警规则管理
 - 图表数据生成
 
 **支持的指标**:
+
 - 系统资源使用率
 - 应用性能指标
 - 业务指标
@@ -284,15 +301,16 @@ GET /api/v1/health
 ```
 
 **响应示例**:
+
 ```json
 {
   "status": "healthy",
   "timestamp": "2024-01-01T00:00:00Z",
   "version": "1.0.0",
   "components": {
-    "llm": {"status": "healthy", "response_time": 0.1},
-    "prometheus": {"status": "healthy", "response_time": 0.05},
-    "vector_store": {"status": "healthy", "response_time": 0.02}
+    "llm": { "status": "healthy", "response_time": 0.1 },
+    "prometheus": { "status": "healthy", "response_time": 0.05 },
+    "vector_store": { "status": "healthy", "response_time": 0.02 }
   }
 }
 ```
@@ -304,6 +322,7 @@ GET /api/v1/predict?hours=24&confidence=0.95
 ```
 
 **响应示例**:
+
 ```json
 {
   "predictions": [
@@ -336,6 +355,7 @@ Content-Type: application/json
 ```
 
 **响应示例**:
+
 ```json
 {
   "analysis": {
@@ -371,6 +391,7 @@ Content-Type: application/json
 ```
 
 **响应示例**:
+
 ```json
 {
   "response": "基于您的生产环境高负载情况，我建议...",
@@ -381,21 +402,18 @@ Content-Type: application/json
       "content": "..."
     }
   ],
-  "suggestions": [
-    "检查资源配额设置",
-    "优化Pod调度策略",
-    "配置HPA自动扩缩容"
-  ]
+  "suggestions": ["检查资源配额设置", "优化Pod调度策略", "配置HPA自动扩缩容"]
 }
 ```
 
-### WebSocket 流式API
+### WebSocket 流式 API
 
 ```
 WS /api/v1/assistant/stream
 ```
 
 **消息格式**:
+
 ```json
 {
   "type": "query",
@@ -411,13 +429,15 @@ WS /api/v1/assistant/stream
 ### 代码规范
 
 1. **命名规范**
-   - 使用Python PEP 8标准
+
+   - 使用 Python PEP 8 标准
    - 类名使用驼峰命名法
    - 函数和变量使用下划线命名法
    - 常量使用大写字母和下划线
 
 2. **文档规范**
-   - 所有模块、类、函数都需要docstring
+
+   - 所有模块、类、函数都需要 docstring
    - 使用中文注释说明复杂逻辑
    - 参数和返回值需要类型注解
 
@@ -429,12 +449,14 @@ WS /api/v1/assistant/stream
 ### 测试规范
 
 1. **单元测试**
+
    - 测试文件放在 `tests/` 目录
    - 使用 pytest 作为测试框架
    - 测试覆盖率要求 > 80%
 
 2. **集成测试**
-   - API接口测试
+
+   - API 接口测试
    - 数据库连接测试
    - 外部服务集成测试
 
@@ -446,17 +468,20 @@ WS /api/v1/assistant/stream
 ### 部署指南
 
 1. **本地部署**
+
 ```bash
 # 启动开发环境
 python app/main.py
 ```
 
-2. **Kubernetes部署**
+2. **Kubernetes 部署**
+
 ```bash
 # TODO: 待实现
 ```
 
 3. **生产部署**
+
 ```bash
 # 设置环境变量
 export ENV=production
@@ -469,56 +494,57 @@ python app/main.py
 
 ### 1. 系统性能
 
-- **异步处理**: 使用asyncio处理I/O密集操作
-- **连接池**: 数据库和HTTP连接池管理
+- **异步处理**: 使用 asyncio 处理 I/O 密集操作
+- **连接池**: 数据库和 HTTP 连接池管理
 - **缓存策略**: 多级缓存提升响应速度
 - **负载均衡**: 支持水平扩展
 
 ### 2. 内存优化
 
-- **对象池**: 复用大对象减少GC压力
+- **对象池**: 复用大对象减少 GC 压力
 - **流式处理**: 大数据集分批处理
 - **内存监控**: 实时监控内存使用情况
 
 ### 3. 网络优化
 
-- **压缩传输**: 启用gzip压缩
-- **长连接**: 复用HTTP连接
-- **CDN加速**: 静态资源CDN分发
+- **压缩传输**: 启用 gzip 压缩
+- **长连接**: 复用 HTTP 连接
+- **CDN 加速**: 静态资源 CDN 分发
 
 ## 🔒 安全说明
 
 ### 1. 数据安全
 
 - **加密存储**: 敏感数据加密存储
-- **传输加密**: HTTPS/TLS加密传输
+- **传输加密**: HTTPS/TLS 加密传输
 - **访问控制**: 基于角色的访问控制
 
-### 2. API安全
+### 2. API 安全
 
-- **身份验证**: JWT令牌认证
+- **身份验证**: JWT 令牌认证
 - **授权控制**: 细粒度权限控制
-- **限流保护**: API请求限流
+- **限流保护**: API 请求限流
 
 ### 3. 系统安全
 
 - **输入验证**: 严格的输入参数验证
-- **SQL注入防护**: 使用参数化查询
-- **XSS防护**: 输出数据转义
+- **SQL 注入防护**: 使用参数化查询
+- **XSS 防护**: 输出数据转义
 
 ## 📝 更新日志
 
 ### v1.0.0 (2025-07-11)
+
 - 初始版本发布
-- 完整的AI-CloudOps功能实现
+- 完整的 AI-CloudOps 功能实现
 - 支持多种部署方式
-- 完善的API文档和使用指南
+- 完善的 API 文档和使用指南
 
 ### 规划中的功能
 
-- [ ] 图形化Dashboard
+- [ ] 图形化 Dashboard
 - [ ] 更多云平台支持
-- [ ] 增强的AI分析能力
+- [ ] 增强的 AI 分析能力
 - [ ] 移动端应用支持
 
 ## 🤝 贡献指南
@@ -541,5 +567,5 @@ python app/main.py
 
 ---
 
-*本文档最后更新: 2025-07-11*
-*版本: 1.0.0*
+_本文档最后更新: 2025-07-11_
+_版本: 1.0.0_

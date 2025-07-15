@@ -21,6 +21,7 @@ from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
 import joblib
 from datetime import datetime, timedelta
 import matplotlib.pyplot as plt
+from typing import Any, Dict, Optional, Tuple
 
 # 创建数据目录
 os.makedirs('data/models', exist_ok=True)
@@ -31,7 +32,7 @@ SCALER_PATH = 'models/time_qps_auto_scaling_scaler.pkl'
 METADATA_PATH = 'models/time_qps_auto_scaling_model_metadata.json'
 CSV_PATH = 'data.csv'
 
-def load_real_data():
+def load_real_data() -> Optional[pd.DataFrame]:
     """加载真实数据"""
     print("正在加载真实数据...")
     
@@ -54,7 +55,7 @@ def load_real_data():
             if not pd.api.types.is_datetime64_any_dtype(df['timestamp']):
                 try:
                     df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
-                except:
+                except (ValueError, TypeError, pd.errors.ParserError):
                     print("警告: 无法解析时间戳字段，尝试使用默认格式...")
             
             # 检查数据是否有空值
@@ -92,7 +93,7 @@ def load_real_data():
         print(f"加载数据时出错: {str(e)}")
         return None
 
-def extract_features(df):
+def extract_features(df: pd.DataFrame) -> Tuple[Optional[pd.DataFrame], Optional[pd.DataFrame]]:
     """从数据集提取训练特征"""
     if df is None or len(df) == 0:
         print("错误: 无法从空数据集提取特征")
@@ -149,7 +150,7 @@ def extract_features(df):
         print(f"提取特征时出错: {str(e)}")
         return None, None
 
-def train_model():
+def train_model() -> bool:
     """训练和评估预测模型"""
     print("开始训练模型...")
     
@@ -346,7 +347,7 @@ def train_model():
         print("错误: 未能找到合适的模型")
         return False
 
-def test_model(model, scaler):
+def test_model(model: Any, scaler: StandardScaler) -> None:
     """测试模型在不同场景下的表现"""
     if model is None or scaler is None:
         print("错误: 模型或标准化器未提供")
@@ -368,7 +369,7 @@ def test_model(model, scaler):
     for case in test_cases:
         test_prediction(model, scaler, case)
     
-def test_prediction(model, scaler, case):
+def test_prediction(model: Any, scaler: StandardScaler, case: Dict[str, Any]) -> None:
     """测试单个预测场景"""
     # 创建特征字典
     features_dict = {
@@ -394,9 +395,9 @@ def test_prediction(model, scaler, case):
     # 标准化特征
     try:
         features_scaled = scaler.transform(features_df)
-    except:
+    except (ValueError, AttributeError, KeyError) as e:
         # 如果特征列不匹配，可能需要调整
-        print(f"警告: 特征不匹配，尝试调整...")
+        print(f"警告: 特征不匹配，尝试调整... 错误: {e}")
         # 获取标准化器的特征列表
         scaler_features = getattr(scaler, "feature_names_in_", None)
         if scaler_features is None:

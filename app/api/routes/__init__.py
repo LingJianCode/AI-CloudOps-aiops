@@ -10,14 +10,16 @@ Description: API路由模块初始化文件，负责注册和管理所有API端�
 """
 
 import logging
+
 from flask import Blueprint
 
 logger = logging.getLogger("aiops.routes")
 
-api_v1 = Blueprint('api_v1', __name__, url_prefix='/api/v1')
+api_v1 = Blueprint("api_v1", __name__, url_prefix="/api/v1")
 
 try:
     from .health import health_bp
+
     api_v1.register_blueprint(health_bp)
     logger.info("已注册健康检查路由")
 except Exception as e:
@@ -25,6 +27,7 @@ except Exception as e:
 
 try:
     from .predict import predict_bp
+
     api_v1.register_blueprint(predict_bp)
     logger.info("已注册预测路由")
 except Exception as e:
@@ -32,6 +35,7 @@ except Exception as e:
 
 try:
     from .rca import rca_bp
+
     api_v1.register_blueprint(rca_bp)
     logger.info("已注册根因分析路由")
 except Exception as e:
@@ -39,6 +43,7 @@ except Exception as e:
 
 try:
     from .autofix import autofix_bp
+
     api_v1.register_blueprint(autofix_bp)
     logger.info("已注册自动修复路由")
 except Exception as e:
@@ -46,28 +51,68 @@ except Exception as e:
 
 try:
     from .assistant import assistant_bp
-    api_v1.register_blueprint(assistant_bp, url_prefix='/assistant')
+
+    api_v1.register_blueprint(assistant_bp, url_prefix="/assistant")
     logger.info("已注册智能助手路由")
 except Exception as e:
     logger.warning(f"注册智能助手路由失败: {str(e)}")
 
+
 def register_routes(app):
     """注册所有路由"""
-    
+
     app.register_blueprint(api_v1)
-    
+
     # 根路径重定向到健康检查
-    @app.route('/')
+    @app.route("/")
     def index():
         return {
             "service": "AIOps Platform",
             "version": "1.0.0",
             "status": "running",
+            "description": "智能云原生运维平台",
             "endpoints": {
                 "health": "/api/v1/health",
-                "prediction": "/api/v1/predict",
-                "rca": "/api/v1/rca",
-                "autofix": "/api/v1/autofix",
-                "assistant": "/api/v1/assistant"
-            }
+                "health_components": "/api/v1/health/components",
+                "health_metrics": "/api/v1/health/metrics",
+                "health_ready": "/api/v1/health/ready",
+                "health_live": "/api/v1/health/live",
+                "prediction": {
+                    "predict": "/api/v1/predict",
+                    "trend": "/api/v1/predict/trend",
+                    "health": "/api/v1/predict/health",
+                    "ready": "/api/v1/predict/ready",
+                    "info": "/api/v1/predict/info"
+                },
+                "rca": {
+                    "analyze": "/api/v1/rca",
+                    "metrics": "/api/v1/rca/metrics",
+                    "config": "/api/v1/rca/config",
+                    "health": "/api/v1/rca/health",
+                    "ready": "/api/v1/rca/ready",
+                    "info": "/api/v1/rca/info"
+                },
+                "autofix": {
+                    "fix": "/api/v1/autofix",
+                    "diagnose": "/api/v1/autofix/diagnose",
+                    "health": "/api/v1/autofix/health",
+                    "ready": "/api/v1/autofix/ready",
+                    "info": "/api/v1/autofix/info"
+                },
+                "assistant": {
+                    "query": "/api/v1/assistant/query",
+                    "session": "/api/v1/assistant/session",
+                    "refresh": "/api/v1/assistant/refresh",
+                    "health": "/api/v1/assistant/health",
+                    "ready": "/api/v1/assistant/ready",
+                    "info": "/api/v1/assistant/info"
+                },
+            },
+            "features": [
+                "智能负载预测",
+                "根因分析",
+                "自动修复",
+                "智能问答",
+                "健康检查"
+            ]
         }

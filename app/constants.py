@@ -31,29 +31,44 @@ DEFAULT_PREDICTION_HOURS = 24
 PREDICTION_VARIATION_FACTOR = 0.1  # 10% 波动
 
 # QPS置信度阈值
-QPS_CONFIDENCE_THRESHOLDS = {
-  'low': 100,
-  'medium': 500,
-  'high': 1000,
-  'very_high': 2000
-}
+QPS_CONFIDENCE_THRESHOLDS = {"low": 100, "medium": 500, "high": 1000, "very_high": 2000}
 
 # 时间模式常量
 HOUR_FACTORS = {
-  0: 0.3, 1: 0.2, 2: 0.15, 3: 0.1, 4: 0.1, 5: 0.2,
-  6: 0.4, 7: 0.6, 8: 0.8, 9: 0.9, 10: 1.0, 11: 0.95,
-  12: 0.9, 13: 0.95, 14: 1.0, 15: 1.0, 16: 0.95, 17: 0.9,
-  18: 0.8, 19: 0.7, 20: 0.6, 21: 0.5, 22: 0.4, 23: 0.3
+    0: 0.3,
+    1: 0.2,
+    2: 0.15,
+    3: 0.1,
+    4: 0.1,
+    5: 0.2,
+    6: 0.4,
+    7: 0.6,
+    8: 0.8,
+    9: 0.9,
+    10: 1.0,
+    11: 0.95,
+    12: 0.9,
+    13: 0.95,
+    14: 1.0,
+    15: 1.0,
+    16: 0.95,
+    17: 0.9,
+    18: 0.8,
+    19: 0.7,
+    20: 0.6,
+    21: 0.5,
+    22: 0.4,
+    23: 0.3,
 }
 
 DAY_FACTORS = {
-  0: 0.95,  # 周一
-  1: 1.0,   # 周二
-  2: 1.05,  # 周三
-  3: 1.05,  # 周四
-  4: 0.95,  # 周五
-  5: 0.7,   # 周六
-  6: 0.6    # 周日
+    0: 0.95,  # 周一
+    1: 1.0,  # 周二
+    2: 1.05,  # 周三
+    3: 1.05,  # 周四
+    4: 0.95,  # 周五
+    5: 0.7,  # 周六
+    6: 0.6,  # 周日
 }
 
 # RAG 助手常量
@@ -159,28 +174,22 @@ PROMETHEUS_DEFAULT_STEP = "1m"
 
 # 健康检查所需组件列表
 REQUIRED_HEALTH_COMPONENTS = [
-  "prometheus",  # Prometheus监控
-  "llm",  # 大语言模型
-  "vector_store",  # 向量存储
-  "prediction"  # 预测模型
+    "prometheus",  # Prometheus监控
+    "llm",  # 大语言模型
+    "vector_store",  # 向量存储
+    "prediction",  # 预测模型
 ]
 
 # ==================== 日志常量 ====================
 # 日志格式
-LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 # 日志文件最大字节数
 LOG_MAX_BYTES = 10 * 1024 * 1024  # 10MB
 # 日志文件备份数量
 LOG_BACKUP_COUNT = 5
 
 # 日志级别映射
-LOG_LEVELS = {
-  'DEBUG': 10,
-  'INFO': 20,
-  'WARNING': 30,
-  'ERROR': 40,
-  'CRITICAL': 50
-}
+LOG_LEVELS = {"DEBUG": 10, "INFO": 20, "WARNING": 30, "ERROR": 40, "CRITICAL": 50}
 
 # ==================== 通知系统常量 ====================
 # 通知重试次数
@@ -191,12 +200,7 @@ NOTIFICATION_RETRY_DELAY = 5  # 秒
 NOTIFICATION_TIMEOUT = 10  # 秒
 
 # 通知严重程度级别
-NOTIFICATION_SEVERITY = {
-  'low': '低',
-  'medium': '中',
-  'high': '高',
-  'critical': '紧急'
-}
+NOTIFICATION_SEVERITY = {"low": "低", "medium": "中", "high": "高", "critical": "紧急"}
 
 # ==================== 文件和路径常量 ====================
 # 默认知识库路径
@@ -211,9 +215,7 @@ DEFAULT_LOGS_PATH = "logs"
 DEFAULT_CONFIG_PATH = "config"
 
 # 支持的文档格式列表
-SUPPORTED_DOC_FORMATS = [
-  '.md', '.txt', '.pdf', '.csv', '.json', '.html', '.xml'
-]
+SUPPORTED_DOC_FORMATS = [".md", ".txt", ".pdf", ".csv", ".json", ".html", ".xml"]
 
 # ==================== 性能和限制常量 ====================
 # 最大并发请求数
@@ -269,34 +271,34 @@ MAX_FEATURE_COUNT = 50
 
 # ==================== 环境和部署常量 ====================
 # 支持的环境类型
-ENVIRONMENTS = ['development', 'staging', 'production']
+ENVIRONMENTS = ["development", "staging", "production"]
 # 默认环境
-DEFAULT_ENVIRONMENT = 'development'
+DEFAULT_ENVIRONMENT = "development"
 
 # 资源配置建议
 # 根据不同规模提供资源配置建议
 RESOURCE_REQUIREMENTS = {
-  'small': {'cpu': '2', 'memory': '4Gi'},
-  'medium': {'cpu': '4', 'memory': '8Gi'},
-  'large': {'cpu': '8', 'memory': '16Gi'}
+    "small": {"cpu": "2", "memory": "4Gi"},
+    "medium": {"cpu": "4", "memory": "8Gi"},
+    "large": {"cpu": "8", "memory": "16Gi"},
 }
 
 # ==================== 错误消息常量 ====================
 # 错误消息字典
 ERROR_MESSAGES = {
-  'invalid_input': '输入参数无效',
-  'service_unavailable': '服务暂时不可用',
-  'timeout': '请求超时',
-  'not_found': '请求的资源未找到',
-  'unauthorized': '未授权访问',
-  'rate_limited': '请求频率超限',
-  'internal_error': '内部服务错误'
+    "invalid_input": "输入参数无效",
+    "service_unavailable": "服务暂时不可用",
+    "timeout": "请求超时",
+    "not_found": "请求的资源未找到",
+    "unauthorized": "未授权访问",
+    "rate_limited": "请求频率超限",
+    "internal_error": "内部服务错误",
 }
 
 # 成功消息字典
 SUCCESS_MESSAGES = {
-  'operation_completed': '操作成功完成',
-  'data_updated': '数据更新成功',
-  'analysis_finished': '分析完成',
-  'model_trained': '模型训练完成'
+    "operation_completed": "操作成功完成",
+    "data_updated": "数据更新成功",
+    "analysis_finished": "分析完成",
+    "model_trained": "模型训练完成",
 }
