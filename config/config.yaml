@@ -94,3 +94,10 @@ rag:
   max_docs_per_query: 8 # 每次查询最多处理的文档数
   use_enhanced_retrieval: true # 是否使用增强检索
   use_document_compressor: true # 是否使用文档压缩
+
+# MCP配置
+mcp:
+  server_url: "http://localhost:9000"  # MCP服务端地址
+  timeout: 30                           # 请求超时时间(秒)
+  max_retries: 3                        # 最大重试次数
+  health_check_interval: 5              # 健康检查间隔(秒)

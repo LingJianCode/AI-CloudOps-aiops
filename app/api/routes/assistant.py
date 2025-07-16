@@ -50,16 +50,6 @@ def sanitize_result_data(data):
 # 创建蓝图
 assistant_bp = Blueprint('assistant', __name__, url_prefix='')
 
-# 尝试导入Flask-Sock
-try:
-    from flask_sock import Sock
-    # 创建WebSocket对象
-    sock = Sock()
-    WEBSOCKET_AVAILABLE = True
-except ImportError:
-    logger.warning("Flask-Sock模块未安装，WebSocket功能将不可用")
-    WEBSOCKET_AVAILABLE = False
-    sock = None
 
 # 创建助手代理全局实例
 _assistant_agent = None
@@ -116,13 +106,6 @@ def init_assistant_in_background():
 # 应用启动时自动初始化
 init_assistant_in_background()
 
-def init_websocket(app):
-    """初始化WebSocket"""
-    if WEBSOCKET_AVAILABLE and sock is not None:
-        sock.init_app(app)
-        logger.info("已初始化WebSocket服务")
-    else:
-        logger.warning("WebSocket功能不可用，相关接口将不能使用")
 
 def safe_async_run(coroutine):
     """安全地运行异步函数，处理不同环境下的运行方式"""
@@ -223,6 +206,7 @@ def assistant_query():
         question = data.get('question', '')
         session_id = data.get('session_id')
         max_context_docs = data.get('max_context_docs', 4)
+        mode = data.get('mode', 'rag')
         
         if not question:
             logger.error("问题字段为空")
@@ -232,6 +216,45 @@ def assistant_query():
                 'data': {}
             }), 400
         
+        # 根据模式处理查询
+        if mode == 'mcp':
+            logger.info("使用MCP模式处理查询")
+            try:
+                from app.mcp.mcp_client import MCPAssistant
+                mcp_assistant = MCPAssistant()
+                
+                # 检查MCP服务是否可用
+                is_available = safe_async_run(mcp_assistant.is_available())
+                if not is_available:
+                    return jsonify({
+                        'code': 503,
+                        'message': 'MCP服务暂时不可用',
+                        'data': {}
+                    }), 503
+                
+                # 使用MCP处理查询
+                answer = safe_async_run(mcp_assistant.process_query(question))
+                
+                return jsonify({
+                    'code': 0,
+                    'message': '查询成功',
+                    'data': {
+                        'answer': answer,
+                        'session_id': session_id,
+                        'mode': 'mcp',
+                        'timestamp': datetime.now().isoformat()
+                    }
+                })
+                
+            except Exception as e:
+                logger.error(f"MCP模式处理失败: {str(e)}")
+                return jsonify({
+                    'code': 500,
+                    'message': f'MCP模式处理失败: {str(e)}',
+                    'data': {}
+                }), 500
+        
+        # 默认使用RAG模式
         agent = get_assistant_agent()
         if not agent:
             return jsonify({
@@ -272,6 +295,7 @@ def assistant_query():
                 'recall_rate': clean_result.get('recall_rate', 0.0),
                 'sources': clean_result.get('source_documents', []),
                 'follow_up_questions': clean_result.get('follow_up_questions', []),
+                'mode': 'rag',
                 'timestamp': datetime.now().isoformat()
             }
         })

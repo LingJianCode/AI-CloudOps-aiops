@@ -153,7 +153,7 @@ run_e2e_tests() {
   log "运行端到端测试..."
   
   cd $ROOT_DIR
-  python3 -m pytest tests/test_assistant.py tests/test_knowledge_load.py tests/test_websocket_assistant.py -v
+  python3 -m pytest tests/test_assistant.py tests/test_knowledge_load.py -v
   
   log "端到端测试完成"
 }
