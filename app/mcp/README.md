@@ -161,21 +161,6 @@ echo $response
 # 输出: {"code":0,"message":"查询成功","data":{"answer":"当前时间是: 2025-07-16T12:34:56Z"...}}
 ```
 
-### 示例2：命令行交互
-
-```bash
-python app/mcp/client/mcp_client.py --mode interactive
-
-# 交互示例:
-# 🔧 MCP客户端交互模式
-# mcp> tools
-# 📋 可用工具:
-#   - get_current_time: 获取当前时间，返回ISO-8601格式的时间字符串
-# 
-# mcp> execute get_current_time {"format":"iso"}
-# ✅ 执行结果: {"time": "2025-07-16T12:34:56Z", "format": "ISO-8601", "timezone": "UTC"}
-```
-
 ## 工具扩展
 
 ### 添加新工具
@@ -273,9 +258,6 @@ export MCP_TIMEOUT="30"
 ```bash
 # 服务端调试模式
 python app/mcp/server/main.py --log-level debug
-
-# 客户端调试模式
-python app/mcp/client/mcp_client.py --mode mcp --tool get_current_time --log-level debug
 ```
 
 ## 一键启动
@@ -288,7 +270,6 @@ python app/mcp/client/mcp_client.py --mode mcp --tool get_current_time --log-lev
 
 # 手动启动流程
 python app/mcp/server/main.py &
-python app/mcp/client/mcp_client.py --mode interactive
 ```
 
 ## 性能优化
@@ -312,9 +293,6 @@ python app/mcp/client/mcp_client.py --mode interactive
 ```bash
 # 1. 启动服务端（开发模式）
 uvicorn app.mcp.server.main:app --reload --port 9000
-
-# 2. 启动客户端测试
-python app/mcp/client/mcp_client.py --mode interactive
 ```
 
 ### 测试

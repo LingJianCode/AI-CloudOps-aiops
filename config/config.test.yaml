@@ -1,9 +1,9 @@
 # 应用基础配置
 app:
-  debug: false
+  debug: true
   host: 0.0.0.0
   port: 8080
-  log_level: INFO
+  log_level: DEBUG
 
 # Prometheus配置
 prometheus:
@@ -17,13 +17,14 @@ llm:
   task_model: Qwen/Qwen2.5-14B-Instruct
   temperature: 0.7
   max_tokens: 2048
+  request_timeout: 15 # LLM请求超时时间(秒)
   # 备用Ollama模型配置
   ollama_model: qwen2.5:3b # Ollama本地模型名称
   ollama_base_url: http://127.0.0.1:11434/v1 # Ollama API基础URL
 
 # 测试配置
 testing:
-  skip_llm_tests: test # 设置为true可跳过依赖LLM的测试
+  skip_llm_tests: false # 设置为true可跳过依赖LLM的测试
 
 # Kubernetes配置
 kubernetes:
@@ -63,6 +64,17 @@ notification:
 tavily:
   max_results: 5
 
+# Redis配置 - 用于向量数据缓存和元数据存储
+redis:
+  host: localhost
+  port: 6379
+  db: 0
+  password: "v6SxhWHyZC7S"
+  connection_timeout: 5
+  socket_timeout: 5
+  max_connections: 10
+  decode_responses: true
+
 # 小助手配置
 rag:
   vector_db_path: data/vector_db
@@ -82,3 +94,10 @@ rag:
   max_docs_per_query: 8 # 每次查询最多处理的文档数
   use_enhanced_retrieval: true # 是否使用增强检索
   use_document_compressor: true # 是否使用文档压缩
+
+# MCP配置
+mcp:
+  server_url: "http://localhost:9000" # MCP服务端地址
+  timeout: 30 # 请求超时时间(秒)
+  max_retries: 3 # 最大重试次数
+  health_check_interval: 5 # 健康检查间隔(秒)

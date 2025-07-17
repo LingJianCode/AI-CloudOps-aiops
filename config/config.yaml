@@ -66,7 +66,7 @@ tavily:
 
 # Redis配置 - 用于向量数据缓存和元数据存储
 redis:
-  host: localhost
+  host: 127.0.0.1
   port: 6379
   db: 0
   password: "v6SxhWHyZC7S"
@@ -97,7 +97,7 @@ rag:
 
 # MCP配置
 mcp:
-  server_url: "http://localhost:9000"  # MCP服务端地址
-  timeout: 30                           # 请求超时时间(秒)
-  max_retries: 3                        # 最大重试次数
-  health_check_interval: 5              # 健康检查间隔(秒)
+  server_url: "http://127.0.0.1:9000" # MCP服务端地址
+  timeout: 30 # 请求超时时间(秒)
+  max_retries: 3 # 最大重试次数
+  health_check_interval: 5 # 健康检查间隔(秒)
