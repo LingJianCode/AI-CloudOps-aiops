@@ -30,48 +30,42 @@ start_time = time.time()
 def create_app():
     """创建Flask应用实例"""
     app = Flask(__name__)
-    
+
     # 设置日志系统
     setup_logging(app)
-    logger = logging.getLogger("aiops")
-    logger.info("=" * 50)
-    logger.info("AIOps平台启动中...")
-    logger.info(f"调试模式: {config.debug}")
-    logger.info(f"日志级别: {config.log_level}")
-    logger.info("=" * 50)
-    
+    log = logging.getLogger("aiops")
+    log.info("=" * 50)
+    log.info("AIOps平台启动中...")
+    log.info(f"调试模式: {config.debug}")
+    log.info(f"日志级别: {config.log_level}")
+    log.info("=" * 50)
+
     # 注册中间件
     try:
         register_middleware(app)
-        logger.info("中间件注册完成")
+        log.info("中间件注册完成")
     except Exception as e:
-        logger.error(f"中间件注册失败: {str(e)}")
-        logger.warning("将继续启动，但部分中间件功能可能不可用")
-    
+        log.error(f"中间件注册失败: {str(e)}")
+        log.warning("将继续启动，但部分中间件功能可能不可用")
+
     # 注册路由
     try:
         register_routes(app)
-        logger.info("路由注册完成")
+        log.info("路由注册完成")
     except Exception as e:
-        logger.error(f"路由注册失败: {str(e)}")
-        logger.warning("将继续启动，但部分路由功能可能不可用")
-        
-    
+        log.error(f"路由注册失败: {str(e)}")
+        log.warning("将继续启动，但部分路由功能可能不可用")
+
+
     def log_startup_info():
         """记录服务启动信息"""
         startup_time = time.time() - start_time
-        logger.info(f"AIOps平台启动完成，耗时: {startup_time:.2f}秒")
-        logger.info(f"服务地址: http://{config.host}:{config.port}")
-        logger.info("可用的API端点:")
-        logger.info("  - GET  /api/v1/health        - 健康检查")
-        logger.info("  - GET  /api/v1/predict       - 负载预测")
-        logger.info("  - POST /api/v1/rca           - 根因分析")
-        logger.info("  - POST /api/v1/autofix       - 自动修复")
-        logger.info("  - POST /api/v1/assistant/query - 智能小助手")
-    
+        log.info(f"AIOps平台启动完成，耗时: {startup_time:.2f}秒")
+        log.info(f"服务地址: http://{config.host}:{config.port}")
+
     # Flask 2.2+ 兼容性处理
     app_started = False
-    
+
     @app.before_request
     def _log_startup_wrapper():
         """首次请求前记录启动信息"""
@@ -79,29 +73,28 @@ def create_app():
         if not app_started:
             log_startup_info()
             app_started = True
-    
+
     @app.teardown_appcontext
     def cleanup(error):
         """应用上下文清理错误处理"""
         if error:
-            logger = logging.getLogger("aiops")
-            logger.error(f"应用上下文清理时发生错误: {str(error)}")
-    
+            log.error(f"应用上下文清理时发生错误: {str(error)}")
+
     return app
 
-app = create_app()
+server = create_app()
 
 if __name__ == "__main__":
     """直接运行时的主入口"""
     logger = logging.getLogger("aiops")
-    
+
     try:
         logger.info(f"在 {config.host}:{config.port} 启动Flask服务器")
-        app.run(
+        server.run(
             host=config.host,
             port=config.port,
             debug=config.debug,
-            threaded=True
+            threaded=True # 开启多线程
         )
     except KeyboardInterrupt:
         logger.info("收到中断信号，正在关闭服务...")
