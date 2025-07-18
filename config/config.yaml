@@ -1,6 +1,6 @@
 # 应用基础配置
 app:
-  debug: false
+  debug: true # 是否开启调试模式
   host: 0.0.0.0
   port: 8080
   log_level: INFO
@@ -12,15 +12,15 @@ prometheus:
 
 # LLM模型配置
 llm:
-  provider: openai # 可选值: openai, ollama - 设置主要的LLM提供商
-  model: Qwen/Qwen3-14B # 使用OpenAI提供商时的模型名称
-  task_model: Qwen/Qwen2.5-14B-Instruct
-  temperature: 0.7
-  max_tokens: 2048
+  provider: openai # 可选值: openai, ollama
+  model: Qwen/Qwen3-14B # 主模型
+  task_model: Qwen/Qwen2.5-14B-Instruct # 任务模型
+  temperature: 0.7 # LLM模型温度
+  max_tokens: 2048 # LLM模型最大生成长度
   request_timeout: 15 # LLM请求超时时间(秒)
-  # 备用Ollama模型配置
-  ollama_model: qwen2.5:3b # Ollama本地模型名称
-  ollama_base_url: http://127.0.0.1:11434/v1 # Ollama API基础URL
+  # Ollama模型配置
+  ollama_model: qwen2.5:3b
+  ollama_base_url: http://127.0.0.1:11434
 
 # 测试配置
 testing:
@@ -28,17 +28,17 @@ testing:
 
 # Kubernetes配置
 kubernetes:
-  in_cluster: false
-  config_path: ./deploy/kubernetes/config
+  in_cluster: false # 是否使用Kubernetes集群内配置
+  config_path: ./deploy/kubernetes/config # Kubernetes集群配置文件路径
   namespace: default
 
 # 根因分析配置
 rca:
-  default_time_range: 30
-  max_time_range: 1440
-  anomaly_threshold: 0.65
-  correlation_threshold: 0.7
-  default_metrics:
+  default_time_range: 30 # 默认时间范围(分钟)
+  max_time_range: 1440 # 最大时间范围(分钟)
+  anomaly_threshold: 0.65  # 根因分析异常阈值
+  correlation_threshold: 0.7 # 根因分析相关度阈值
+  default_metrics: # 默认监控指标
     - container_cpu_usage_seconds_total
     - container_memory_working_set_bytes
     - kube_pod_container_status_restarts_total
@@ -50,19 +50,15 @@ rca:
 
 # 预测配置
 prediction:
-  model_path: data/models/time_qps_auto_scaling_model.pkl
-  scaler_path: data/models/time_qps_auto_scaling_scaler.pkl
-  max_instances: 20
-  min_instances: 1
-  prometheus_query: 'rate(nginx_ingress_controller_nginx_process_requests_total{service="ingress-nginx-controller-metrics"}[10m])'
+  model_path: data/models/time_qps_auto_scaling_model.pkl # 预测模型路径
+  scaler_path: data/models/time_qps_auto_scaling_scaler.pkl # 预测模型缩放器路径
+  max_instances: 20 # 预测模型最大实例数
+  min_instances: 1 # 预测模型最小实例数
+  prometheus_query: 'rate(nginx_ingress_controller_nginx_process_requests_total{service="ingress-nginx-controller-metrics"}[10m])' # 预测模型查询
 
 # 通知配置
 notification:
-  enabled: true
-
-# Tavily搜索配置
-tavily:
-  max_results: 5
+  enabled: true # 是否启用通知
 
 # Redis配置 - 用于向量数据缓存和元数据存储
 redis:
@@ -70,27 +66,25 @@ redis:
   port: 6379
   db: 0
   password: "v6SxhWHyZC7S"
-  connection_timeout: 5
-  socket_timeout: 5
-  max_connections: 10
-  decode_responses: true
+  connection_timeout: 5 # Redis连接超时时间(秒)
+  socket_timeout: 5 # RedisSocket超时时间(秒)
+  max_connections: 10 # Redis最大连接数
+  decode_responses: true # 是否解码响应
 
 # 小助手配置
 rag:
-  vector_db_path: data/vector_db
-  collection_name: aiops-assistant
-  knowledge_base_path: data/knowledge_base
-  chunk_size: 1000
-  chunk_overlap: 200
-  top_k: 4
-  similarity_threshold: 0.7
-  openai_embedding_model: Pro/BAAI/bge-m3
-  ollama_embedding_model: nomic-embed-text
-  max_context_length: 4000
-  temperature: 0.1
-  # 缓存设置
+  vector_db_path: data/vector_db # 向量数据库路径
+  collection_name: aiops-assistant # 向量数据库集合名称
+  knowledge_base_path: data/knowledge_base # 知识库路径
+  chunk_size: 1000 # 文档分块大小
+  chunk_overlap: 200 # 文档分块重叠大小
+  top_k: 4 # 最多返回的相似度
+  similarity_threshold: 0.7 # 相似度阈值
+  openai_embedding_model: Pro/BAAI/bge-m3 # OpenAI嵌入模型
+  ollama_embedding_model: nomic-embed-text # Ollama嵌入模型
+  max_context_length: 4000 # 最大上下文长度
+  temperature: 0.1 # LLM模型温度
   cache_expiry: 3600 # 缓存过期时间(秒)
-  # 文档处理设置
   max_docs_per_query: 8 # 每次查询最多处理的文档数
   use_enhanced_retrieval: true # 是否使用增强检索
   use_document_compressor: true # 是否使用文档压缩

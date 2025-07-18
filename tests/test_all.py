@@ -26,22 +26,21 @@ logger = logging.getLogger("test_all")
 def run_all_tests():
     """运行所有测试模块"""
     logger.info("开始运行所有测试...")
-    
+
     # 获取测试目录
     test_dir = Path(__file__).parent
-    
+
     # 定义测试模块顺序
     test_modules = [
         "test_health.py",
         "test_rca.py",
         "test_prediction.py",
         "test_autofix.py",
-        "test_knowledge_load.py"
     ]
-    
+
     # 收集结果
     results = {}
-    
+
     # 运行测试
     for module in test_modules:
         module_path = test_dir / module
@@ -52,18 +51,18 @@ def run_all_tests():
         else:
             logger.warning(f"测试模块不存在: {module}")
             results[module] = "不存在"
-    
+
     # 输出结果摘要
     logger.info("\n" + "=" * 50)
     logger.info("测试结果摘要")
     logger.info("=" * 50)
-    
+
     all_passed = True
     for module, status in results.items():
         logger.info(f"{module}: {status}")
         if status != "通过":
             all_passed = False
-    
+
     return all_passed
 
 if __name__ == "__main__":

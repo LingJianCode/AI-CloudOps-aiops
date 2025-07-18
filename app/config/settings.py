@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+
 """
-应用程序配置管理模块
+AI-CloudOps-aiops
+Author: Bamboo
+Email: bamboocloudops@gmail.com
+License: Apache 2.0
+Description: 应用程序配置管理模块
 """
 
 import os
@@ -114,6 +119,13 @@ class LLMConfig:
 
 
 @dataclass
+class TestingConfig:
+  """测试配置"""
+  skip_llm_tests: bool = field(
+    default_factory=lambda: get_env_or_config("SKIP_LLM_TESTS", "testing.skip_llm_tests", False, bool))
+
+
+@dataclass
 class K8sConfig:
   """Kubernetes 集群配置"""
   in_cluster: bool = field(
@@ -199,7 +211,7 @@ class TavilyConfig:
 class RedisConfig:
   """Redis 向量存储配置"""
   host: str = field(
-    default_factory=lambda: get_env_or_config("REDIS_HOST", "redis.host", "localhost"))
+    default_factory=lambda: get_env_or_config("REDIS_HOST", "redis.host", "127.0.0.1"))
   port: int = field(
     default_factory=lambda: get_env_or_config("REDIS_PORT", "redis.port", 6379, int))
   db: int = field(
@@ -247,6 +259,14 @@ class RAGConfig:
                                               4000, int))
   temperature: float = field(
     default_factory=lambda: get_env_or_config("RAG_TEMPERATURE", "rag.temperature", 0.1, float))
+  cache_expiry: int = field(
+    default_factory=lambda: get_env_or_config("RAG_CACHE_EXPIRY", "rag.cache_expiry", 3600, int))
+  max_docs_per_query: int = field(
+    default_factory=lambda: get_env_or_config("RAG_MAX_DOCS_PER_QUERY", "rag.max_docs_per_query", 8, int))
+  use_enhanced_retrieval: bool = field(
+    default_factory=lambda: get_env_or_config("RAG_USE_ENHANCED_RETRIEVAL", "rag.use_enhanced_retrieval", True, bool))
+  use_document_compressor: bool = field(
+    default_factory=lambda: get_env_or_config("RAG_USE_DOCUMENT_COMPRESSOR", "rag.use_document_compressor", True, bool))
 
   @property
   def effective_embedding_model(self) -> str:
@@ -258,7 +278,7 @@ class RAGConfig:
 class MCPConfig:
   """MCP配置"""
   server_url: str = field(
-    default_factory=lambda: get_env_or_config("MCP_SERVER_URL", "mcp.server_url", "http://localhost:9000"))
+    default_factory=lambda: get_env_or_config("MCP_SERVER_URL", "mcp.server_url", "http://127.0.0.1:9000"))
   timeout: int = field(
     default_factory=lambda: get_env_or_config("MCP_TIMEOUT", "mcp.timeout", 30, int))
   max_retries: int = field(
@@ -278,6 +298,7 @@ class AppConfig:
 
   prometheus: PrometheusConfig = field(default_factory=PrometheusConfig)
   llm: LLMConfig = field(default_factory=LLMConfig)
+  testing: TestingConfig = field(default_factory=TestingConfig)
   k8s: K8sConfig = field(default_factory=K8sConfig)
   rca: RCAConfig = field(default_factory=RCAConfig)
   prediction: PredictionConfig = field(default_factory=PredictionConfig)

@@ -70,6 +70,14 @@ class CorrelationAnalyzer:
                     # 清理数据
                     clean_series = df['value'].dropna()
                     if len(clean_series) > 5:  # 确保有足够的数据点
+                        # 创建时间索引
+                        if not isinstance(clean_series.index, pd.DatetimeIndex):
+                            clean_series.index = pd.date_range(
+                                start=pd.Timestamp.now(tz='UTC') - pd.Timedelta(minutes=len(clean_series)-1),
+                                periods=len(clean_series), 
+                                freq='1min',
+                                tz='UTC'
+                            )
                         clean_series.name = metric_name
                         series_list.append(clean_series)
             
@@ -80,8 +88,8 @@ class CorrelationAnalyzer:
             combined_df = pd.concat(series_list, axis=1, join='outer')
             
             # 重采样到统一时间间隔
-            if not combined_df.empty:
-                combined_df = combined_df.resample('1T').mean()
+            if not combined_df.empty and isinstance(combined_df.index, pd.DatetimeIndex):
+                combined_df = combined_df.resample('1min').mean()
             
             # 只保留有足够数据的行
             min_valid_points = max(3, len(combined_df.columns) // 2)

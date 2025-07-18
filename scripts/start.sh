@@ -8,12 +8,14 @@ set -e
 SCRIPT_DIR=$(cd $(dirname $0) && pwd)
 ROOT_DIR=$(cd $SCRIPT_DIR/.. && pwd)
 
-# 导入配置读取工具
-source "$SCRIPT_DIR/config_reader.sh"
+# 切换到项目根目录
+cd "$ROOT_DIR"
 
 # 配置
 APP_NAME="AIOps Platform"
 APP_VERSION="1.0.0"
+APP_HOST="0.0.0.0"
+APP_PORT="8080"
 
 # 颜色输出
 RED='\033[0;31m'
@@ -119,10 +121,60 @@ check_config() {
     log_info "✅ 配置检查通过"
 }
 
+# 读取配置文件
+read_config() {
+    log_info "读取配置文件..."
+    
+    # 检查配置文件是否存在
+    local config_file="config/config.yaml"
+    if [ "$ENV" = "production" ] && [ -f "config/config.production.yaml" ]; then
+        config_file="config/config.production.yaml"
+    fi
+    
+    if [ ! -f "$config_file" ]; then
+        log_error "配置文件 $config_file 不存在"
+        return 1
+    fi
+    
+    # 使用Python读取YAML配置
+    if command -v python3 &> /dev/null; then
+        local python_output=$(python3 -c "
+import yaml
+import sys
+
+try:
+    config_file = '$config_file'
+    with open(config_file, 'r') as f:
+        config = yaml.safe_load(f)
+    
+    # 设置环境变量
+    app_config = config.get('app', {})
+    print(f'{app_config.get(\"host\", \"0.0.0.0\")}')
+    print(f'{app_config.get(\"port\", 8080)}')
+    
+except Exception as e:
+    print(f'读取配置文件失败: {e}', file=sys.stderr)
+    sys.exit(1)
+")
+        
+        if [ $? -eq 0 ]; then
+            APP_HOST=$(echo "$python_output" | head -n1)
+            APP_PORT=$(echo "$python_output" | head -n2 | tail -n1)
+            log_info "配置读取成功: HOST=$APP_HOST, PORT=$APP_PORT"
+        else
+            log_error "读取配置文件失败"
+            return 1
+        fi
+    else
+        log_error "Python3 未找到，无法读取配置文件"
+        return 1
+    fi
+}
+
 # 检查端口
 check_port() {
     # 读取配置
-    read_config
+    read_config >/dev/null 2>&1 || true
 
     local port=${1:-$APP_PORT}
     
@@ -204,8 +256,10 @@ setup_environment() {
         log_info "✅ 已加载 .env 配置（仅敏感数据）"
     fi
     
-    # 读取配置文件中的值
-    read_config
+    # 读取配置文件中的值，失败时使用默认值
+    read_config >/dev/null 2>&1 || {
+        log_info "使用默认配置: HOST=$APP_HOST, PORT=$APP_PORT"
+    }
     
     # 设置默认值，优先使用配置文件的值
     export PYTHONPATH="${PYTHONPATH:-.}"
@@ -340,7 +394,7 @@ restart_service() {
 # 显示状态
 show_status() {
     # 读取配置
-    read_config
+    read_config >/dev/null 2>&1 || true
     
     if [ -f "logs/app.pid" ]; then
         local pid=$(cat logs/app.pid)
@@ -401,7 +455,7 @@ show_logs() {
 # 检查健康状态
 check_health() {
     # 读取配置
-    read_config
+    read_config >/dev/null 2>&1 || true
     
     local url="http://${HOST:-$APP_HOST}:${PORT:-$APP_PORT}/api/v1/health"
     

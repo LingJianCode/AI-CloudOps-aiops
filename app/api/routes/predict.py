@@ -27,7 +27,9 @@ prediction_service = PredictionService()
 
 @predict_bp.route('/predict', methods=['GET', 'POST'])
 def predict_instances():
-    """预测实例数接口"""
+    """
+    预测实例数接口
+    """
     try:
         # 处理请求参数
         if request.method == 'POST':
@@ -39,14 +41,14 @@ def predict_instances():
         else:
             # GET请求使用默认参数
             predict_request = PredictionRequest()
-        
+
         # 验证QPS参数
         if predict_request.current_qps is not None:
             if not validate_qps(predict_request.current_qps):
                 return jsonify(APIResponse(code=400, message="QPS参数无效", data={}).dict()), 400
-        
+
         logger.info(f"收到预测请求: QPS={predict_request.current_qps}, 时间={predict_request.timestamp}")
-        
+
         # 执行预测
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
@@ -60,10 +62,10 @@ def predict_instances():
             )
         finally:
             loop.close()
-        
+
         if result is None:
             return jsonify(APIResponse(code=500, message="预测失败，模型未加载或服务异常", data={}).dict()), 500
-        
+
         # 构建响应
         response = PredictionResponse(
             instances=result['instances'],
@@ -74,18 +76,20 @@ def predict_instances():
             prediction_type=result.get('prediction_type', 'model_based'),
             features=result.get('features')
         )
-        
+
         logger.info(f"预测完成: 实例数={response.instances}, QPS={response.current_qps}, 置信度={response.confidence}")
-        
+
         return jsonify(APIResponse(code=0, message="预测成功", data=response.dict()).dict())
-        
+
     except Exception as e:
         logger.error(f"预测请求失败: {str(e)}")
         return jsonify(APIResponse(code=500, message=f"预测失败: {str(e)}", data={}).dict()), 500
 
 @predict_bp.route('/predict/trend', methods=['GET', 'POST'])
 def predict_trend():
-    """预测未来趋势"""
+    """
+    预测未来趋势
+    """
     try:
         if request.method == 'POST':
             data = request.get_json() or {}
@@ -95,16 +99,16 @@ def predict_trend():
             # 处理GET请求的查询参数
             hours_ahead = request.args.get('hours', type=int, default=24)
             current_qps = request.args.get('qps', type=float)
-        
+
         # 验证参数
         if not isinstance(hours_ahead, int) or hours_ahead < 1 or hours_ahead > 168:  # 最多一周
             return jsonify(APIResponse(code=400, message="hours_ahead参数必须在1-168之间", data={}).dict()), 400
-        
+
         if current_qps is not None and not validate_qps(current_qps):
             return jsonify(APIResponse(code=400, message="QPS参数无效", data={}).dict()), 400
-        
+
         logger.info(f"收到趋势预测请求: 未来{hours_ahead}小时, QPS={current_qps}")
-        
+
         # 执行趋势预测
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
@@ -117,36 +121,38 @@ def predict_trend():
             )
         finally:
             loop.close()
-        
+
         if result is None:
             return jsonify(APIResponse(code=500, message="趋势预测失败", data={}).dict()), 500
-        
+
         logger.info(f"趋势预测完成: {len(result.get('forecast', []))} 个预测点")
-        
+
         return jsonify(APIResponse(code=0, message="趋势预测成功", data=result).dict())
-        
+
     except Exception as e:
         logger.error(f"趋势预测失败: {str(e)}")
         return jsonify(APIResponse(code=500, message=f"趋势预测失败: {str(e)}", data={}).dict()), 500
 
 @predict_bp.route('/predict/models/reload', methods=['POST'])
 def reload_models():
-    """重新加载预测模型"""
+    """
+    重新加载预测模型
+    """
     try:
         logger.info("收到模型重新加载请求")
-        
+
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
             success = loop.run_until_complete(prediction_service.reload_models())
         finally:
             loop.close()
-        
+
         if success:
             logger.info("模型重新加载成功")
             return jsonify(APIResponse(
-                code=0, 
-                message="模型重新加载成功", 
+                code=0,
+                message="模型重新加载成功",
                 data={
                     "timestamp": datetime.datetime.utcnow().isoformat(),
                     "model_info": prediction_service.get_service_info()
@@ -155,16 +161,16 @@ def reload_models():
         else:
             logger.error("模型重新加载失败")
             return jsonify(APIResponse(
-                code=500, 
-                message="模型重新加载失败", 
+                code=500,
+                message="模型重新加载失败",
                 data={"timestamp": datetime.datetime.utcnow().isoformat()}
             ).dict()), 500
-        
+
     except Exception as e:
         logger.error(f"模型重新加载异常: {str(e)}")
         return jsonify(APIResponse(
-            code=500, 
-            message=f"模型重新加载异常: {str(e)}", 
+            code=500,
+            message=f"模型重新加载异常: {str(e)}",
             data={"timestamp": datetime.datetime.utcnow().isoformat()}
         ).dict()), 500
 
@@ -174,29 +180,31 @@ def prediction_info():
     try:
         service_info = prediction_service.get_service_info()
         return jsonify(APIResponse(
-            code=0, 
-            message="获取预测服务信息成功", 
+            code=0,
+            message="获取预测服务信息成功",
             data={
                 "timestamp": datetime.datetime.utcnow().isoformat(),
                 "service_info": service_info
             }
         ).dict())
-        
+
     except Exception as e:
         logger.error(f"获取预测服务信息失败: {str(e)}")
         return jsonify(APIResponse(
-            code=500, 
-            message=f"获取服务信息失败: {str(e)}", 
+            code=500,
+            message=f"获取服务信息失败: {str(e)}",
             data={"timestamp": datetime.datetime.utcnow().isoformat()}
         ).dict()), 500
 
 @predict_bp.route('/predict/health', methods=['GET'])
 def predict_health():
-    """预测服务健康检查"""
+    """
+    预测服务健康检查
+    """
     try:
         is_healthy = prediction_service.is_healthy()
         service_info = prediction_service.get_service_info()
-        
+
         health_status = {
             "status": "healthy" if is_healthy else "unhealthy",
             "healthy": is_healthy,
@@ -205,18 +213,18 @@ def predict_health():
             "timestamp": datetime.datetime.utcnow().isoformat(),
             "details": service_info
         }
-        
+
         return jsonify(APIResponse(
-            code=0, 
-            message="健康检查完成", 
+            code=0,
+            message="健康检查完成",
             data=health_status
         ).dict())
-        
+
     except Exception as e:
         logger.error(f"预测健康检查失败: {str(e)}")
         return jsonify(APIResponse(
-            code=500, 
-            message=f"健康检查失败: {str(e)}", 
+            code=500,
+            message=f"健康检查失败: {str(e)}",
             data={
                 "status": "error",
                 "healthy": False,

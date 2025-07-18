@@ -12,7 +12,7 @@ check_python() {
     if command -v python3 &> /dev/null; then
         PYTHON_VERSION=$(python3 -c "import sys; print('.'.join(map(str, sys.version_info[:2])))")
         echo "Python版本: $PYTHON_VERSION"
-        
+
         # 检查是否为3.11+
         if python3 -c "import sys; exit(0 if sys.version_info >= (3, 11) else 1)"; then
             echo "✅ Python版本满足要求"
@@ -37,7 +37,7 @@ check_docker() {
         echo "❌ 未找到Docker，请先安装Docker"
         exit 1
     fi
-    
+
     if command -v docker-compose &> /dev/null; then
         COMPOSE_VERSION=$(docker-compose --version)
         echo "Docker Compose版本: $COMPOSE_VERSION"
@@ -65,7 +65,7 @@ create_directories() {
 # 设置配置文件
 setup_config() {
     echo "⚙️  设置配置文件..."
-    
+
     # 环境变量文件 (仅包含敏感数据)
     if [ ! -f .env ]; then
         cp env.example .env
@@ -73,17 +73,13 @@ setup_config() {
     else
         echo "⚠️  .env 文件已存在，跳过创建"
     fi
-    
+
     # 创建开发环境YAML配置
     if [ ! -f config/config.yaml ]; then
         cat > config/config.yaml << 'EOF'
-# ==============================================
-# AIOps平台配置文件
-# ==============================================
-
 # 应用基础配置
 app:
-  debug: true
+  debug: true # 是否开启调试模式
   host: 0.0.0.0
   port: 8080
   log_level: INFO
@@ -95,31 +91,33 @@ prometheus:
 
 # LLM模型配置
 llm:
-  provider: openai  # 可选值: openai, ollama - 设置主要的LLM提供商
-  model: Qwen/Qwen3-14B
-  temperature: 0.7
-  max_tokens: 2048
-  # 备用Ollama模型配置
+  provider: openai # 可选值: openai, ollama
+  model: Qwen/Qwen3-14B # 主模型
+  task_model: Qwen/Qwen2.5-14B-Instruct # 任务模型
+  temperature: 0.7 # LLM模型温度
+  max_tokens: 2048 # LLM模型最大生成长度
+  request_timeout: 15 # LLM请求超时时间(秒)
+  # Ollama模型配置
   ollama_model: qwen2.5:3b
-  ollama_base_url: http://127.0.0.1:11434/v1
+  ollama_base_url: http://127.0.0.1:11434
 
 # 测试配置
 testing:
-  skip_llm_tests: false
+  skip_llm_tests: false # 设置为true可跳过依赖LLM的测试
 
 # Kubernetes配置
 kubernetes:
-  in_cluster: false
-  config_path: ./deploy/kubernetes/config
+  in_cluster: false # 是否使用Kubernetes集群内配置
+  config_path: ./deploy/kubernetes/config # Kubernetes集群配置文件路径
   namespace: default
 
 # 根因分析配置
 rca:
-  default_time_range: 30
-  max_time_range: 1440
-  anomaly_threshold: 0.65
-  correlation_threshold: 0.7
-  default_metrics:
+  default_time_range: 30 # 默认时间范围(分钟)
+  max_time_range: 1440 # 最大时间范围(分钟)
+  anomaly_threshold: 0.65  # 根因分析异常阈值
+  correlation_threshold: 0.7 # 根因分析相关度阈值
+  default_metrics: # 默认监控指标
     - container_cpu_usage_seconds_total
     - container_memory_working_set_bytes
     - kube_pod_container_status_restarts_total
@@ -131,84 +129,101 @@ rca:
 
 # 预测配置
 prediction:
-  model_path: data/models/time_qps_auto_scaling_model.pkl
-  scaler_path: data/models/time_qps_auto_scaling_scaler.pkl
-  max_instances: 20
-  min_instances: 1
-  prometheus_query: 'rate(nginx_ingress_controller_nginx_process_requests_total{service="ingress-nginx-controller-metrics"}[10m])'
+  model_path: data/models/time_qps_auto_scaling_model.pkl # 预测模型路径
+  scaler_path: data/models/time_qps_auto_scaling_scaler.pkl # 预测模型缩放器路径
+  max_instances: 20 # 预测模型最大实例数
+  min_instances: 1 # 预测模型最小实例数
+  prometheus_query: 'rate(nginx_ingress_controller_nginx_process_requests_total{service="ingress-nginx-controller-metrics"}[10m])' # 预测模型查询
 
 # 通知配置
 notification:
-  enabled: true
+  enabled: true # 是否启用通知
 
-# Tavily搜索配置
-tavily:
-  max_results: 5
+# Redis配置 - 用于向量数据缓存和元数据存储
+redis:
+  host: 127.0.0.1
+  port: 6379
+  db: 0
+  password: "v6SxhWHyZC7S"
+  connection_timeout: 5 # Redis连接超时时间(秒)
+  socket_timeout: 5 # RedisSocket超时时间(秒)
+  max_connections: 10 # Redis最大连接数
+  decode_responses: true # 是否解码响应
 
 # 小助手配置
 rag:
-  vector_db_path: data/vector_db
-  collection_name: aiops-assistant
-  knowledge_base_path: data/knowledge_base
-  chunk_size: 1000
-  chunk_overlap: 200
-  top_k: 4
-  similarity_threshold: 0.7
-  openai_embedding_model: Pro/BAAI/bge-m3
-  ollama_embedding_model: nomic-embed-text
-  max_context_length: 4000
-  temperature: 0.1
+  vector_db_path: data/vector_db # 向量数据库路径
+  collection_name: aiops-assistant # 向量数据库集合名称
+  knowledge_base_path: data/knowledge_base # 知识库路径
+  chunk_size: 1000 # 文档分块大小
+  chunk_overlap: 200 # 文档分块重叠大小
+  top_k: 4 # 最多返回的相似度
+  similarity_threshold: 0.7 # 相似度阈值
+  openai_embedding_model: Pro/BAAI/bge-m3 # OpenAI嵌入模型
+  ollama_embedding_model: nomic-embed-text # Ollama嵌入模型
+  max_context_length: 4000 # 最大上下文长度
+  temperature: 0.1 # LLM模型温度
+  cache_expiry: 3600 # 缓存过期时间(秒)
+  max_docs_per_query: 8 # 每次查询最多处理的文档数
+  use_enhanced_retrieval: true # 是否使用增强检索
+  use_document_compressor: true # 是否使用文档压缩
+
+# MCP配置
+mcp:
+  server_url: "http://127.0.0.1:9000" # MCP服务端地址
+  timeout: 30 # 请求超时时间(秒)
+  max_retries: 3 # 最大重试次数
+  health_check_interval: 5 # 健康检查间隔(秒)
 EOF
         echo "✅ 已创建开发环境配置文件 config/config.yaml"
     else
         echo "⚠️  config/config.yaml 文件已存在，跳过创建"
     fi
-    
+
     # 创建生产环境YAML配置
     if [ ! -f config/config.production.yaml ]; then
         cat > config/config.production.yaml << 'EOF'
-# ==============================================
-# AIOps平台生产环境配置文件
-# ==============================================
-
 # 应用基础配置
 app:
-  debug: false
+  debug: false # 是否开启调试模式
   host: 0.0.0.0
   port: 8080
-  log_level: INFO
+  log_level: WARNING
 
 # Prometheus配置
 prometheus:
-  host: prometheus-server:9090
+  host: 127.0.0.1:9090
   timeout: 30
 
 # LLM模型配置
 llm:
-  provider: openai
-  model: Qwen/Qwen3-14B
-  temperature: 0.3
-  max_tokens: 4096
-  # 备用Ollama模型配置
+  provider: openai # 可选值: openai, ollama
+  model: Qwen/Qwen3-14B # 主模型
+  task_model: Qwen/Qwen2.5-14B-Instruct # 任务模型
+  temperature: 0.7 # LLM模型温度
+  max_tokens: 2048 # LLM模型最大生成长度
+  request_timeout: 15 # LLM请求超时时间(秒)
+  # Ollama模型配置
   ollama_model: qwen2.5:3b
-  ollama_base_url: http://ollama-service:11434/v1
+  ollama_base_url: http://127.0.0.1:11434
 
 # 测试配置
 testing:
-  skip_llm_tests: false
+  skip_llm_tests: true # 设置为true可跳过依赖LLM的测试
 
 # Kubernetes配置
 kubernetes:
-  in_cluster: true
+  in_cluster: false # 是否使用Kubernetes集群内配置
+  config_path: ./deploy/kubernetes/config # Kubernetes集群配置文件路径
   namespace: default
 
 # 根因分析配置
 rca:
-  default_time_range: 30
-  max_time_range: 1440
-  anomaly_threshold: 0.7
-  correlation_threshold: 0.75
-  default_metrics:
+  default_time_range: 30 # 默认时间范围(分钟)
+  max_time_range: 1440 # 最大时间范围(分钟)
+  anomaly_threshold: 0.65  # 根因分析异常阈值
+  correlation_threshold: 0.7 # 根因分析相关度阈值
+  default_metrics: # 默认监控指标
     - container_cpu_usage_seconds_total
     - container_memory_working_set_bytes
     - kube_pod_container_status_restarts_total
@@ -220,104 +235,62 @@ rca:
 
 # 预测配置
 prediction:
-  model_path: /app/data/models/time_qps_auto_scaling_model.pkl
-  scaler_path: /app/data/models/time_qps_auto_scaling_scaler.pkl
-  max_instances: 20
-  min_instances: 1
-  prometheus_query: 'rate(nginx_ingress_controller_nginx_process_requests_total{service="ingress-nginx-controller-metrics"}[10m])'
+  model_path: data/models/time_qps_auto_scaling_model.pkl # 预测模型路径
+  scaler_path: data/models/time_qps_auto_scaling_scaler.pkl # 预测模型缩放器路径
+  max_instances: 20 # 预测模型最大实例数
+  min_instances: 1 # 预测模型最小实例数
+  prometheus_query: 'rate(nginx_ingress_controller_nginx_process_requests_total{service="ingress-nginx-controller-metrics"}[10m])' # 预测模型查询
 
 # 通知配置
 notification:
-  enabled: true
+  enabled: true # 是否启用通知
 
-# Tavily搜索配置
-tavily:
-  max_results: 5
+# Redis配置 - 用于向量数据缓存和元数据存储
+redis:
+  host: 127.0.0.1
+  port: 6379
+  db: 0
+  password: "v6SxhWHyZC7S"
+  connection_timeout: 5 # Redis连接超时时间(秒)
+  socket_timeout: 5 # RedisSocket超时时间(秒)
+  max_connections: 10 # Redis最大连接数
+  decode_responses: true # 是否解码响应
 
 # 小助手配置
 rag:
-  vector_db_path: /app/data/vector_db
-  collection_name: aiops-assistant-prod
-  knowledge_base_path: /app/data/knowledge_base
-  chunk_size: 1000
-  chunk_overlap: 200
-  top_k: 5
-  similarity_threshold: 0.75
-  openai_embedding_model: Pro/BAAI/bge-m3
-  ollama_embedding_model: nomic-embed-text
-  max_context_length: 6000
-  temperature: 0.1
+  vector_db_path: data/vector_db # 向量数据库路径
+  collection_name: aiops-assistant # 向量数据库集合名称
+  knowledge_base_path: data/knowledge_base # 知识库路径
+  chunk_size: 1000 # 文档分块大小
+  chunk_overlap: 200 # 文档分块重叠大小
+  top_k: 4 # 最多返回的相似度
+  similarity_threshold: 0.7 # 相似度阈值
+  openai_embedding_model: Pro/BAAI/bge-m3 # OpenAI嵌入模型
+  ollama_embedding_model: nomic-embed-text # Ollama嵌入模型
+  max_context_length: 4000 # 最大上下文长度
+  temperature: 0.1 # LLM模型温度
+  cache_expiry: 3600 # 缓存过期时间(秒)
+  max_docs_per_query: 8 # 每次查询最多处理的文档数
+  use_enhanced_retrieval: true # 是否使用增强检索
+  use_document_compressor: true # 是否使用文档压缩
+
+# MCP配置
+mcp:
+  server_url: "http://127.0.0.1:9000" # MCP服务端地址
+  timeout: 30 # 请求超时时间(秒)
+  max_retries: 3 # 最大重试次数
+  health_check_interval: 5 # 健康检查间隔(秒)
 EOF
         echo "✅ 已创建生产环境配置文件 config/config.production.yaml"
     else
         echo "⚠️  config/config.production.yaml 文件已存在，跳过创建"
-    fi
-    
-    # 创建配置说明文件
-    if [ ! -f config/README.md ]; then
-        cat > config/README.md << 'EOF'
-# AIOps 平台配置指南
-
-## 配置文件说明
-
-AIOps 平台使用两种配置机制：YAML 配置文件和环境变量。这种方式分离了普通配置和敏感数据，提高了系统的安全性和可维护性。
-
-### 配置优先级
-
-系统加载配置的优先级顺序为：
-
-1. 环境变量（最高优先级）
-2. 环境特定 YAML 配置文件（如`config.production.yaml`）
-3. 默认 YAML 配置文件（`config.yaml`）
-4. 代码中的默认值（最低优先级）
-
-### 配置文件
-
-- `config.yaml`：默认配置文件，包含开发环境的所有非敏感配置
-- `config.production.yaml`：生产环境配置文件，包含生产环境的非敏感配置
-- 可以根据需要创建其他环境配置文件，如`config.test.yaml`、`config.staging.yaml`等
-
-### 环境变量文件
-
-- `env.example`：示例环境变量文件，仅包含敏感数据和 API 密钥
-- `env.production`：生产环境的环境变量文件，包含生产环境的敏感数据和 API 密钥
-
-## 使用方法
-
-### 切换环境
-
-通过设置`ENV`环境变量来切换不同环境的配置：
-
-```bash
-# 开发环境（默认）
-export ENV=development
-
-# 生产环境
-export ENV=production
-
-# 测试环境
-export ENV=test
-```
-
-### 增加新的配置项
-
-1. 在相应的 YAML 配置文件中添加新的配置项
-2. 在`app/config/settings.py`中更新相应的配置类
-
-### 配置敏感数据
-
-敏感数据（如 API 密钥、密码等）应始终通过环境变量或`.env`文件配置，而不是直接写入 YAML 配置文件。
-EOF
-        echo "✅ 已创建配置说明文件 config/README.md"
-    else
-        echo "⚠️  config/README.md 文件已存在，跳过创建"
     fi
 }
 
 # 安装Python依赖
 install_python_deps() {
     echo "📦 安装Python依赖..."
-    
+
     # 检查是否在虚拟环境中
     if [[ "$VIRTUAL_ENV" != "" ]]; then
         echo "✅ 检测到虚拟环境: $VIRTUAL_ENV"
@@ -332,7 +305,7 @@ install_python_deps() {
             exit 1
         fi
     fi
-    
+
     pip install --upgrade pip
     pip install -r requirements.txt
     echo "✅ Python依赖安装完成"
@@ -341,7 +314,7 @@ install_python_deps() {
 # 创建示例配置文件
 create_sample_configs() {
     echo "📝 创建示例配置文件..."
-    
+
     # Prometheus配置
     cat > deploy/prometheus/prometheus.yml << 'EOF'
 global:
@@ -355,7 +328,7 @@ scrape_configs:
   - job_name: 'prometheus'
     static_configs:
       - targets: ['localhost:9090']
-  
+
   - job_name: 'aiops-platform'
     static_configs:
       - targets: ['aiops-platform:8080']
@@ -413,7 +386,7 @@ EOF
 # 下载示例模型文件（如果需要）
 download_sample_models() {
     echo "🤖 检查模型文件..."
-    
+
     if [ ! -f "data/models/time_qps_auto_scaling_model.pkl" ]; then
         echo "⚠️  未找到预测模型文件"
         echo "请将训练好的模型文件放置在 data/models/ 目录下："
@@ -428,7 +401,7 @@ download_sample_models() {
 # 验证安装
 verify_installation() {
     echo "🔍 验证安装..."
-    
+
     # 检查Python导入
     python3 -c "
 import flask
@@ -439,7 +412,7 @@ import yaml
 import requests
 print('✅ 主要Python包导入成功')
 "
-    
+
     # 检查应用能否启动（语法检查）
     python3 -c "
 import sys
@@ -453,14 +426,14 @@ except Exception as e:
     print(f'❌ 应用代码检查失败: {str(e)}')
     sys.exit(1)
 "
-    
+
     echo "✅ 安装验证完成"
 }
 
 # 配置Kubernetes
 setup_kubernetes() {
     echo "☸️  配置Kubernetes环境..."
-    
+
     # 检查是否存在kubeconfig
     if [ -f "$HOME/.kube/config" ]; then
         echo "✅ 检测到Kubernetes配置文件"
@@ -473,7 +446,7 @@ setup_kubernetes() {
         echo "请确保您有权限访问Kubernetes集群，并将配置文件放置在以下位置之一："
         echo "  - $HOME/.kube/config"
         echo "  - deploy/kubernetes/config"
-        
+
         # 创建示例配置
         echo "已创建示例配置文件，请根据实际情况修改："
         echo "  - deploy/kubernetes/config.example"
@@ -496,10 +469,10 @@ show_next_steps() {
     echo "   docker-compose up -d"
     echo ""
     echo "   # 或本地开发模式"
-    echo "   ENV=development ./scripts/start.sh"
+    echo "   ENV=development ./scripts/start.sh start"
     echo ""
     echo "   # 或生产环境"
-    echo "   ENV=production ./scripts/start_production.sh"
+    echo "   ENV=production ./scripts/start.sh start"
     echo ""
     echo "4. 访问服务："
     echo "   - AIOps API: http://localhost:8080"
@@ -515,7 +488,7 @@ show_next_steps() {
 main() {
     echo "AIOps平台环境设置脚本"
     echo "========================"
-    
+
     check_python
     check_docker
     create_directories
