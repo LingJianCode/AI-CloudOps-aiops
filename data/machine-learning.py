@@ -22,10 +22,8 @@ import joblib
 from datetime import datetime
 import matplotlib.pyplot as plt
 
-# 创建数据目录
-os.makedirs('data/models', exist_ok=True)
-
-# 配置
+# 基本设置
+os.makedirs('models', exist_ok=True)
 MODEL_PATH = 'models/time_qps_auto_scaling_model.pkl'
 SCALER_PATH = 'models/time_qps_auto_scaling_scaler.pkl'
 METADATA_PATH = 'models/time_qps_auto_scaling_model_metadata.json'
@@ -54,7 +52,7 @@ def load_real_data():
             if not pd.api.types.is_datetime64_any_dtype(df['timestamp']):
                 try:
                     df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
-                except:
+                except :
                     print("警告: 无法解析时间戳字段，尝试使用默认格式...")
 
             # 检查数据是否有空值
@@ -253,7 +251,8 @@ def train_model():
 
         # 保存模型元数据
         model_metadata = {
-            "version": "2.0",
+            "ersion": "v1.0.0",
+            "author": "Bamboo",
             "created_at": datetime.now().isoformat(),
             "features": list(features.columns),
             "target": "instances",
@@ -286,40 +285,40 @@ def train_model():
 
         plt.figure(figsize=(15, 10))
 
-        # 训练集上的实际值与预测值对比
+        # 训练集对比图
         plt.subplot(2, 2, 1)
         plt.scatter(y_train, y_pred_train, alpha=0.5)
         plt.plot([y_train.min(), y_train.max()], [y_train.min(), y_train.max()], 'r--')
-        plt.xlabel('实际实例数')
-        plt.ylabel('预测实例数')
-        plt.title('训练集: 实际值 vs 预测值')
+        plt.xlabel('Actual Instances')
+        plt.ylabel('Predicted Instances')
+        plt.title('Training Set: Actual vs Predicted')
 
-        # 测试集上的实际值与预测值对比
+        # 测试集对比图
         plt.subplot(2, 2, 2)
         plt.scatter(y_test, y_pred_test, alpha=0.5)
         plt.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'r--')
-        plt.xlabel('实际实例数')
-        plt.ylabel('预测实例数')
-        plt.title('测试集: 实际值 vs 预测值')
+        plt.xlabel('Actual Instances')
+        plt.ylabel('Predicted Instances')
+        plt.title('Test Set: Actual vs Predicted')
 
-        # QPS与实例数的关系
+        # QPS 与实例数关系图
         plt.subplot(2, 2, 3)
         plt.scatter(df['QPS'], df['instances'], alpha=0.5)
         plt.xlabel('QPS')
-        plt.ylabel('实例数')
-        plt.title('QPS与实例数关系')
+        plt.ylabel('Instances')
+        plt.title('QPS vs Instance Count')
         plt.grid(True)
 
-        # 误差分布
+        # 预测误差分布图
         plt.subplot(2, 2, 4)
         errors = y_test - y_pred_test
         plt.hist(errors, bins=20)
-        plt.xlabel('预测误差')
-        plt.ylabel('频率')
-        plt.title('预测误差分布')
+        plt.xlabel('Prediction Error')
+        plt.ylabel('Frequency')
+        plt.title('Prediction Error Distribution')
 
         plt.tight_layout()
-        plt.savefig('data/models/prediction_results.png')
+        plt.savefig('models/prediction_results.png')
         print("模型评估结果已保存为图像")
 
         # 额外创建QPS和实例数的可视化
@@ -331,14 +330,14 @@ def train_model():
         sample_df = time_series_df.iloc[:sample_size]
 
         plt.plot(sample_df.index, sample_df['QPS'], 'b-', label='QPS')
-        plt.plot(sample_df.index, sample_df['instances'] * 10, 'r-', label='实例数 x 10')
-        plt.xlabel('时间索引')
-        plt.ylabel('值')
-        plt.title('QPS与实例数随时间的变化')
+        plt.plot(sample_df.index, sample_df['instances'] * 10, 'r-', label='Instances x 10')
+        plt.xlabel('Time Index')
+        plt.ylabel('Value')
+        plt.title('QPS and Instances Over Time')
         plt.legend()
         plt.grid(True)
 
-        plt.savefig('data/models/qps_instances_visualization.png')
+        plt.savefig('models/qps_instances_visualization.png')
         print("QPS与实例数可视化已保存")
 
         return True
@@ -346,94 +345,10 @@ def train_model():
         print("错误: 未能找到合适的模型")
         return False
 
-def test_model(model, scaler):
-    """测试模型在不同场景下的表现"""
-    if model is None or scaler is None:
-        print("错误: 模型或标准化器未提供")
-        return
-
-    print("\n模型场景测试:")
-
-    # 测试场景
-    test_cases = [
-        {"name": "低QPS场景", "qps": 5.0, "hour": 12, "day_of_week": 2, "is_weekend": 0},
-        {"name": "中等QPS场景", "qps": 50.0, "hour": 14, "day_of_week": 3, "is_weekend": 0},
-        {"name": "高QPS场景", "qps": 500.0, "hour": 10, "day_of_week": 4, "is_weekend": 0},
-        {"name": "工作时间峰值", "qps": 300.0, "hour": 11, "day_of_week": 1, "is_weekend": 0},
-        {"name": "夜间低流量", "qps": 20.0, "hour": 2, "day_of_week": 2, "is_weekend": 0},
-        {"name": "周末场景", "qps": 100.0, "hour": 15, "day_of_week": 6, "is_weekend": 1},
-        {"name": "零流量场景", "qps": 0.0, "hour": 3, "day_of_week": 2, "is_weekend": 0}
-    ]
-
-    for case in test_cases:
-        test_prediction(model, scaler, case)
-
-def test_prediction(model, scaler, case):
-    """测试单个预测场景"""
-    # 创建特征字典
-    features_dict = {"QPS": [case["qps"]], "sin_time": [np.sin(2 * np.pi * case["hour"] / 24)],
-                     "cos_time": [np.cos(2 * np.pi * case["hour"] / 24)],
-                     "sin_day": [np.sin(2 * np.pi * case["day_of_week"] / 7)],
-                     "cos_day": [np.cos(2 * np.pi * case["day_of_week"] / 7)], "is_business_hour": [
-        1 if 9 <= case["hour"] <= 17 and case["is_weekend"] == 0 else 0],
-                     "is_weekend": [case["is_weekend"]], "QPS_1h_ago": [case["qps"] * 0.9],
-                     "QPS_1d_ago": [case["qps"] * 1.1], "QPS_1w_ago": [case["qps"] * 1.0],
-                     "QPS_change": [0.1], "QPS_avg_6h": [case["qps"] * 0.95]}
-
-    # 添加历史QPS特征（模拟值）
-
-    # 构建特征向量
-    features_df = pd.DataFrame(features_dict)
-
-    # 标准化特征
-    try:
-        features_scaled = scaler.transform(features_df)
-    except:
-        # 如果特征列不匹配，可能需要调整
-        print(f"警告: 特征不匹配，尝试调整...")
-        # 获取标准化器的特征列表
-        scaler_features = getattr(scaler, "feature_names_in_", None)
-        if scaler_features is None:
-            print("错误: 无法确定标准化器的特征列")
-            return
-
-        # 根据标准化器要求的特征调整
-        adjusted_features = {}
-        for i, feature in enumerate(scaler_features):
-            if feature in features_dict:
-                adjusted_features[feature] = features_dict[feature]
-            else:
-                print(f"警告: 缺少特征 '{feature}'，使用0.0代替")
-                adjusted_features[feature] = [0.0]
-
-        features_df = pd.DataFrame(adjusted_features)
-        features_scaled = scaler.transform(features_df)
-
-    # 执行预测
-    try:
-        prediction = model.predict(features_scaled)[0]
-
-        # 限制实例数范围并四舍五入（实例数应为整数）
-        instances = max(1, int(round(prediction)))
-
-        print(f"{case['name']}: QPS={case['qps']:.1f}, 预测实例数={instances}")
-    except Exception as e:
-        print(f"预测失败: {str(e)}")
-
-
 if __name__ == '__main__':
     # 训练模型
     success = train_model()
-
     if success:
-        # 加载已训练的模型和标准化器
-        try:
-            model = joblib.load(MODEL_PATH)
-            scaler = joblib.load(SCALER_PATH)
-
-            # 测试模型
-            test_model(model, scaler)
-        except Exception as e:
-            print(f"加载模型失败: {str(e)}")
+      print("模型训练成功！")
     else:
-        print("模型训练失败，无法执行测试")
+      print("模型训练失败！")

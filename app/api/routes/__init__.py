@@ -46,16 +46,16 @@ except Exception as e:
 
 try:
     from .assistant import assistant_bp
-    api_v1.register_blueprint(assistant_bp, url_prefix='/assistant')
+    api_v1.register_blueprint(assistant_bp)
     logger.info("已注册智能助手路由")
 except Exception as e:
     logger.warning(f"注册智能助手路由失败: {str(e)}")
 
 def register_routes(app):
     """注册所有路由"""
-    
+
     app.register_blueprint(api_v1)
-    
+
     # 根路径重定向到健康检查
     @app.route('/')
     def index():
