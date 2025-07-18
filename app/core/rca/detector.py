@@ -126,8 +126,29 @@ class AnomalyDetector:
     def _zscore_detection(self, series: pd.Series, threshold: float = 3.0) -> np.ndarray:
         """Z-Score异常检测"""
         try:
-            z_scores = np.abs(stats.zscore(series))
-            return (z_scores > threshold).astype(int)
+            clean_series = series.dropna()
+            if len(clean_series) < 3:
+                return np.zeros(len(series), dtype=int)
+            
+            # 检查数据方差和标准差
+            if clean_series.std() == 0 or len(clean_series) < 2:
+                return np.zeros(len(series), dtype=int)
+            
+            # 检查数据是否几乎相同
+            if clean_series.max() == clean_series.min():
+                return np.zeros(len(series), dtype=int)
+                
+            # 使用z-score计算异常
+            mean_val = clean_series.mean()
+            std_val = clean_series.std()
+            if std_val == 0:
+                return np.zeros(len(series), dtype=int)
+            
+            z_scores = np.abs((clean_series - mean_val) / std_val)
+            result = np.zeros(len(series), dtype=int)
+            mask = ~series.isna()
+            result[mask] = (z_scores > threshold).astype(int)
+            return result
         except Exception:
             return np.zeros(len(series), dtype=int)
     

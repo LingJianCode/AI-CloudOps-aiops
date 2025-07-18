@@ -36,8 +36,8 @@ class PrometheusService:
             url = f"{self.base_url}/api/v1/query_range"
             params = {
                 "query": query,
-                "start": start_time.timestamp(),
-                "end": end_time.timestamp(),
+                "start": int(start_time.timestamp()),
+                "end": int(end_time.timestamp()),
                 "step": step
             }
             
@@ -46,9 +46,15 @@ class PrometheusService:
             response.raise_for_status()
             
             data = response.json()
-            if data["status"] != "success" or not data["data"]["result"]:
-                logger.warning(f"Prometheus查询无结果: {query}")
+            if data["status"] != "success":
+                logger.warning(f"Prometheus查询失败: {query}, 状态: {data.get('status', 'unknown')}")
                 return None
+            
+            if not data["data"]["result"]:
+                logger.warning(f"Prometheus查询无结果: {query}, 时间范围: {start_time} - {end_time}")
+                return None
+            
+            logger.debug(f"Prometheus查询成功: {query}, 结果数: {len(data['data']['result'])}")
             
             # 处理多个时间序列
             all_series = []
@@ -80,9 +86,20 @@ class PrometheusService:
                 # 合并所有时间序列
                 combined_df = pd.concat(all_series, ignore_index=False)
                 # 重采样到指定频率
-                resampled = combined_df.resample('1T').mean()
-                # 前向填充缺失值
-                return resampled.fillna(method='ffill')
+                numeric_cols = combined_df.select_dtypes(include=['number']).columns
+                if len(numeric_cols) > 0:
+                    resampled = combined_df[numeric_cols].resample('1min').mean()
+                    
+                    # 处理标签列（字符串类型）
+                    label_cols = [col for col in combined_df.columns if col.startswith('label_')]
+                    for col in label_cols:
+                        resampled[col] = combined_df[col].resample('1min').first()
+                    
+                    # 前向填充缺失值
+                    return resampled.ffill()
+                else:
+                    logger.warning("没有数值列可用于重采样")
+                    return None
             
             return None
             
@@ -93,7 +110,7 @@ class PrometheusService:
             logger.error(f"Prometheus请求失败: {str(e)}")
             return None
         except Exception as e:
-            logger.error(f"查询Prometheus失败: {str(e)}")
+            logger.error(f"查询Prometheus失败: {str(e)}", exc_info=True)
             return None
     
     async def query_instant(self, query: str, timestamp: Optional[datetime] = None) -> Optional[List[Dict]]:

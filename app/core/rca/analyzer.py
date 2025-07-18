@@ -10,7 +10,7 @@ Description: 系统根因分析
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 import pandas as pd
 
@@ -172,7 +172,7 @@ class RCAAnalyzer:
           "total_metrics": len(metrics_data),
           "anomalous_metrics": len(anomalies),
           "correlation_pairs": sum(len(corrs) for corrs in correlations.values()),
-          "analysis_duration": (datetime.utcnow() - start_time).total_seconds()
+          "analysis_duration": self._calculate_analysis_duration(start_time)
         }
       }
 
@@ -183,6 +183,18 @@ class RCAAnalyzer:
       logger.error(f"根因分析失败: {str(e)}")
       return {"error": f"分析失败: {str(e)}"}
 
+  def _calculate_analysis_duration(self, start_time: datetime) -> float:
+    """计算分析持续时间，处理时区问题"""
+    try:
+      now_utc = datetime.now(timezone.utc)
+      if start_time.tzinfo is None:
+        start_time_utc = start_time.replace(tzinfo=timezone.utc)
+      else:
+        start_time_utc = start_time
+      return (now_utc - start_time_utc).total_seconds()
+    except Exception:
+      return 0.0
+
   async def _collect_metrics_data(
     self,
     start_time: datetime,
@@ -191,47 +203,44 @@ class RCAAnalyzer:
   ) -> Dict[str, pd.DataFrame]:
     """收集指标数据"""
     metrics_data = {}
+    
+    logger.info(f"开始收集指标数据，时间范围: {start_time} - {end_time}, 指标数: {len(metrics)}")
 
     for metric in metrics:
       try:
+        logger.debug(f"正在查询指标: {metric}")
         data = await self.prometheus.query_range(
           metric, start_time, end_time, "1m"
         )
 
         if data is not None and not data.empty:
+          logger.debug(f"指标 {metric} 查询成功，数据点: {len(data)}")
+          
           # 处理多个时间序列
           if len(data) > 0:
-            # 如果有多个系列，按标签分组
-            if 'label_pod' in data.columns:
-              # 按pod分组
-              grouped_data = {}
-              for pod in data['label_pod'].unique():
-                if pd.notna(pod):
-                  pod_data = data[data['label_pod'] == pod]
-                  if not pod_data.empty:
-                    metric_name = f"{metric}|pod:{pod}"
-                    grouped_data[metric_name] = pod_data[['value']]
-              metrics_data.update(grouped_data)
-            elif 'label_container' in data.columns:
-              # 按容器分组
-              grouped_data = {}
-              for container in data['label_container'].unique():
-                if pd.notna(container):
-                  container_data = data[data['label_container'] == container]
-                  if not container_data.empty:
-                    metric_name = f"{metric}|container:{container}"
-                    grouped_data[metric_name] = container_data[['value']]
-              metrics_data.update(grouped_data)
+            # 检查是否有标签列用于分组
+            label_columns = [col for col in data.columns if col.startswith('label_')]
+            
+            if label_columns:
+              # 按标签分组
+              for _, group in data.groupby(label_columns[0]):
+                if len(group) > 0:
+                  label_value = group[label_columns[0]].iloc[0]
+                  if pd.notna(label_value) and str(label_value).strip():
+                    metric_name = f"{metric}|{label_columns[0].replace('label_', '')}:{label_value}"
+                    metrics_data[metric_name] = group[['value']].copy()
             else:
               # 单个序列或聚合数据
-              metrics_data[metric] = data[['value']]
+              metrics_data[metric] = data[['value']].copy()
+        else:
+          logger.warning(f"指标 {metric} 无数据返回")
 
       except Exception as e:
-        logger.warning(f"获取指标 {metric} 失败: {str(e)}")
+        logger.error(f"获取指标 {metric} 失败: {str(e)}")
         continue
 
     # 过滤掉空数据
-    metrics_data = {k: v for k, v in metrics_data.items() if not v.empty}
+    metrics_data = {k: v for k, v in metrics_data.items() if not v.empty and len(v) > 0}
 
     logger.info(f"成功收集 {len(metrics_data)} 个时间序列数据")
     return metrics_data

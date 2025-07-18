@@ -144,3 +144,4 @@ dmypy.json
 .pytype/
 
 data/vector_db
+data/prometheus
