@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app-resource-issue
+  namespace: aiops-testing
+  labels:
+    app: app-resource-issue
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: app-resource-issue
+  template:
+    metadata:
+      labels:
+        app: app-resource-issue
+    spec:
+      containers:
+      - name: app
+        image: nginx:alpine
+        ports:
+        - containerPort: 80
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "1000m"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"
+        env:
+        - name: MEMORY_PRESSURE
+          value: "true"

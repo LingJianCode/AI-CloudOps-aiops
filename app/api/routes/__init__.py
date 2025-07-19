@@ -51,6 +51,13 @@ try:
 except Exception as e:
     logger.warning(f"注册智能助手路由失败: {str(e)}")
 
+try:
+    from .multi_agent import multi_agent_bp
+    api_v1.register_blueprint(multi_agent_bp)
+    logger.info("已注册多Agent路由")
+except Exception as e:
+    logger.warning(f"注册多Agent路由失败: {str(e)}")
+
 def register_routes(app):
     """注册所有路由"""
 
@@ -68,6 +75,7 @@ def register_routes(app):
                 "prediction": "/api/v1/predict",
                 "rca": "/api/v1/rca",
                 "autofix": "/api/v1/autofix",
-                "assistant": "/api/v1/assistant"
+                "assistant": "/api/v1/assistant",
+                "multi_agent": "/api/v1/multi-agent"
             }
         }

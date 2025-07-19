@@ -10,16 +10,16 @@ Description: 系统根因分析
 """
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
 import pandas as pd
+import time
 
-# ==================== 内部组件导入 ====================
 from app.core.rca.detector import AnomalyDetector  # 异常检测器
 from app.core.rca.correlator import CorrelationAnalyzer  # 相关性分析器
 from app.services.prometheus import PrometheusService  # Prometheus数据服务
 from app.services.llm import LLMService  # 大语言模型服务
-from app.models.response_models import RCAResponse, RootCauseCandidate, AnomalyInfo  # 响应模型
+from app.models.response_models import RootCauseCandidate, AnomalyInfo
 from app.config.settings import config  # 系统配置
 
 logger = logging.getLogger("aiops.rca")
@@ -28,37 +28,11 @@ logger = logging.getLogger("aiops.rca")
 class RCAAnalyzer:
   """
   根因分析器 - AI-CloudOps系统的核心故障诊断引擎
-
-  这个类是整个根因分析系统的主入口，集成了异常检测、相关性分析、
-  根因推理和AI摘要生成等功能。它能够从纷繁复杂的系统指标中提取出
-  有意义的模式，并生成可操作的分析结果。
-
-  工作流程：
-  1. 数据收集 - 从监控系统获取指标数据
-  2. 异常检测 - 识别异常指标和异常时间点
-  3. 相关性分析 - 分析指标间的因果关系
-  4. 根因推理 - 生成和排序根因候选
-  5. 结果整合 - 生成综合分析报告
-
-  核心组件：
-  - AnomalyDetector: 异常检测引擎
-  - CorrelationAnalyzer: 相关性分析引擎
-  - PrometheusService: 数据获取服务
-  - LLMService: AI摘要生成服务
-
-  Attributes:
-      prometheus (PrometheusService): Prometheus数据服务实例
-      detector (AnomalyDetector): 异常检测器实例
-      correlator (CorrelationAnalyzer): 相关性分析器实例
-      llm (LLMService): 大语言模型服务实例
   """
 
   def __init__(self):
     """
-    初始化根因分析器
-
-    初始化所有必要的组件和服务，包括数据源、分析引擎和配置参数。
-    使用配置文件中的参数来设置各个组件的阈值和参数。
+    初始化根因分析器，初始化Prometheus数据服务，异常检测器，相关性分析器，大语言模型服务
     """
     # 初始化Prometheus数据服务，用于获取监控指标
     self.prometheus = PrometheusService()
@@ -82,36 +56,8 @@ class RCAAnalyzer:
   ) -> Dict:
     """
     执行全面的根因分析
-
-    这是根因分析的主入口方法，它统筹整个分析流程，从数据收集到
-    最终的结果输出。方法支持自定义时间范围和指标列表，并提供
-    完整的错误处理和日志记录。
-
-    Args:
-        start_time (datetime): 分析起始时间
-        end_time (datetime): 分析结束时间
-        metrics (Optional[List[str]]): 要分析的指标列表，为None时使用默认指标
-
-    Returns:
-        Dict: 分析结果，包含：
-            - status: 分析状态（success/error）
-            - anomalies: 检测到的异常指标和详细信息
-            - correlations: 指标间的相关性分析结果
-            - root_cause_candidates: 排序后的根因候选列表
-            - analysis_time: 分析执行时间
-            - time_range: 分析的时间范围
-            - metrics_analyzed: 实际分析的指标列表
-            - summary: AI生成的分析摘要
-            - statistics: 分析过程的统计信息
-
-    分析流程：
-    1. 参数验证和初始化
-    2. 数据收集和预处理
-    3. 异常检测和标记
-    4. 相关性分析和计算
-    5. 根因候选生成和排序
-    6. AI摘要生成和结果整合
     """
+    analysis_start_ts = time.time()
     try:
       logger.info(f"开始根因分析: {start_time} - {end_time}")
 
@@ -144,6 +90,9 @@ class RCAAnalyzer:
       # AI摘要生成阶段 - 使用LLM生成人类可读的分析报告
       summary = await self._generate_summary(anomalies, correlations, root_causes)
 
+      # 计算分析时长（秒）
+      analysis_duration = time.time() - analysis_start_ts
+
       # 构建综合分析结果响应
       response = {
         "status": "success",
@@ -172,7 +121,7 @@ class RCAAnalyzer:
           "total_metrics": len(metrics_data),
           "anomalous_metrics": len(anomalies),
           "correlation_pairs": sum(len(corrs) for corrs in correlations.values()),
-          "analysis_duration": self._calculate_analysis_duration(start_time)
+          "analysis_duration": analysis_duration
         }
       }
 
@@ -184,7 +133,7 @@ class RCAAnalyzer:
       return {"error": f"分析失败: {str(e)}"}
 
   def _calculate_analysis_duration(self, start_time: datetime) -> float:
-    """计算分析持续时间，处理时区问题"""
+    """计算分析持续时间，处理时区问题，已废弃暂时保留"""
     try:
       now_utc = datetime.now(timezone.utc)
       if start_time.tzinfo is None:
@@ -203,7 +152,7 @@ class RCAAnalyzer:
   ) -> Dict[str, pd.DataFrame]:
     """收集指标数据"""
     metrics_data = {}
-    
+
     logger.info(f"开始收集指标数据，时间范围: {start_time} - {end_time}, 指标数: {len(metrics)}")
 
     for metric in metrics:
@@ -215,12 +164,12 @@ class RCAAnalyzer:
 
         if data is not None and not data.empty:
           logger.debug(f"指标 {metric} 查询成功，数据点: {len(data)}")
-          
+
           # 处理多个时间序列
           if len(data) > 0:
             # 检查是否有标签列用于分组
             label_columns = [col for col in data.columns if col.startswith('label_')]
-            
+
             if label_columns:
               # 按标签分组
               for _, group in data.groupby(label_columns[0]):
@@ -288,21 +237,6 @@ class RCAAnalyzer:
   def _calculate_confidence(self, anomaly_info: Dict, related_metrics: List) -> float:
     """
     计算根因候选的置信度评分
-
-    综合多个因素计算每个根因候选的可信度，包括异常严重程度、
-    持续时间、相关性强度和检测一致性等。置信度越高，
-    表示该指标越可能是故障的根本原因。
-
-    Args:
-        anomaly_info (Dict): 异常信息，包含异常分数、数量等
-        related_metrics (List): 相关指标列表
-
-    Returns:
-        float: 置信度评分（0.0-1.0之间）
-
-    计算公式：
-    基础置信度 + 持续性加权 + 相关性加权 + 一致性加权
-    所有加权都有上限，以防止过度拟合。
     """
     try:
       # 基础置信度：基于异常的最高分数，反映异常的严重程度
@@ -392,30 +326,6 @@ class RCAAnalyzer:
   ) -> Dict:
     """
     分析特定事件的根因 - 针对具体故障事件的定制化分析
-
-    这个方法专门用于分析已知的故障事件，它会根据受影响的服务和观察到的症状
-    来选择最相关的指标进行分析，并提供针对性的修复建议。这比通用分析更精确，
-    因为它利用了更多的上下文信息。
-
-    Args:
-        start_time (datetime): 事件开始时间
-        end_time (datetime): 事件结束时间
-        affected_services (List[str]): 受影响的服务列表
-        symptoms (List[str]): 观察到的症状描述列表
-
-    Returns:
-        Dict: 事件分析结果，包含标准分析结果加上：
-            - incident_analysis: 事件特定的分析信息
-              - affected_services: 受影响的服务
-              - reported_symptoms: 报告的症状
-              - relevant_metrics: 选择的相关指标
-              - recommendation: 针对性的修复建议
-
-    分析流程：
-    1. 根据服务和症状选择相关指标
-    2. 执行针对性的根因分析
-    3. 生成定制化的修复建议
-    4. 整合事件特定的上下文信息
     """
     try:
       logger.info(f"分析特定事件: 服务={affected_services}, 症状={symptoms}")
@@ -453,22 +363,6 @@ class RCAAnalyzer:
   ) -> List[str]:
     """
     基于服务和症状选择相关指标 - 智能指标选择算法
-
-    根据受影响的服务类型和观察到的症状，智能选择最相关的监控指标。
-    这个方法使用启发式规则来映射症状到具体的指标，提高分析的针对性和效率。
-
-    Args:
-        services (List[str]): 受影响的服务列表
-        symptoms (List[str]): 观察到的症状描述列表
-
-    Returns:
-        List[str]: 选择的相关指标列表
-
-    选择逻辑：
-    1. 从默认指标集开始
-    2. 根据症状关键词添加特定指标
-    3. 根据服务类型调整指标优先级
-    4. 确保指标覆盖性和相关性
     """
     # 从配置的默认指标开始，确保基础监控覆盖
     relevant_metrics = set(config.rca.default_metrics)
@@ -511,23 +405,6 @@ class RCAAnalyzer:
   ) -> str:
     """
     生成事件处理建议 - 基于根因分析结果的智能建议系统
-
-    根据识别出的根因候选、受影响的服务和观察到的症状，生成具体的
-    处理建议和行动计划。建议包括即时修复措施和长期预防措施。
-
-    Args:
-        root_causes (List[Dict]): 根因候选列表，按置信度排序
-        services (List[str]): 受影响的服务列表
-        symptoms (List[str]): 观察到的症状列表
-
-    Returns:
-        str: 详细的处理建议和行动计划
-
-    建议生成逻辑：
-    1. 分析最可能的根因（置信度最高）
-    2. 根据根因类型生成特定建议
-    3. 考虑置信度水平调整建议强度
-    4. 提供备选方案和预防措施
     """
     # 如果没有识别出根因，提供通用建议
     if not root_causes:

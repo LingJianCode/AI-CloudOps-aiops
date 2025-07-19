@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app-no-probes
+  namespace: aiops-testing
+  labels:
+    app: app-no-probes
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: app-no-probes
+  template:
+    metadata:
+      labels:
+        app: app-no-probes
+    spec:
+      containers:
+      - name: app
+        image: nginx:1.20-alpine
+        ports:
+        - containerPort: 80
+        command: ["/bin/sh"]
+        args: ["-c", "sleep 15 && nginx -g 'daemon off;'"]
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "25m"
+          limits:
+            memory: "64Mi"
+            cpu: "50m"

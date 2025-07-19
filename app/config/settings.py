@@ -12,7 +12,7 @@ Description: 应用程序配置管理模块
 import os
 import yaml
 from dataclasses import dataclass, field
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, TypeVar, Type, cast
 from dotenv import load_dotenv
 from pathlib import Path
 
@@ -20,6 +20,7 @@ ROOT_DIR = Path(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 load_dotenv()
 ENV = os.getenv("ENV", "development")
 
+T = TypeVar('T')
 
 def load_config() -> Dict[str, Any]:
   """加载配置文件，优先使用环境对应的配置"""
@@ -29,10 +30,10 @@ def load_config() -> Dict[str, Any]:
   try:
     if config_file.exists():
       with open(config_file, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
+        return yaml.safe_load(f) or {}
     elif default_config_file.exists():
       with open(default_config_file, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
+        return yaml.safe_load(f) or {}
     else:
       print(f"警告: 未找到配置文件 {config_file} 或 {default_config_file}，将使用环境变量默认值")
       return {}
@@ -44,29 +45,63 @@ def load_config() -> Dict[str, Any]:
 CONFIG = load_config()
 
 
-def get_env_or_config(env_key, config_path, default=None, transform=None):
-  """从环境变量或配置文件获取值"""
+def get_env_or_config(env_key: str, config_path: str, default: T, transform: Optional[Type] = None) -> T:
+  """从环境变量或配置文件获取值，返回指定类型"""
   parts = config_path.split('.')
   config_value = CONFIG
   for part in parts:
     config_value = config_value.get(part, {}) if isinstance(config_value, dict) else {}
 
-  value = os.getenv(env_key) or config_value or default
+  # 优先从环境变量获取
+  env_value = os.getenv(env_key)
+  if env_value is not None:
+    value = env_value
+  elif config_value and not isinstance(config_value, dict):
+    value = config_value
+  else:
+    return default
 
-  if transform and value is not None:
-    if transform == bool and isinstance(value, str):
-      return value.lower() == "true"
-    return transform(value)
+  # 应用类型转换
+  if transform:
+    try:
+      if transform == bool and isinstance(value, str):
+        return cast(T, value.lower() == "true")
+      return cast(T, transform(value))
+    except (ValueError, TypeError):
+      return default
+  
+  return cast(T, value)
+
+
+def get_env_or_config_optional(env_key: str, config_path: str, transform: Optional[Type] = None) -> Optional[str]:
+  """从环境变量或配置文件获取可选值"""
+  parts = config_path.split('.')
+  config_value = CONFIG
+  for part in parts:
+    config_value = config_value.get(part, {}) if isinstance(config_value, dict) else {}
+
+  env_value = os.getenv(env_key)
+  if env_value is not None:
+    value = env_value
+  elif config_value and not isinstance(config_value, dict):
+    value = config_value
+  else:
+    return None
+
+  if transform:
+    try:
+      return transform(value)
+    except (ValueError, TypeError):
+      return None
+  
   return value
 
 
 @dataclass
 class PrometheusConfig:
   """Prometheus 监控系统配置"""
-  host: str = field(default_factory=lambda: get_env_or_config("PROMETHEUS_HOST", "prometheus.host",
-                                                              "127.0.0.1:9090"))
-  timeout: int = field(
-    default_factory=lambda: get_env_or_config("PROMETHEUS_TIMEOUT", "prometheus.timeout", 30, int))
+  host: str = field(default_factory=lambda: get_env_or_config("PROMETHEUS_HOST", "prometheus.host", "127.0.0.1:9090"))
+  timeout: int = field(default_factory=lambda: get_env_or_config("PROMETHEUS_TIMEOUT", "prometheus.timeout", 30, int))
 
   @property
   def url(self) -> str:
@@ -77,17 +112,14 @@ class PrometheusConfig:
 class LLMConfig:
   """大语言模型配置"""
   provider: str = field(
-    default_factory=lambda: get_env_or_config("LLM_PROVIDER", "llm.provider", "openai").split('#')[
-      0].strip())
+    default_factory=lambda: get_env_or_config("LLM_PROVIDER", "llm.provider", "openai").split('#')[0].strip())
   model: str = field(
     default_factory=lambda: get_env_or_config("LLM_MODEL", "llm.model", "Qwen/Qwen3-14B"))
   task_model: str = field(
-    default_factory=lambda: get_env_or_config("LLM_TASK_MODEL", "llm.task_model",
-                                              "Qwen/Qwen2.5-14B-Instruct"))
+    default_factory=lambda: get_env_or_config("LLM_TASK_MODEL", "llm.task_model", "Qwen/Qwen2.5-14B-Instruct"))
   api_key: str = field(
     default_factory=lambda: get_env_or_config("LLM_API_KEY", "llm.api_key", "sk-xxx"))
-  base_url: str = field(default_factory=lambda: get_env_or_config("LLM_BASE_URL", "llm.base_url",
-                                                                  "https://api.siliconflow.cn/v1"))
+  base_url: str = field(default_factory=lambda: get_env_or_config("LLM_BASE_URL", "llm.base_url", "https://api.siliconflow.cn/v1"))
   temperature: float = field(
     default_factory=lambda: get_env_or_config("LLM_TEMPERATURE", "llm.temperature", 0.7, float))
   max_tokens: int = field(
@@ -98,8 +130,7 @@ class LLMConfig:
   ollama_model: str = field(
     default_factory=lambda: get_env_or_config("OLLAMA_MODEL", "llm.ollama_model", "qwen2.5:3b"))
   ollama_base_url: str = field(
-    default_factory=lambda: get_env_or_config("OLLAMA_BASE_URL", "llm.ollama_base_url",
-                                              "http://127.0.0.1:11434/v1"))
+    default_factory=lambda: get_env_or_config("OLLAMA_BASE_URL", "llm.ollama_base_url", "http://127.0.0.1:11434/v1"))
 
   @property
   def effective_model(self) -> str:
@@ -129,11 +160,9 @@ class TestingConfig:
 class K8sConfig:
   """Kubernetes 集群配置"""
   in_cluster: bool = field(
-    default_factory=lambda: get_env_or_config("K8S_IN_CLUSTER", "kubernetes.in_cluster", False,
-                                              bool))
+    default_factory=lambda: get_env_or_config("K8S_IN_CLUSTER", "kubernetes.in_cluster", False, bool))
   config_path: Optional[str] = field(
-    default_factory=lambda: get_env_or_config("K8S_CONFIG_PATH", "kubernetes.config_path") or str(
-      ROOT_DIR / "deploy/kubernetes/config"))
+    default_factory=lambda: get_env_or_config_optional("K8S_CONFIG_PATH", "kubernetes.config_path") or str(ROOT_DIR / "deploy/kubernetes/config"))
   namespace: str = field(
     default_factory=lambda: get_env_or_config("K8S_NAMESPACE", "kubernetes.namespace", "default"))
 
@@ -142,17 +171,13 @@ class K8sConfig:
 class RCAConfig:
   """根因分析配置"""
   default_time_range: int = field(
-    default_factory=lambda: get_env_or_config("RCA_DEFAULT_TIME_RANGE", "rca.default_time_range",
-                                              30, int))
+    default_factory=lambda: get_env_or_config("RCA_DEFAULT_TIME_RANGE", "rca.default_time_range", 30, int))
   max_time_range: int = field(
-    default_factory=lambda: get_env_or_config("RCA_MAX_TIME_RANGE", "rca.max_time_range", 1440,
-                                              int))
+    default_factory=lambda: get_env_or_config("RCA_MAX_TIME_RANGE", "rca.max_time_range", 1440, int))
   anomaly_threshold: float = field(
-    default_factory=lambda: get_env_or_config("RCA_ANOMALY_THRESHOLD", "rca.anomaly_threshold",
-                                              0.65, float))
+    default_factory=lambda: get_env_or_config("RCA_ANOMALY_THRESHOLD", "rca.anomaly_threshold", 0.65, float))
   correlation_threshold: float = field(
-    default_factory=lambda: get_env_or_config("RCA_CORRELATION_THRESHOLD",
-                                              "rca.correlation_threshold", 0.7, float))
+    default_factory=lambda: get_env_or_config("RCA_CORRELATION_THRESHOLD", "rca.correlation_threshold", 0.7, float))
 
   default_metrics: List[str] = field(
     default_factory=lambda: CONFIG.get("rca", {}).get("default_metrics", [
@@ -171,21 +196,13 @@ class RCAConfig:
 class PredictionConfig:
   """预测模型配置"""
   model_path: str = field(
-    default_factory=lambda: get_env_or_config("PREDICTION_MODEL_PATH", "prediction.model_path",
-                                              "data/models/time_qps_auto_scaling_model.pkl"))
+    default_factory=lambda: get_env_or_config("PREDICTION_MODEL_PATH", "prediction.model_path", "data/models/time_qps_auto_scaling_model.pkl"))
   scaler_path: str = field(
-    default_factory=lambda: get_env_or_config("PREDICTION_SCALER_PATH", "prediction.scaler_path",
-                                              "data/models/time_qps_auto_scaling_scaler.pkl"))
-  max_instances: int = field(default_factory=lambda: get_env_or_config("PREDICTION_MAX_INSTANCES",
-                                                                       "prediction.max_instances",
-                                                                       20, int))
-  min_instances: int = field(default_factory=lambda: get_env_or_config("PREDICTION_MIN_INSTANCES",
-                                                                       "prediction.min_instances",
-                                                                       1, int))
+    default_factory=lambda: get_env_or_config("PREDICTION_SCALER_PATH", "prediction.scaler_path", "data/models/time_qps_auto_scaling_scaler.pkl"))
+  max_instances: int = field(default_factory=lambda: get_env_or_config("PREDICTION_MAX_INSTANCES", "prediction.max_instances", 20, int))
+  min_instances: int = field(default_factory=lambda: get_env_or_config("PREDICTION_MIN_INSTANCES", "prediction.min_instances", 1, int))
   prometheus_query: str = field(
-    default_factory=lambda: get_env_or_config("PREDICTION_PROMETHEUS_QUERY",
-                                              "prediction.prometheus_query",
-                                              'rate(nginx_ingress_controller_nginx_process_requests_total{service="ingress-nginx-controller-metrics"}[10m])'))
+    default_factory=lambda: get_env_or_config("PREDICTION_PROMETHEUS_QUERY", "prediction.prometheus_query", 'rate(nginx_ingress_controller_nginx_process_requests_total{service="ingress-nginx-controller-metrics"}[10m])'))
 
 
 @dataclass
@@ -194,8 +211,7 @@ class NotificationConfig:
   feishu_webhook: str = field(
     default_factory=lambda: get_env_or_config("FEISHU_WEBHOOK", "notification.feishu_webhook", ""))
   enabled: bool = field(
-    default_factory=lambda: get_env_or_config("NOTIFICATION_ENABLED", "notification.enabled", True,
-                                              bool))
+    default_factory=lambda: get_env_or_config("NOTIFICATION_ENABLED", "notification.enabled", True, bool))
 
 
 @dataclass
@@ -232,31 +248,24 @@ class RedisConfig:
 class RAGConfig:
   """RAG 智能助手配置"""
   vector_db_path: str = field(
-    default_factory=lambda: get_env_or_config("RAG_VECTOR_DB_PATH", "rag.vector_db_path",
-                                              "data/vector_db"))
+    default_factory=lambda: get_env_or_config("RAG_VECTOR_DB_PATH", "rag.vector_db_path", "data/vector_db"))
   collection_name: str = field(
-    default_factory=lambda: get_env_or_config("RAG_COLLECTION_NAME", "rag.collection_name",
-                                              "aiops-assistant"))
+    default_factory=lambda: get_env_or_config("RAG_COLLECTION_NAME", "rag.collection_name", "aiops-assistant"))
   knowledge_base_path: str = field(
-    default_factory=lambda: get_env_or_config("RAG_KNOWLEDGE_BASE_PATH", "rag.knowledge_base_path",
-                                              "data/knowledge_base"))
+    default_factory=lambda: get_env_or_config("RAG_KNOWLEDGE_BASE_PATH", "rag.knowledge_base_path", "data/knowledge_base"))
   chunk_size: int = field(
     default_factory=lambda: get_env_or_config("RAG_CHUNK_SIZE", "rag.chunk_size", 1000, int))
   chunk_overlap: int = field(
     default_factory=lambda: get_env_or_config("RAG_CHUNK_OVERLAP", "rag.chunk_overlap", 200, int))
   top_k: int = field(default_factory=lambda: get_env_or_config("RAG_TOP_K", "rag.top_k", 4, int))
   similarity_threshold: float = field(
-    default_factory=lambda: get_env_or_config("RAG_SIMILARITY_THRESHOLD",
-                                              "rag.similarity_threshold", 0.7, float))
+    default_factory=lambda: get_env_or_config("RAG_SIMILARITY_THRESHOLD", "rag.similarity_threshold", 0.7, float))
   openai_embedding_model: str = field(
-    default_factory=lambda: get_env_or_config("RAG_OPENAI_EMBEDDING_MODEL",
-                                              "rag.openai_embedding_model", "Pro/BAAI/bge-m3"))
+    default_factory=lambda: get_env_or_config("RAG_OPENAI_EMBEDDING_MODEL", "rag.openai_embedding_model", "Pro/BAAI/bge-m3"))
   ollama_embedding_model: str = field(
-    default_factory=lambda: get_env_or_config("RAG_OLLAMA_EMBEDDING_MODEL",
-                                              "rag.ollama_embedding_model", "nomic-embed-text"))
+    default_factory=lambda: get_env_or_config("RAG_OLLAMA_EMBEDDING_MODEL", "rag.ollama_embedding_model", "nomic-embed-text"))
   max_context_length: int = field(
-    default_factory=lambda: get_env_or_config("RAG_MAX_CONTEXT_LENGTH", "rag.max_context_length",
-                                              4000, int))
+    default_factory=lambda: get_env_or_config("RAG_MAX_CONTEXT_LENGTH", "rag.max_context_length", 4000, int))
   temperature: float = field(
     default_factory=lambda: get_env_or_config("RAG_TEMPERATURE", "rag.temperature", 0.1, float))
   cache_expiry: int = field(

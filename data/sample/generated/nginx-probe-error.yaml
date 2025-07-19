@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: nginx-probe-error
+  name: nginx-probe-error
+  namespace: aiops-testing
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx-probe-error
+  template:
+    metadata:
+      labels:
+        app: nginx-probe-error
+    spec:
+      containers:
+      - image: nginx:1.20-alpine
+        livenessProbe:
+          httpGet:
+            path: /nonexistent
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        name: main
+        ports:
+        - containerPort: 80
+        resources:
+          limits:
+            cpu: 50m
+            memory: 64Mi
+          requests:
+            cpu: 25m
+            memory: 32Mi

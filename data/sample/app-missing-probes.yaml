@@ -1,0 +1,24 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app-missing-probes
+  namespace: aiops-testing
+  labels:
+    app: app-missing-probes
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: app-missing-probes
+  template:
+    metadata:
+      labels:
+        app: app-missing-probes
+    spec:
+      containers:
+      - name: app
+        image: nginx:alpine
+        ports:
+        - containerPort: 80
+        command: ["/bin/sh"]
+        args: ["-c", "sleep 30 && nginx -g 'daemon off;'"]

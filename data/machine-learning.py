@@ -251,7 +251,7 @@ def train_model():
 
         # 保存模型元数据
         model_metadata = {
-            "ersion": "v1.0.0",
+            "version": "v1.0.0",
             "author": "Bamboo",
             "created_at": datetime.now().isoformat(),
             "features": list(features.columns),

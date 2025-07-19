@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: app-high-resources
+  name: app-high-resources
+  namespace: aiops-testing
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: app-high-resources
+  template:
+    metadata:
+      labels:
+        app: app-high-resources
+    spec:
+      containers:
+      - image: nginx:1.20-alpine
+        name: main
+        ports:
+        - containerPort: 80
+        resources:
+          limits:
+            cpu: 1000m
+            memory: 1Gi
+          requests:
+            cpu: 500m
+            memory: 512Mi
