@@ -30,9 +30,9 @@ class ModelLoader:
     def load_models(self) -> bool:
         """加载预测模型和标准化器"""
         try:
-            # 获取模型文件的绝对路径
-            model_path = os.path.abspath(config.prediction.model_path)
-            scaler_path = os.path.abspath(config.prediction.scaler_path)
+            base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+            model_path = os.path.join(base_dir, config.prediction.model_path)
+            scaler_path = os.path.join(base_dir, config.prediction.scaler_path)
 
             # 检查模型文件是否存在
             if not os.path.exists(model_path):
