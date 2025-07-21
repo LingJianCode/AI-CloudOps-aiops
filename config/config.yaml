@@ -29,7 +29,7 @@ testing:
 # Kubernetes配置
 kubernetes:
   in_cluster: false # 是否使用Kubernetes集群内配置
-  config_path: ./deploy/kubernetes/config # Kubernetes集群配置文件路径
+  config_path: deploy/kubernetes/config # Kubernetes集群配置文件路径
   namespace: default
 
 # 根因分析配置
