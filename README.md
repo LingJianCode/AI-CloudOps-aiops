@@ -98,8 +98,7 @@ AI-CloudOps-backend/python/
 │       └── validators.py        # 验证工具
 ├── config/                      # 配置文件
 │   ├── config.yaml              # 主配置文件
-│   ├── config.production.yaml   # 生产环境配置
-│   └── config.test.yaml         # 测试环境配置
+│   └── config.production.yaml   # 生产环境配置
 ├── data/                        # 数据目录
 │   ├── models/                  # 机器学习模型
 │   ├── knowledge_base/          # 知识库

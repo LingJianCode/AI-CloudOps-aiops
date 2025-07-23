@@ -24,12 +24,12 @@ llm:
 
 # 测试配置
 testing:
-  skip_llm_tests: true # 设置为true可跳过依赖LLM的测试
+  skip_llm_tests: false # 设置为true可跳过依赖LLM的测试
 
 # Kubernetes配置
 kubernetes:
   in_cluster: false # 是否使用Kubernetes集群内配置
-  config_path: ./deploy/kubernetes/config # Kubernetes集群配置文件路径
+  config_path: deploy/kubernetes/config # Kubernetes集群配置文件路径
   namespace: default
 
 # 根因分析配置
