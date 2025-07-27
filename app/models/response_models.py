@@ -9,8 +9,7 @@ License: Apache 2.0
 Description: API响应模型 - 定义所有API端点的标准化响应结构，确保一致的格式和类型
 """
 
-from datetime import datetime
-from typing import List, Dict, Any, Optional, Generic, TypeVar, Union
+from typing import List, Dict, Any, Optional, Generic, TypeVar
 from pydantic import BaseModel
 
 T = TypeVar('T')

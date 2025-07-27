@@ -59,11 +59,12 @@ assistant_bp = Blueprint('assistant', __name__)
 _assistant_agent = None
 _init_lock = threading.RLock()  # 使用可重入锁，避免死锁
 _is_initializing = False
+_init_called = False  # 添加标志位，防止重复初始化
 
 
 def get_assistant_agent():
   """获取助手代理单例实例，采用懒加载+锁机制优化初始化性能"""
-  global _assistant_agent, _is_initializing
+  global _assistant_agent, _is_initializing, _init_called
 
   # 快速检查，避免不必要的锁竞争
   if _assistant_agent is not None:
@@ -84,7 +85,7 @@ def get_assistant_agent():
           return _assistant_agent
 
       # 等待超时，重置初始化状态
-      logger.warning("等待初始化超时，重置初始化状态")
+      logger.warning("等待初始化完成超时，重置初始化状态")
       _is_initializing = False
 
     # 标记为正在初始化
@@ -106,6 +107,14 @@ def get_assistant_agent():
 
 def init_assistant_in_background():
   """在后台线程中初始化小助手，避免首次调用时的延迟"""
+  global _init_called
+  
+  # 防止重复调用
+  if _init_called:
+    logger.debug("后台初始化已被调用，跳过重复调用")
+    return
+    
+  _init_called = True
 
   def _init_thread():
     try:
@@ -120,10 +129,6 @@ def init_assistant_in_background():
 
   thread = threading.Thread(target=_init_thread, daemon=True, name="AssistantInit")
   thread.start()
-
-
-# 应用启动时自动初始化
-init_assistant_in_background()
 
 
 def safe_async_run(coroutine, timeout: int = 300):
