@@ -69,16 +69,15 @@ class RedisCacheManager:
     """优化的Redis缓存管理器"""
 
     def __init__(self, 
-                 redis_config: Dict[str, Any],
+                 redis_config: Dict[str, Any] = None,
                  cache_prefix: str = "aiops_cache:",
                  default_ttl: int = 3600,
                  max_cache_size: int = 10000,
                  enable_compression: bool = True):
         """
         初始化Redis缓存管理器
-        
         Args:
-            redis_config: Redis连接配置
+            redis_config: Redis连接配置（如未提供则自动从 settings.py 读取）
             cache_prefix: 缓存键前缀
             default_ttl: 默认过期时间（秒）
             max_cache_size: 最大缓存条目数
@@ -92,18 +91,17 @@ class RedisCacheManager:
         self._lock = threading.Lock()
         self._shutdown = False
 
-        # Redis连接池
+        # Redis连接池，所有参数都从settings读取
         self.connection_pool = ConnectionPool(
-            host=redis_config.get('host', 'localhost'),
-            port=redis_config.get('port', 6379),
-            db=redis_config.get('db', 1),  # 使用不同的db用于缓存
-            password=redis_config.get('password', ''),
-            decode_responses=False,  # 处理二进制数据
-            max_connections=redis_config.get('max_connections', 20),
-            socket_timeout=redis_config.get('socket_timeout', 5),
-            socket_connect_timeout=redis_config.get('connection_timeout', 5)
+            host=redis_config["host"],
+            port=redis_config["port"],
+            db=redis_config["db"],
+            password=redis_config["password"],
+            decode_responses=redis_config["decode_responses"],
+            max_connections=redis_config["max_connections"],
+            socket_timeout=redis_config["socket_timeout"],
+            socket_connect_timeout=redis_config["connection_timeout"]
         )
-        
         self.redis_client = redis.Redis(connection_pool=self.connection_pool)
         
         # 统计信息键

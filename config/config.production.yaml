@@ -95,3 +95,4 @@ mcp:
   timeout: 30 # 请求超时时间(秒)
   max_retries: 3 # 最大重试次数
   health_check_interval: 5 # 健康检查间隔(秒)
+  
