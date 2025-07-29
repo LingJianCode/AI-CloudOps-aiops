@@ -6,18 +6,10 @@ ENV PYTHONUNBUFFERED=1
 ENV FLASK_APP=app.main:app
 ENV PIP_DEFAULT_TIMEOUT=100
 ENV TZ=Asia/Shanghai
+ENV ENV=production
 
 # 设置工作目录
 WORKDIR /app
-
-# 安装系统依赖
-RUN apt-get update && apt-get install -y \
-    gcc \
-    g++ \
-    curl \
-    procps \
-    git \
-    && rm -rf /var/lib/apt/lists/*
 
 # 复制依赖文件
 COPY requirements.txt .
