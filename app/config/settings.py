@@ -289,7 +289,7 @@ class MCPConfig:
   server_url: str = field(
     default_factory=lambda: get_env_or_config("MCP_SERVER_URL", "mcp.server_url", "http://127.0.0.1:9000"))
   timeout: int = field(
-    default_factory=lambda: get_env_or_config("MCP_TIMEOUT", "mcp.timeout", 30, int))
+    default_factory=lambda: get_env_or_config("MCP_TIMEOUT", "mcp.timeout", 120, int))
   max_retries: int = field(
     default_factory=lambda: get_env_or_config("MCP_MAX_RETRIES", "mcp.max_retries", 3, int))
   health_check_interval: int = field(

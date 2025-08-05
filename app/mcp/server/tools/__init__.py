@@ -10,6 +10,7 @@ from .time_tool import TimeTool
 from .system_info_tool import SystemInfoTool
 from .file_tool import FileReadTool, FileListTool, FileStatsTool
 from .calculator_tool import CalculatorTool, StatisticsTool, UnitConverterTool
+from .k8s_cluster_check_tool import K8sClusterCheckTool
 
 __all__ = [
     'TimeTool',
@@ -19,7 +20,8 @@ __all__ = [
     'FileStatsTool',
     'CalculatorTool',
     'StatisticsTool',
-    'UnitConverterTool'
+    'UnitConverterTool',
+    'K8sClusterCheckTool',
 ]
 
 # 工具注册列表，用于MCP服务器自动加载
@@ -31,5 +33,6 @@ tools = [
     FileStatsTool(),
     CalculatorTool(),
     StatisticsTool(),
-    UnitConverterTool()
+    UnitConverterTool(),
+    K8sClusterCheckTool(),
 ]

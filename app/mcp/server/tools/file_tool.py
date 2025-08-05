@@ -10,7 +10,6 @@ Description: 文件和目录操作的MCP工具
 """
 
 import os
-import json
 from typing import Any, Dict
 
 from ..mcp_server import BaseTool
