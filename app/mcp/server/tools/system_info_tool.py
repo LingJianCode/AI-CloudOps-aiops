@@ -9,7 +9,6 @@ License: Apache 2.0
 Description: 获取系统信息的MCP工具
 """
 
-import os
 import platform
 import psutil
 from typing import Any, Dict

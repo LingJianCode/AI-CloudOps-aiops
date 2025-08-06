@@ -9,18 +9,16 @@ License: Apache 2.0
 Description: k8s集群健康检查的MCP工具
 """
 
-import os
 import asyncio
+import os
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
-from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from kubernetes import client, config
-from kubernetes.client.rest import ApiException
 
-from ..mcp_server import BaseTool
+from .k8s_base_tool import K8sBaseTool
 
 
-class K8sClusterCheckTool(BaseTool):
+class K8sClusterCheckTool(K8sBaseTool):
     """k8s集群健康检查工具"""
     
     def __init__(self):
@@ -28,8 +26,6 @@ class K8sClusterCheckTool(BaseTool):
             name="k8s_cluster_check",
             description="执行k8s集群健康检查，返回集群状态、节点状态、事件和日志的markdown格式报告"
         )
-        self._api_clients = None
-        self._executor = ThreadPoolExecutor(max_workers=3)  # 限制并发数
     
     def get_parameters(self) -> Dict[str, Any]:
         """获取工具参数定义"""
@@ -55,11 +51,8 @@ class K8sClusterCheckTool(BaseTool):
             "required": []
         }
     
-    def _initialize_clients(self, config_path: Optional[str] = None) -> Dict[str, client.ApiClient]:
-        """初始化Kubernetes API客户端"""
-        if self._api_clients:
-            return self._api_clients
-            
+    def _create_api_clients(self, config_path: Optional[str] = None) -> Dict[str, client.ApiClient]:
+        """创建Kubernetes API客户端"""
         try:
             # 尝试不同的配置加载方式
             if config_path and os.path.exists(config_path):
@@ -70,47 +63,15 @@ class K8sClusterCheckTool(BaseTool):
                 # 尝试集群内配置
                 config.load_incluster_config()
                 
-            self._api_clients = {
+            return {
                 "v1": client.CoreV1Api(),
                 "apps_v1": client.AppsV1Api(),
                 "version": client.VersionApi()
             }
-            return self._api_clients
             
         except Exception as e:
             raise Exception(f"无法加载Kubernetes配置: {str(e)}")
     
-    async def execute(self, parameters: Dict[str, Any]) -> Any:
-        """执行工具"""
-        try:
-            # 整体执行超时保护（总共60秒）
-            return await asyncio.wait_for(self._execute_internal(parameters), timeout=60.0)
-        except asyncio.TimeoutError:
-            return {
-                "report": "# Kubernetes集群检查超时\n\n工具执行时间超过60秒，已中止检查。建议缩小检查范围或检查集群连接性能。",
-                "timestamp": datetime.utcnow().isoformat() + "Z",
-                "status": "timeout"
-            }
-        except Exception as e:
-            error_report = f"""# Kubernetes集群检查失败
-
-## 错误信息
-**错误**: {str(e)}
-
-## 建议
-1. 检查kubeconfig文件是否存在且有效
-2. 确认对集群有足够的访问权限
-3. 验证网络连接是否正常
-4. 检查Kubernetes集群是否正在运行
-
-**检查时间**: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC
-"""
-            
-            return {
-                "report": error_report,
-                "timestamp": datetime.utcnow().isoformat() + "Z",
-                "status": "error"
-            }
     
     async def _execute_internal(self, parameters: Dict[str, Any]) -> Any:
         """执行工具内部逻辑"""
@@ -119,8 +80,8 @@ class K8sClusterCheckTool(BaseTool):
         namespace_filter = parameters.get("namespace")
         time_window = parameters.get("time_window_hours", 1)
         
-        # 初始化API客户端
-        clients = self._initialize_clients(config_path)
+        # 创建API客户端
+        clients = self._create_api_clients(config_path)
         v1 = clients["v1"]
         version_api = clients["version"]
         
@@ -635,10 +596,3 @@ class K8sClusterCheckTool(BaseTool):
         
         return "\n".join(report_lines)
     
-    def __del__(self):
-        """清理资源"""
-        if hasattr(self, '_executor') and self._executor:
-            try:
-                self._executor.shutdown(wait=False)
-            except Exception:
-                pass

@@ -88,6 +88,169 @@
   "category": "length"
 }
 ```
+### 5. k8s集群检查工具 (k8s_cluster_check_tool.py)
+- **工具名称**: `k8s_cluster_check`
+- **使用示例**:
+```json
+{
+  "config_path": "/path/to/kubeconfig",
+  "namespace": "default",
+  "time_window_hours": 1
+}
+```
+
+### 6. k8s Pod管理工具 (k8s_pod_tool.py)
+- **工具名称**: `k8s_pod_management`
+- **支持操作**: list_pods, get_pod_details, delete_pod, restart_pod, get_pod_events
+- **使用示例**:
+```json
+{
+  "operation": "list_pods",
+  "namespace": "default",
+  "label_selector": "app=nginx",
+  "max_results": 50
+}
+```
+
+### 7. k8s Service管理工具 (k8s_service_tool.py)
+- **工具名称**: `k8s_service_management`
+- **支持操作**: list_services, get_service_details, create_service, delete_service, get_endpoints
+- **使用示例**:
+```json
+{
+  "operation": "create_service",
+  "namespace": "default",
+  "service_config": {
+    "name": "my-service",
+    "type": "ClusterIP",
+    "selector": {"app": "nginx"},
+    "ports": [{"port": 80, "target_port": 80}]
+  }
+}
+```
+
+### 8. k8s Deployment管理工具 (k8s_deployment_tool.py)
+- **工具名称**: `k8s_deployment_management`
+- **支持操作**: list_deployments, get_deployment_status, update_image, rollback, scale, get_rollout_history, restart_deployment
+- **使用示例**:
+```json
+{
+  "operation": "update_image",
+  "deployment_name": "nginx-deployment",
+  "namespace": "default",
+  "container_name": "nginx",
+  "new_image": "nginx:1.20"
+}
+```
+
+### 9. k8s配置管理工具 (k8s_config_tool.py)
+- **工具名称**: `k8s_config_management`
+- **支持操作**: list_configmaps, list_secrets, get_configmap, get_secret, create_configmap, create_secret, update_configmap, update_secret, delete_configmap, delete_secret
+- **使用示例**:
+```json
+{
+  "operation": "create_configmap",
+  "namespace": "default",
+  "resource_name": "my-config",
+  "data": {
+    "config.yaml": "key: value"
+  }
+}
+```
+
+### 10. k8s日志查看工具 (k8s_logs_tool.py)
+- **工具名称**: `k8s_logs_viewer`
+- **支持操作**: get_pod_logs, get_container_logs, get_previous_logs, tail_logs, search_logs
+- **使用示例**:
+```json
+{
+  "operation": "get_container_logs",
+  "pod_name": "nginx-pod",
+  "container_name": "nginx",
+  "namespace": "default",
+  "tail_lines": 100
+}
+```
+
+### 11. k8s资源监控工具 (k8s_monitor_tool.py)
+- **工具名称**: `k8s_resource_monitor`
+- **支持操作**: get_node_metrics, get_pod_metrics, get_resource_quotas, get_limit_ranges, get_top_pods, get_top_nodes
+- **使用示例**:
+```json
+{
+  "operation": "get_top_pods",
+  "namespace": "default",
+  "max_results": 10
+}
+```
+
+### 12. k8s命名空间管理工具 (k8s_namespace_tool.py)
+- **工具名称**: `k8s_namespace_management`
+- **支持操作**: list_namespaces, get_namespace, create_namespace, delete_namespace, get_namespace_resources
+- **使用示例**:
+```json
+{
+  "operation": "create_namespace",
+  "namespace_name": "my-namespace",
+  "labels": {"environment": "dev"}
+}
+```
+
+### 13. k8s应用伸缩工具 (k8s_scaling_tool.py)
+- **工具名称**: `k8s_application_scaling`
+- **支持操作**: scale_deployment, scale_replicaset, get_hpa_status, list_hpa, create_hpa, delete_hpa
+- **使用示例**:
+```json
+{
+  "operation": "scale_deployment",
+  "resource_name": "nginx-deployment",
+  "namespace": "default",
+  "replicas": 5
+}
+```
+
+### 14. k8s Ingress管理工具 (k8s_ingress_tool.py)
+- **工具名称**: `k8s_ingress_management`
+- **支持操作**: list_ingresses, get_ingress, create_ingress, delete_ingress, get_ingress_classes
+- **使用示例**:
+```json
+{
+  "operation": "create_ingress",
+  "namespace": "default",
+  "ingress_config": {
+    "name": "my-ingress",
+    "ingress_class": "nginx",
+    "rules": [
+      {
+        "host": "example.com",
+        "paths": [
+          {
+            "path": "/",
+            "service_name": "my-service",
+            "service_port": 80
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+### 15. k8s资源操作工具 (k8s_resource_tool.py)
+- **工具名称**: `k8s_resource_operations`
+- **支持操作**: describe_resource, add_labels, remove_labels, add_annotations, remove_annotations, apply_yaml, get_resource_yaml
+- **使用示例**:
+```json
+{
+  "operation": "add_labels",
+  "resource_type": "pod",
+  "resource_name": "nginx-pod",
+  "namespace": "default",
+  "labels": {
+    "version": "v1.0"
+  }
+}
+```
 
 ## 支持的单位类别
 

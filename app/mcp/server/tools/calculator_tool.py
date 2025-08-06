@@ -10,7 +10,6 @@ Description: 数学计算和表达式求值的MCP工具
 """
 
 import math
-import json
 from typing import Any, Dict
 
 from ..mcp_server import BaseTool

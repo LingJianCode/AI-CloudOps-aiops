@@ -192,7 +192,7 @@ class FileStatsTool(BaseTool):
             if os.path.isdir(path):
                 total_files = 0
                 total_size = 0
-                for root, dirs, files in os.walk(path):
+                for root, _, files in os.walk(path):
                     total_files += len(files)
                     for file in files:
                         file_path = os.path.join(root, file)
