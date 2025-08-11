@@ -533,6 +533,8 @@ python app/main.py
 - 项目主页: [https://github.com/GoSimplicity/AI-CloudOps]
 - 问题报告: [https://github.com/GoSimplicity/AI-CloudOps/issues]
 - 邮件联系: [13664854532@163.com]
+- ![image](https://github.com/user-attachments/assets/2747cd1a-9085-437f-b21d-7884b98d7cf7)
+
 
 ## 📄 许可证
 
