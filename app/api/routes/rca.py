@@ -308,6 +308,7 @@ def update_rca_config():
         if updated_fields:
             logger.info(f"RCA配置已更新: {', '.join(updated_fields)}")
             return jsonify({
+                "code": 0,
                 "message": "配置更新成功",
                 "updated_fields": updated_fields,
                 "timestamp": datetime.utcnow().isoformat()
