@@ -12,22 +12,24 @@ prometheus:
 
 # LLM模型配置
 llm:
-  provider: openai
-  model: Qwen/Qwen3-14B
+  provider: openai # 可选值: openai, ollama - 设置主要的LLM提供商
+  model: Qwen/Qwen3-14B # 使用OpenAI提供商时的模型名称
   task_model: Qwen/Qwen3-14B-Instruct
   temperature: 0.3
   max_tokens: 4096
+  request_timeout: 360 # LLM请求超时时间(秒)
   # 备用Ollama模型配置
-  ollama_model: qwen2.5:3b
-  ollama_base_url: http://ollama-service:11434/v1
+  ollama_model: qwen2.5:3b # Ollama本地模型名称
+  ollama_base_url: http://ollama-service:11434/v1 # Ollama API基础URL
 
 # 测试配置
 testing:
-  skip_llm_tests: false
+  skip_llm_tests: false # 设置为true可跳过依赖LLM的测试
 
 # Kubernetes配置
 kubernetes:
   in_cluster: true
+  # 生产环境通常不需要config_path
   namespace: default
 
 # 根因分析配置
@@ -86,3 +88,15 @@ rag:
   ollama_embedding_model: nomic-embed-text
   max_context_length: 6000
   temperature: 0.1
+  timeout: 360 # 智能助手调用超时时间(秒) - 确保足够时间进行复杂推理
+  cache_expiry: 3600 # 缓存过期时间(秒)
+  max_docs_per_query: 8 # 每次查询最多处理的文档数
+  use_enhanced_retrieval: true # 是否使用增强检索
+  use_document_compressor: true # 是否使用文档压缩
+
+# MCP配置
+mcp:
+  server_url: http://localhost:9000 # MCP服务端地址
+  timeout: 30 # 请求超时时间(秒)
+  max_retries: 3 # 最大重试次数
+  health_check_interval: 30 # 健康检查间隔(秒)
