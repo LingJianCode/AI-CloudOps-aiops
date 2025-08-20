@@ -12,12 +12,12 @@ Description: 错误处理中间件 - 提供统一的HTTP错误响应格式和异
 import logging
 import traceback
 from datetime import datetime
-from typing import Dict, Any
+
 
 from fastapi import FastAPI, Request, HTTPException
-from fastapi.exception_handlers import http_exception_handler
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from fastapi.exceptions import RequestValidationError
 
 from app.models.response_models import APIResponse
 
@@ -25,7 +25,6 @@ logger = logging.getLogger("aiops.error_handler")
 
 
 async def custom_http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
-    """自定义HTTP异常处理器"""
     try:
         logger.error(f"HTTP异常处理器被触发 - 状态码: {exc.status_code}, 详情: {exc.detail}")
         logger.error(f"请求信息 - URL: {request.url}, Method: {request.method}")
@@ -68,13 +67,12 @@ async def custom_http_exception_handler(request: Request, exc: HTTPException) ->
 
 
 async def validation_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    """处理验证异常"""
     try:
         logger.error(f"验证异常: {str(exc)}")
         logger.error(f"请求信息 - URL: {request.url}, Method: {request.method}")
 
         error_response = APIResponse(
-            code=422,
+            code=400,
             message="请求参数验证失败",
             data={
                 "detail": str(exc),
@@ -85,7 +83,7 @@ async def validation_exception_handler(request: Request, exc: Exception) -> JSON
         )
 
         return JSONResponse(
-            status_code=422,
+            status_code=400,
             content=error_response.dict()
         )
 
@@ -102,7 +100,6 @@ async def validation_exception_handler(request: Request, exc: Exception) -> JSON
 
 
 async def general_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    """处理一般异常"""
     try:
         logger.error(f"未捕获的异常: {str(exc)}")
         logger.error(f"异常类型: {type(exc).__name__}")
@@ -145,7 +142,6 @@ async def general_exception_handler(request: Request, exc: Exception) -> JSONRes
 
 
 def setup_error_handlers(app: FastAPI):
-    """设置错误处理器"""
     try:
         # 注册HTTP异常处理器
         app.add_exception_handler(HTTPException, custom_http_exception_handler)
@@ -154,6 +150,7 @@ def setup_error_handlers(app: FastAPI):
         # 注册验证异常处理器
         from pydantic import ValidationError
         app.add_exception_handler(ValidationError, validation_exception_handler)
+        app.add_exception_handler(RequestValidationError, validation_exception_handler)
         
         # 注册通用异常处理器
         app.add_exception_handler(Exception, general_exception_handler)

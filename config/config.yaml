@@ -82,14 +82,14 @@ rag:
   knowledge_base_path: data/knowledge_base
   chunk_size: 1000
   chunk_overlap: 200
-  top_k: 4
-  similarity_threshold: 0.7
+  top_k: 8  # 增加检索数量，提高召回率
+  similarity_threshold: 0.3  # 降低相似度阈值，提高召回率
   openai_embedding_model: Pro/BAAI/bge-m3
   ollama_embedding_model: nomic-embed-text
   max_context_length: 4000
   temperature: 0.1
   # 超时设置
-  timeout: 360 # 智能助手调用超时时间(秒)
+  timeout: 360 # 智能助手调用超时时间(秒) - 确保足够时间进行复杂推理
   # 缓存设置
   cache_expiry: 3600 # 缓存过期时间(秒)
   # 文档处理设置

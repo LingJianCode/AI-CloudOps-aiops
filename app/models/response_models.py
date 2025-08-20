@@ -104,6 +104,8 @@ class PredictionResponse(BaseModel):
     负载预测响应模型 - 包含预测结果和相关信息
 
     Attributes:
+        service_name: 服务名称
+        prediction_hours: 预测小时数
         instances: 预测的实例数量
         current_qps: 当前QPS
         timestamp: 预测时间
@@ -113,8 +115,10 @@ class PredictionResponse(BaseModel):
         features: 预测使用的特征（可选）
     """
 
+    service_name: str
+    prediction_hours: int
     instances: int
-    current_qps: float
+    current_qps: Optional[float] = None
     timestamp: str
     confidence: Optional[float] = None
     model_version: Optional[str] = None
@@ -131,19 +135,23 @@ class AutoFixResponse(BaseModel):
         result: 修复结果描述
         deployment: 部署名称
         namespace: 命名空间
+        event: 问题事件描述
         actions_taken: 执行的修复操作列表
         timestamp: 修复完成时间
+        execution_time: 执行耗时（秒）
         success: 修复是否成功
         error_message: 错误信息（如果有）
     """
 
-    status: str
-    result: str
+    status: str = "completed"
+    result: str = ""
     deployment: str
     namespace: str
-    actions_taken: List[str]
+    event: str
+    actions_taken: List[str] = []
     timestamp: str
-    success: bool
+    execution_time: float
+    success: bool = True
     error_message: Optional[str] = None
 
 

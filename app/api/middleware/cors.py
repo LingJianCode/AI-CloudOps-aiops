@@ -17,15 +17,24 @@ logger = logging.getLogger("aiops.cors")
 
 
 def setup_cors(app: FastAPI):
-    """设置CORS中间件"""
     try:
         # 配置CORS中间件
+        # 在允许凭据的情况下不能使用通配 *，改为常见本地来源，避免浏览器报错
+        allowed_origins = [
+            "http://localhost",
+            "http://127.0.0.1",
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+            "http://localhost:8080",
+            "http://127.0.0.1:8080",
+        ]
+
         app.add_middleware(
             CORSMiddleware,
-            allow_origins=["*"],  # 允许所有源
+            allow_origins=allowed_origins,
             allow_credentials=True,
             allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-            allow_headers=["*"],  # 允许所有头部
+            allow_headers=["*"],
         )
 
         logger.info("CORS中间件设置完成")

@@ -25,6 +25,13 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
+# 缓存配置常量
+DEFAULT_TTL = 3600  # 默认1小时过期
+COMPRESSION_THRESHOLD = 1024  # 大于1KB才压缩
+DEBUG_KEY_LENGTH = 16  # 调试时显示的key长度
+SCAN_COUNT = 100  # Redis scan操作每次获取的数量
+CONTENT_PREVIEW_LENGTH = 50  # 内容预览长度
+
 
 @dataclass
 class CacheEntry:
@@ -34,7 +41,7 @@ class CacheEntry:
     data: Dict[str, Any]
     access_count: int = 0
     last_access: float = field(default_factory=time.time)
-    ttl: int = 3600  # 默认1小时过期
+    ttl: int = DEFAULT_TTL
 
     def is_expired(self, expiry_seconds: int = None) -> bool:
         """检查是否过期"""
@@ -64,7 +71,7 @@ class CacheEntry:
             data=data.get("data", {}),
             access_count=data.get("access_count", 0),
             last_access=data.get("last_access", time.time()),
-            ttl=data.get("ttl", 3600),
+            ttl=data.get("ttl", DEFAULT_TTL),
         )
 
 
@@ -75,7 +82,7 @@ class RedisCacheManager:
         self,
         redis_config: Dict[str, Any],
         cache_prefix: str = "aiops_cache:",
-        default_ttl: int = 3600,
+        default_ttl: int = DEFAULT_TTL,
         max_cache_size: int = 10000,
         enable_compression: bool = True,
     ):
@@ -148,24 +155,69 @@ class RedisCacheManager:
     def _generate_cache_key(
         self, question: str, session_id: str = None, history: List = None
     ) -> str:
-        """生成缓存键"""
-        cache_input = question
+        """生成智能缓存键 - 支持相似问题匹配"""
+        # 标准化问题文本
+        normalized_question = self._normalize_question(question)
+        
+        # 提取关键词
+        keywords = self._extract_keywords(normalized_question)
+        
+        # 生成基础缓存输入
+        cache_input = "|".join(sorted(keywords))  # 排序确保一致性
+        
+        # 如果有会话上下文，添加简化的上下文信息
+        if session_id and history and len(history) > 0:
+            # 只使用最后一个问答对的关键信息
+            last_interaction = history[-1] if history else ""
+            if isinstance(last_interaction, str) and len(last_interaction) > 0:
+                last_keywords = self._extract_keywords(last_interaction)[:3]  # 只取前3个关键词
+                if last_keywords:
+                    context_key = "|".join(sorted(last_keywords))
+                    cache_input = f"{cache_input}|ctx:{context_key}"
 
-        if session_id and history:
-            # 只使用最近的历史记录
-            recent_history = history[-2:] if len(history) >= 2 else history
-            if recent_history:
-                history_str = json.dumps(
-                    [
-                        {"role": h.get("role", ""), "content": h.get("content", "")[:50]}
-                        for h in recent_history
-                    ],
-                    ensure_ascii=False,
-                )
-                cache_input = f"{question}|{history_str}"
-
+        # 生成缓存键
         key_hash = hashlib.sha256(cache_input.encode("utf-8")).hexdigest()
-        return f"{self.cache_prefix}{key_hash}"
+        return f"{self.cache_prefix}smart:{key_hash}"
+    
+    def _normalize_question(self, question: str) -> str:
+        """标准化问题文本"""
+        import re
+        
+        # 转换为小写
+        normalized = question.lower().strip()
+        
+        # 移除多余的标点符号和空格
+        normalized = re.sub(r'[^\w\s\u4e00-\u9fff]', ' ', normalized)  # 保留中文字符
+        
+        # 合并多个空格为单个空格
+        normalized = re.sub(r'\s+', ' ', normalized)
+        
+        return normalized.strip()
+    
+    def _extract_keywords(self, text: str, max_keywords: int = 8) -> List[str]:
+        """提取关键词"""
+        if not text:
+            return []
+        
+        # 简单的关键词提取：移除停用词并按长度过滤
+        stop_words = {
+            '的', '了', '是', '在', '有', '和', '与', '或', '但', '不', '没', '也', '都', '要', '会', '能', '可以', '什么', '怎么', '为什么', '如何',
+            'the', 'is', 'in', 'and', 'or', 'but', 'not', 'to', 'a', 'an', 'what', 'how', 'why', 'can', 'could', 'should', 'would'
+        }
+        
+        words = text.split()
+        keywords = []
+        
+        for word in words:
+            # 过滤条件：长度>1，不在停用词中
+            if len(word) > 1 and word not in stop_words:
+                keywords.append(word)
+        
+        # 按词频排序（简单实现）或取最长的词
+        keywords = list(set(keywords))  # 去重
+        keywords.sort(key=len, reverse=True)  # 按长度排序，长词通常更有意义
+        
+        return keywords[:max_keywords]
 
     def _serialize_data(self, data: Any) -> bytes:
         """序列化数据"""
@@ -174,7 +226,7 @@ class RedisCacheManager:
             serialized = pickle.dumps(data)
 
             # 可选压缩
-            if self.enable_compression and len(serialized) > 1024:  # 大于1KB才压缩
+            if self.enable_compression and len(serialized) > COMPRESSION_THRESHOLD:
                 serialized = gzip.compress(serialized)
                 return b"compressed:" + serialized
 
@@ -259,7 +311,7 @@ class RedisCacheManager:
                 logger.warning(f"更新缓存访问信息失败: {e}")
 
             self._update_stats("hit")
-            logger.debug(f"缓存命中: {cache_key[:16]}...")
+            logger.debug(f"缓存命中: {cache_key[:DEBUG_KEY_LENGTH]}...")
             return entry.data
 
         except Exception as e:
@@ -297,7 +349,7 @@ class RedisCacheManager:
             # 检查缓存大小并清理
             self._cleanup_if_needed()
 
-            logger.debug(f"设置缓存: {cache_key[:16]}...")
+            logger.debug(f"设置缓存: {cache_key[:DEBUG_KEY_LENGTH]}...")
 
         except Exception as e:
             logger.error(f"设置缓存失败: {e}")
@@ -354,7 +406,7 @@ class RedisCacheManager:
             deleted_count = 0
             
             while True:
-                cursor, keys = self.redis_client.scan(cursor, pattern, count=100)
+                cursor, keys = self.redis_client.scan(cursor, pattern, count=SCAN_COUNT)
                 if keys:
                     # 批量删除
                     self.redis_client.delete(*keys)

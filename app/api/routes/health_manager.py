@@ -9,15 +9,12 @@ License: Apache 2.0
 Description: 健康检查管理器 - 统一健康检查逻辑和组件状态管理
 """
 
-import asyncio
 import logging
 import time
 from datetime import datetime
 from typing import Dict, Any
 
 import psutil
-
-from app.config.settings import config
 
 from app.core.prediction.predictor import PredictionService
 from app.services.kubernetes import KubernetesService
@@ -29,7 +26,7 @@ logger = logging.getLogger("aiops.health_manager")
 
 
 class HealthManager:
-    """健康检查管理器 - 统一管理所有组件的健康状态"""
+
     
     def __init__(self):
         self.start_time = time.time()
@@ -38,7 +35,7 @@ class HealthManager:
         self._last_check = {}
     
     def get_service(self, service_name: str):
-        """获取服务实例"""
+
         services = {
             'prometheus': PrometheusService,
             'kubernetes': KubernetesService,
@@ -59,7 +56,7 @@ class HealthManager:
         return self._service_cache[service_name]
     
     def check_component_health(self, component: str) -> Dict[str, Any]:
-        """检查单个组件健康状态"""
+
         current_time = time.time()
         
         # 检查缓存 - 优化缓存查询
@@ -76,23 +73,19 @@ class HealthManager:
                     "timestamp": datetime.utcnow().isoformat()
                 }
             else:
-                # 特殊处理 LLM 服务的异步健康检查
+                # 特殊处理 LLM 服务的健康检查
                 if component == 'llm' and hasattr(service, 'is_healthy'):
                     try:
-                        # 检查是否有运行中的事件循环
-                        try:
-                            asyncio.get_running_loop()
-                            # 如果在事件循环中，使用 asyncio.create_task 但需要在线程中执行
-                            import concurrent.futures
-                            with concurrent.futures.ThreadPoolExecutor() as executor:
-                                # 在新线程中创建新的事件循环运行异步方法
-                                future = executor.submit(
-                                    lambda: asyncio.run(service.is_healthy())
-                                )
-                                is_healthy = future.result(timeout=config.rag.timeout)
-                        except RuntimeError:
-                            # 没有运行中的事件循环，可以直接使用 asyncio.run
-                            is_healthy = asyncio.run(service.is_healthy())
+                        # 避免在异步环境中的死锁问题，使用同步检查
+                        if hasattr(service, 'health_check_sync'):
+                            # 如果有同步健康检查方法，优先使用
+                            is_healthy = service.health_check_sync()
+                        elif hasattr(service, 'is_available'):
+                            # 使用简单的可用性检查
+                            is_healthy = service.is_available()
+                        else:
+                            # 基础连接检查
+                            is_healthy = bool(getattr(service, 'client', None) or getattr(service, '_client', None))
                     except Exception as e:
                         logger.error(f"LLM健康检查失败: {str(e)}")
                         is_healthy = False
@@ -130,12 +123,21 @@ class HealthManager:
         return result
     
     def check_all_components(self) -> Dict[str, Dict[str, Any]]:
-        """检查所有组件健康状态"""
+
         components = ['prometheus', 'kubernetes', 'llm', 'notification', 'prediction']
         return {comp: self.check_component_health(comp) for comp in components}
+
+    # 兼容路由层调用：返回包含 components 字段的结构
+    def get_components_health(self) -> Dict[str, Any]:
+
+        comps = self.check_all_components()
+        return {
+            "components": comps,
+            "timestamp": datetime.utcnow().isoformat()
+        }
     
     def get_system_metrics(self) -> Dict[str, Any]:
-        """获取系统资源指标 - 优化性能"""
+
         try:
             # 减少CPU采样时间以提高响应速度
             cpu_percent = psutil.cpu_percent(interval=0.1)
@@ -181,8 +183,8 @@ class HealthManager:
                 },
                 "memory": {
                     "usage_percent": memory.percent,
-                    "available_gb": round(memory.available / (1024 * 1024 * 1024), 2),
-                    "total_gb": round(memory.total / (1024 * 1024 * 1024), 2)
+                    "available_bytes": int(memory.available),
+                    "total_bytes": int(memory.total)
                 },
                 "disk": disk_info,
                 "network": network_info,
@@ -194,11 +196,11 @@ class HealthManager:
             return {"error": str(e), "timestamp": datetime.utcnow().isoformat()}
     
     def get_uptime(self) -> float:
-        """获取系统运行时间"""
+
         return time.time() - self.start_time
     
     def get_overall_health(self) -> Dict[str, Any]:
-        """获取整体健康状态"""
+
         components = self.check_all_components()
         system_metrics = self.get_system_metrics()
         
@@ -228,6 +230,44 @@ class HealthManager:
             "components": {name: comp.get("healthy", False) for name, comp in components.items()},
             "system": system_metrics,
             "details": components
+        }
+
+    def check_readiness(self) -> Dict[str, Any]:
+
+        comps = self.check_all_components()
+        # 将 Prometheus 与 Prediction 视为关键依赖
+        critical_ready = all(
+            comps.get(name, {}).get("healthy", False) for name in ["prometheus", "prediction"]
+        )
+        status = "ready" if critical_ready else "not ready"
+        return {
+            "status": status,
+            "ready": critical_ready,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+    def check_liveness(self) -> Dict[str, Any]:
+
+        return {
+            "status": "alive",
+            "uptime": self.get_uptime(),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+    def check_startup(self) -> Dict[str, Any]:
+
+        started = self.get_uptime() >= 0.5
+        return {
+            "started": started,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+    def check_dependencies(self) -> Dict[str, Any]:
+
+        comps = self.check_all_components()
+        return {
+            "dependencies": {name: info.get("healthy", False) for name, info in comps.items()},
+            "timestamp": datetime.utcnow().isoformat()
         }
 
 

@@ -16,7 +16,7 @@ import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-import yaml
+
 from kubernetes import client
 from kubernetes import config as k8s_config
 from kubernetes.client.rest import ApiException
@@ -53,7 +53,7 @@ class KubernetesService:
                 logger.info(f"Kubernetes连接成功: {version.git_version}")
 
                 # 尝试列出命名空间，再次确认连接
-                namespaces = self.core_v1.list_namespace(limit=1)
+                self.core_v1.list_namespace(limit=1)
                 logger.info(f"成功获取命名空间列表，确认连接正常")
 
                 self.initialized = True
@@ -302,10 +302,10 @@ class KubernetesService:
         try:
             # 尝试获取API版本
             api = client.VersionApi()
-            version = api.get_code()
+            api.get_code()
 
             # 尝试列出命名空间
-            namespaces = self.core_v1.list_namespace(limit=1)
+            self.core_v1.list_namespace(limit=1)
 
             return True
         except Exception as e:

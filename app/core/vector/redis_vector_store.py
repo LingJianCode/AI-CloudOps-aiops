@@ -239,8 +239,8 @@ class RedisVectorStore:
     def similarity_search(
         self,
         query: str,
-        k: int = 4,
-        similarity_threshold: float = 0.2,  # 大幅降低阈值提升召回率
+        k: int = 8,  # 增加默认检索数量
+        similarity_threshold: float = 0.05,  # 进一步降低阈值，提升召回率
         filter_metadata: Optional[Dict[str, Any]] = None,
     ) -> List[Tuple[Document, float]]:
         """相似度搜索"""
@@ -875,11 +875,11 @@ class OptimizedRedisVectorStore(RedisVectorStore):
     def hybrid_similarity_search(
         self,
         query: str,
-        k: int = 4,
-        semantic_weight: float = 0.6,  # 降低语义权重
-        lexical_weight: float = 0.4,  # 增加词汇权重
-        similarity_threshold: float = 0.3,
-    ) -> List[Tuple[Document, float]]:  # 大幅降低阈值
+        k: int = 8,  # 增加默认检索数量
+        semantic_weight: float = 0.5,  # 平衡语义权重
+        lexical_weight: float = 0.5,  # 平衡词汇权重  
+        similarity_threshold: float = 0.1,  # 进一步降低阈值，最大化召回率
+    ) -> List[Tuple[Document, float]]:
         """混合相似度搜索（语义+词汇） - 提升召回率优化版"""
         try:
             # 1. 语义搜索（使用FAISS或余弦相似度）

@@ -86,19 +86,25 @@ class PredictionRequest(BaseModel):
     负载预测请求模型 - 用于预测未来系统负载
 
     Attributes:
+        service_name: 服务名称
         current_qps: 当前每秒查询数
-        timestamp: 预测时间点
+        hours: 预测小时数
+        instance_cpu: 实例CPU数
+        instance_memory: 实例内存(GB)
         include_confidence: 是否包含置信区间
     """
 
-    current_qps: Optional[float] = None
-    timestamp: Optional[datetime] = None
-    include_confidence: bool = Field(default=True)
+    service_name: str = Field(default="unknown", description="服务名称")
+    current_qps: float = Field(..., description="当前QPS", gt=0)
+    hours: int = Field(default=24, description="预测小时数", ge=1, le=168)
+    instance_cpu: Optional[int] = Field(None, description="实例CPU数", gt=0)
+    instance_memory: Optional[int] = Field(None, description="实例内存(GB)", gt=0)
+    include_confidence: bool = Field(default=True, description="是否包含置信区间")
 
     @validator("current_qps", allow_reuse=True)
     def validate_qps(cls, v):
         """验证QPS值非负"""
-        if v is not None and v < 0:
+        if v < 0:
             raise ValueError("QPS不能为负数")
         return v
 

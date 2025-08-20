@@ -9,16 +9,12 @@ License: Apache 2.0
 Description: 主应用模块 - 提供FastAPI应用的创建和初始化功能
 """
 
-import asyncio
 import logging
 import os
 import sys
-import time
 from contextlib import asynccontextmanager
-from typing import Optional
 
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 
 # 添加项目根目录到系统路径
 current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -29,46 +25,11 @@ from app.api.middleware import register_middleware
 from app.api.routes import register_routes
 from app.config.logging import setup_logging
 from app.config.settings import config
+from app.common.constants import AppConstants
+from app.services.startup import StartupService
 
-# 预热机制导入
-from app.core.agents.assistant_manager import init_assistant_in_background
-
-start_time = time.time()
-
-
-async def warm_up_services():
-    """
-    预热关键服务，减少首次请求延迟
-    """
-    logger = logging.getLogger("aiops")
-    logger.info("开始预热关键服务...")
-    
-    try:
-        # 同步初始化智能助手，确保在启动完成前完成初始化
-        from app.core.agents.assistant_manager import get_assistant_agent
-        logger.info("正在初始化智能助手...")
-        
-        # 设置一个合理的超时时间
-        start_time = time.time()
-        max_wait_time = 60  # 最多等待60秒
-        
-        agent = None
-        while agent is None and (time.time() - start_time) < max_wait_time:
-            agent = get_assistant_agent()
-            if agent is None:
-                logger.info("智能助手初始化中，等待2秒后重试...")
-                await asyncio.sleep(2)
-        
-        if agent is not None:
-            init_time = time.time() - start_time
-            logger.info(f"智能助手预热完成，耗时: {init_time:.2f}秒")
-        else:
-            logger.warning(f"智能助手预热超时({max_wait_time}秒)，将在首次使用时初始化")
-            
-    except Exception as e:
-        logger.warning(f"智能助手预热失败: {str(e)}，将在首次使用时初始化")
-    
-    logger.info("服务预热完成")
+# 全局启动服务实例
+startup_service = StartupService()
 
 
 @asynccontextmanager
@@ -79,31 +40,38 @@ async def lifespan(app: FastAPI):
     # 启动时执行
     logger = logging.getLogger("aiops")
     logger.info("=" * 50)
-    logger.info("AIOps平台启动中...")
+    logger.info(f"{AppConstants.APP_NAME} 启动中...")
+    logger.info(f"版本: {AppConstants.APP_VERSION}")
     logger.info(f"调试模式: {config.debug}")
     logger.info(f"日志级别: {config.log_level}")
     logger.info("=" * 50)
     
+    # 初始化启动服务
+    await startup_service.initialize()
+    
     # 启动预热机制
-    await warm_up_services()
+    warmup_results = await startup_service.warmup_services()
     
     # 记录启动信息
-    startup_time = time.time() - start_time
-    logger.info(f"AIOps平台启动完成，耗时: {startup_time:.2f}秒")
+    startup_time = startup_service.get_uptime()
+    logger.info(f"{AppConstants.APP_NAME} 启动完成，耗时: {startup_time:.2f}秒")
     logger.info(f"服务地址: http://{config.host}:{config.port}")
-    logger.info("可用的API端点:")
-    logger.info("  - GET  /api/v1/health        - 健康检查")
-    logger.info("  - GET  /api/v1/predict       - 负载预测")
-    logger.info("  - POST /api/v1/rca           - 根因分析")
-    logger.info("  - POST /api/v1/autofix       - 自动修复")
-    logger.info("  - POST /api/v1/assistant/query - 智能小助手")
+    logger.info("主要API端点:")
+    logger.info(f"  - GET  {AppConstants.API_VERSION_V1}/health        - 健康检查")
+    logger.info(f"  - GET  {AppConstants.API_VERSION_V1}/predict       - 负载预测")
+    logger.info(f"  - POST {AppConstants.API_VERSION_V1}/rca           - 根因分析")
+    logger.info(f"  - POST {AppConstants.API_VERSION_V1}/autofix       - 自动修复")
+    logger.info(f"  - POST {AppConstants.API_VERSION_V1}/assistant/query - 智能小助手")
+    
+    if not warmup_results["success"]:
+        logger.warning("部分服务预热失败，系统仍可正常使用")
     
     yield
     
     # 关闭时执行
-    total_time = time.time() - start_time
-    logger.info(f"AIOps平台运行总时长: {total_time:.2f}秒")
-    logger.info("AIOps平台已关闭")
+    total_time = startup_service.get_uptime()
+    logger.info(f"{AppConstants.APP_NAME} 运行总时长: {total_time:.2f}秒")
+    logger.info(f"{AppConstants.APP_NAME} 已关闭")
 
 
 def create_app() -> FastAPI:
@@ -115,9 +83,9 @@ def create_app() -> FastAPI:
     """
     # 创建FastAPI应用
     app = FastAPI(
-        title="AIOps Platform",
-        description="智能云原生运维平台",
-        version="1.0.0",
+        title=AppConstants.APP_NAME,
+        description=AppConstants.APP_DESCRIPTION,
+        version=AppConstants.APP_VERSION,
         docs_url="/docs",
         redoc_url="/redoc",
         openapi_url="/openapi.json",

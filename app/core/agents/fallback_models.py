@@ -23,8 +23,6 @@ from langchain_core.outputs import ChatGeneration, ChatResult
 logger = logging.getLogger("aiops.fallback_models")
 
 
-# ==================== 数据类和模型定义 ====================
-
 @dataclass
 class SessionData:
     """会话数据模型"""
@@ -312,8 +310,12 @@ def sanitize_input(text: str, max_length: int = 10000) -> str:
 
 
 def validate_session_id(session_id: str) -> bool:
-    """验证会话ID格式"""
+    """验证会话ID格式 - 更宽松的验证"""
     if not session_id:
+        return False
+
+    # 长度检查
+    if len(session_id) < 3 or len(session_id) > 128:
         return False
 
     try:
@@ -322,7 +324,10 @@ def validate_session_id(session_id: str) -> bool:
         return True
     except ValueError:
         # 如果不是UUID格式，检查是否为合理的字符串
-        return len(session_id) > 6 and session_id.replace('-', '').isalnum()
+        # 允许字母、数字、连字符、下划线
+        import re
+        pattern = r'^[a-zA-Z0-9_-]+$'
+        return bool(re.match(pattern, session_id))
 
 
 def create_session_id() -> str:

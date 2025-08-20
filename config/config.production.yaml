@@ -80,8 +80,8 @@ rag:
   knowledge_base_path: /app/data/knowledge_base
   chunk_size: 1000
   chunk_overlap: 200
-  top_k: 5
-  similarity_threshold: 0.75
+  top_k: 10  # 生产环境增加更多检索数量
+  similarity_threshold: 0.25  # 生产环境降低相似度阈值
   openai_embedding_model: Pro/BAAI/bge-m3
   ollama_embedding_model: nomic-embed-text
   max_context_length: 6000

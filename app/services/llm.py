@@ -25,12 +25,9 @@ from openai import OpenAI  # OpenAI官方客户端
 # ==================== 内部组件导入 ====================
 from app.config.settings import config  # 系统配置
 from app.constants import (  # LLM相关常量
-    LLM_CONFIDENCE_THRESHOLD,
     LLM_MAX_RETRIES,
     LLM_TEMPERATURE_MAX,
     LLM_TEMPERATURE_MIN,
-    LLM_TIMEOUT_SECONDS,
-    OPENAI_TEST_MAX_TOKENS,
 )
 from app.utils.error_handlers import (  # 错误处理工具
     ErrorHandler,
@@ -39,7 +36,6 @@ from app.utils.error_handlers import (  # 错误处理工具
     ValidationError,
     retry_on_exception,
     validate_field_range,
-    validate_field_type,
 )
 
 logger = logging.getLogger("aiops.llm")

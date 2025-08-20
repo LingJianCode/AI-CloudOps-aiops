@@ -1,0 +1,12 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+AI-CloudOps-aiops
+Author: Bamboo
+Email: bamboocloudops@gmail.com
+License: Apache 2.0
+Description: 公共模块初始化文件
+"""
+
+__all__ = []
