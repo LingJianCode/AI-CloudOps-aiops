@@ -9,16 +9,53 @@ License: Apache 2.0
 Description: 备用实现和数据模型 - 提供降级服务和数据结构定义
 """
 
+import hashlib
 import logging
+import re
+import struct
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from enum import Enum
+from functools import lru_cache
+from typing import Any, Dict, List, Optional, Tuple
 
 from langchain_core.embeddings import Embeddings
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import BaseMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
+
+
+class ResponseTemplate(Enum):
+    """响应模板枚举"""
+
+    DEPLOYMENT = "deployment"
+    MONITORING = "monitoring"
+    TROUBLESHOOTING = "troubleshooting"
+    KUBERNETES = "kubernetes"
+    PERFORMANCE = "performance"
+    DEFAULT = "default"
+
+
+class ErrorCode(Enum):
+    """错误代码枚举"""
+
+    UNKNOWN = "UNKNOWN"
+    INVALID_INPUT = "INVALID_INPUT"
+    SESSION_ERROR = "SESSION_ERROR"
+    SERVICE_UNAVAILABLE = "SERVICE_UNAVAILABLE"
+
+
+# 配置常量
+DEFAULT_EMBEDDING_DIMENSION = 384
+MAX_INPUT_LENGTH = 10000
+MAX_HISTORY_ITEMS = 5
+SESSION_ID_MIN_LENGTH = 3
+SESSION_ID_MAX_LENGTH = 128
+
+# 编译的正则表达式（性能优化）
+SESSION_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]+$")
+HARMFUL_CHARS_PATTERN = re.compile(r"[<>{}]")
 
 logger = logging.getLogger("aiops.fallback_models")
 
@@ -26,99 +63,45 @@ logger = logging.getLogger("aiops.fallback_models")
 @dataclass
 class SessionData:
     """会话数据模型"""
+
     session_id: str
-    created_at: datetime
-    last_activity: datetime
-    history: List[str]
+    created_at: datetime = field(default_factory=datetime.now)
+    last_activity: datetime = field(default_factory=datetime.now)
+    history: List[str] = field(default_factory=list)
+
+    def update_activity(self) -> None:
+        """更新最后活动时间"""
+        self.last_activity = datetime.now()
+
+    def add_to_history(self, item: str) -> None:
+        """添加到历史记录，保持最大数量限制"""
+        self.history.append(item)
+        if len(self.history) > MAX_HISTORY_ITEMS:
+            self.history = self.history[-MAX_HISTORY_ITEMS:]
+        self.update_activity()
 
 
-# ==================== 备用实现类 ====================
+@dataclass
+class ResponseContext:
+    """响应上下文数据"""
 
-class FallbackEmbeddings(Embeddings):
-    """备用嵌入实现 - 当主要嵌入服务不可用时使用"""
-
-    def __init__(self):
-        self.dimension = 384  # 默认维度
-
-    def embed_documents(self, texts: List[str]) -> List[List[float]]:
-        """为文档列表生成嵌入向量"""
-        logger.warning("使用备用嵌入实现")
-        embeddings = []
-        for text in texts:
-            # 简单的基于哈希的伪嵌入
-            embedding = self._generate_pseudo_embedding(text)
-            embeddings.append(embedding)
-        return embeddings
-
-    def embed_query(self, text: str) -> List[float]:
-        """为查询生成嵌入向量"""
-        logger.warning("使用备用查询嵌入实现")
-        return self._generate_pseudo_embedding(text)
-
-    def _generate_pseudo_embedding(self, text: str) -> List[float]:
-        """生成伪嵌入向量"""
-        import hashlib
-        import struct
-
-        # 使用文本哈希生成确定性的向量
-        hash_obj = hashlib.md5(text.encode('utf-8'))
-        hash_bytes = hash_obj.digest()
-
-        # 将哈希转换为浮点数向量
-        embedding = []
-        for i in range(0, len(hash_bytes), 4):
-            chunk = hash_bytes[i:i+4]
-            if len(chunk) == 4:
-                float_val = struct.unpack('f', chunk)[0]
-                embedding.append(float_val)
-
-        # 调整到目标维度
-        while len(embedding) < self.dimension:
-            embedding.extend(embedding[:self.dimension - len(embedding)])
-
-        return embedding[:self.dimension]
+    user_input: str
+    session: Optional[SessionData] = None
+    additional_context: Optional[Dict[str, Any]] = None
 
 
-class FallbackChatModel(BaseChatModel):
-    """备用聊天模型 - 当主要LLM服务不可用时使用"""
+class ResponseTemplateManager:
+    """响应模板管理器"""
 
     def __init__(self):
-        super().__init__()
-        self.model_name = "fallback-model"
+        self._templates = self._initialize_templates()
+        self._keywords = self._initialize_keywords()
 
-    def _generate(
-        self,
-        messages: List[BaseMessage],
-        stop: Optional[List[str]] = None,
-        **kwargs: Any
-    ) -> ChatResult:
-        """生成聊天响应"""
-        logger.warning("使用备用聊天模型")
-
-        # 分析最后一条用户消息
-        user_message = ""
-        for msg in reversed(messages):
-            if hasattr(msg, 'content') and msg.content:
-                user_message = msg.content
-                break
-
-        # 生成简单的规则基础回答
-        response_content = self._generate_rule_based_response(user_message)
-
-        generation = ChatGeneration(
-            message=type(messages[-1])(content=response_content),
-            generation_info={"model": self.model_name}
-        )
-
-        return ChatResult(generations=[generation])
-
-    def _generate_rule_based_response(self, user_input: str) -> str:
-        """基于规则生成响应"""
-        user_input_lower = user_input.lower()
-
-        # 部署相关问题
-        if any(keyword in user_input_lower for keyword in ["部署", "安装", "配置"]):
-            return """**部署建议：**
+    @staticmethod
+    def _initialize_templates() -> Dict[ResponseTemplate, str]:
+        """初始化响应模板"""
+        return {
+            ResponseTemplate.DEPLOYMENT: """**部署建议：**
 
 1. **环境准备**
    - 确保系统资源充足
@@ -136,11 +119,8 @@ class FallbackChatModel(BaseChatModel):
    - 做好备份和回滚准备
    - 监控部署过程
 
-> 这是一个通用回答，具体步骤请参考相关技术文档。"""
-
-        # 监控相关问题
-        elif any(keyword in user_input_lower for keyword in ["监控", "告警", "指标"]):
-            return """**监控建议：**
+> 这是一个通用回答，具体步骤请参考相关技术文档。""",
+            ResponseTemplate.MONITORING: """**监控建议：**
 
 1. **基础监控**
    - CPU、内存、磁盘使用率
@@ -157,11 +137,8 @@ class FallbackChatModel(BaseChatModel):
    - 分析趋势和异常
    - 优化监控策略
 
-> 建议使用专业的监控工具如Prometheus + Grafana。"""
-
-        # 故障排除相关问题
-        elif any(keyword in user_input_lower for keyword in ["故障", "问题", "错误", "异常"]):
-            return """**故障排除指南：**
+> 建议使用专业的监控工具如Prometheus + Grafana。""",
+            ResponseTemplate.TROUBLESHOOTING: """**故障排除指南：**
 
 1. **问题定位**
    - 收集错误信息和日志
@@ -180,11 +157,8 @@ class FallbackChatModel(BaseChatModel):
    - 更新或回滚版本
    - 扩展系统资源
 
-> 建议建立完善的故障处理流程和文档。"""
-
-        # Kubernetes相关问题
-        elif any(keyword in user_input_lower for keyword in ["kubernetes", "k8s", "pod", "deployment"]):
-            return """**Kubernetes 运维建议：**
+> 建议建立完善的故障处理流程和文档。""",
+            ResponseTemplate.KUBERNETES: """**Kubernetes 运维建议：**
 
 1. **基本操作**
    ```bash
@@ -203,11 +177,8 @@ class FallbackChatModel(BaseChatModel):
    - 配置健康检查
    - 实施滚动更新策略
 
-> 详细操作请参考Kubernetes官方文档。"""
-
-        # 性能优化相关问题
-        elif any(keyword in user_input_lower for keyword in ["性能", "优化", "慢", "卡顿"]):
-            return """**性能优化建议：**
+> 详细操作请参考Kubernetes官方文档。""",
+            ResponseTemplate.PERFORMANCE: """**性能优化建议：**
 
 1. **系统层面**
    - 监控CPU、内存、磁盘I/O
@@ -224,11 +195,44 @@ class FallbackChatModel(BaseChatModel):
    - 微服务拆分
    - 容器资源调优
 
-> 建议进行性能测试和监控分析。"""
+> 建议进行性能测试和监控分析。""",
+        }
 
-        # 默认回答
-        else:
-            return f"""感谢您的问题："{user_input}"
+    @staticmethod
+    def _initialize_keywords() -> Dict[ResponseTemplate, List[str]]:
+        """初始化关键词映射"""
+        return {
+            ResponseTemplate.DEPLOYMENT: ["部署", "安装", "配置"],
+            ResponseTemplate.MONITORING: ["监控", "告警", "指标"],
+            ResponseTemplate.TROUBLESHOOTING: ["故障", "问题", "错误", "异常"],
+            ResponseTemplate.KUBERNETES: ["kubernetes", "k8s", "pod", "deployment"],
+            ResponseTemplate.PERFORMANCE: ["性能", "优化", "慢", "卡顿"],
+        }
+
+    def get_template_type(self, user_input: str) -> ResponseTemplate:
+        """根据用户输入确定模板类型"""
+        user_input_lower = user_input.lower()
+
+        for template_type, keywords in self._keywords.items():
+            if any(keyword in user_input_lower for keyword in keywords):
+                return template_type
+
+        return ResponseTemplate.DEFAULT
+
+    def get_response(
+        self, template_type: ResponseTemplate, user_input: str = ""
+    ) -> str:
+        """获取响应内容"""
+        if template_type == ResponseTemplate.DEFAULT:
+            return self._generate_default_response(user_input)
+
+        return self._templates.get(
+            template_type, self._generate_default_response(user_input)
+        )
+
+    def _generate_default_response(self, user_input: str) -> str:
+        """生成默认响应"""
+        return f"""感谢您的问题："{user_input}"
 
 很抱歉，当前AI服务暂时不可用，我只能提供基础的技术建议：
 
@@ -246,16 +250,240 @@ class FallbackChatModel(BaseChatModel):
 
 > 这是一个临时回答，建议您稍后重试或联系技术支持获得更准确的帮助。"""
 
+
+class FallbackEmbeddings(Embeddings):
+    """优化的备用嵌入实现 - 当主要嵌入服务不可用时使用"""
+
+    def __init__(
+        self, dimension: int = DEFAULT_EMBEDDING_DIMENSION, enable_cache: bool = True
+    ):
+        self.dimension = dimension
+        self.enable_cache = enable_cache
+        if enable_cache:
+            # 使用LRU缓存提高性能
+            self._generate_pseudo_embedding = lru_cache(maxsize=1000)(
+                self._generate_pseudo_embedding_impl
+            )
+        else:
+            self._generate_pseudo_embedding = self._generate_pseudo_embedding_impl
+
+    def embed_documents(self, texts: List[str]) -> List[List[float]]:
+        """为文档列表生成嵌入向量"""
+        if not texts:
+            return []
+
+        logger.warning(f"使用备用嵌入实现处理 {len(texts)} 个文档")
+
+        try:
+            embeddings = [self._generate_pseudo_embedding(text) for text in texts]
+            return embeddings
+        except Exception as e:
+            logger.error(f"生成文档嵌入时出错: {e}")
+            # 返回零向量作为降级方案
+            return [[0.0] * self.dimension for _ in texts]
+
+    def embed_query(self, text: str) -> List[float]:
+        """为查询生成嵌入向量"""
+        logger.warning("使用备用查询嵌入实现")
+
+        try:
+            return self._generate_pseudo_embedding(text)
+        except Exception as e:
+            logger.error(f"生成查询嵌入时出错: {e}")
+            return [0.0] * self.dimension
+
+    def _generate_pseudo_embedding_impl(self, text: str) -> List[float]:
+        """生成伪嵌入向量的实际实现"""
+        if not text:
+            return [0.0] * self.dimension
+
+        # 使用多种哈希算法增加向量多样性
+        hash_funcs = [hashlib.md5, hashlib.sha1, hashlib.sha256]
+        embedding = []
+
+        for hash_func in hash_funcs:
+            hash_obj = hash_func(text.encode("utf-8"))
+            hash_bytes = hash_obj.digest()
+
+            # 将哈希转换为浮点数
+            for i in range(0, len(hash_bytes), 4):
+                if len(embedding) >= self.dimension:
+                    break
+
+                chunk = hash_bytes[i : i + 4]
+                if len(chunk) == 4:
+                    try:
+                        float_val = struct.unpack("f", chunk)[0]
+                        # 标准化到 [-1, 1] 范围
+                        if not (float_val != float_val):  # 检查NaN
+                            embedding.append(max(-1.0, min(1.0, float_val)))
+                    except struct.error:
+                        embedding.append(0.0)
+
+            if len(embedding) >= self.dimension:
+                break
+
+        # 确保向量长度正确
+        while len(embedding) < self.dimension:
+            embedding.append(0.0)
+
+        return embedding[: self.dimension]
+
+
+class FallbackChatModel(BaseChatModel):
+    """优化的备用聊天模型 - 当主要LLM服务不可用时使用"""
+    
+    model_name: str = "fallback-model"
+    template_manager: ResponseTemplateManager = None
+
+    def __init__(self, template_manager: Optional[ResponseTemplateManager] = None, **kwargs):
+        super().__init__(**kwargs)
+        self.template_manager = template_manager or ResponseTemplateManager()
+
+    def _generate(
+        self,
+        messages: List[BaseMessage],
+        stop: Optional[List[str]] = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        """生成聊天响应"""
+        logger.warning("使用备用聊天模型")
+
+        try:
+            # 提取用户消息
+            user_message = self._extract_user_message(messages)
+
+            # 生成响应
+            response_content = self._generate_structured_response(user_message)
+
+            generation = ChatGeneration(
+                message=type(messages[-1])(content=response_content),
+                generation_info={
+                    "model": self.model_name,
+                    "timestamp": datetime.now().isoformat(),
+                    "fallback": True,
+                },
+            )
+
+            return ChatResult(generations=[generation])
+
+        except Exception as e:
+            logger.error(f"备用聊天模型生成响应时出错: {e}")
+            # 返回通用错误响应
+            error_response = "抱歉，当前服务不可用，请稍后重试。"
+            generation = ChatGeneration(
+                message=type(messages[-1])(content=error_response),
+                generation_info={"model": self.model_name, "error": str(e)},
+            )
+            return ChatResult(generations=[generation])
+
+    def _extract_user_message(self, messages: List[BaseMessage]) -> str:
+        """提取用户消息"""
+        for msg in reversed(messages):
+            if hasattr(msg, "content") and msg.content:
+                return str(msg.content).strip()
+        return ""
+
+    def _generate_structured_response(self, user_input: str) -> str:
+        """生成结构化响应"""
+        if not user_input:
+            return "请提供您的问题或需求。"
+
+        # 清理输入
+        cleaned_input = sanitize_input(user_input)
+
+        # 确定响应模板类型
+        template_type = self.template_manager.get_template_type(cleaned_input)
+
+        # 生成响应
+        return self.template_manager.get_response(template_type, cleaned_input)
+
     @property
     def _llm_type(self) -> str:
         return "fallback-chat"
 
 
-# ==================== 工具函数 ====================
+def sanitize_input(text: str, max_length: int = MAX_INPUT_LENGTH) -> str:
+    """优化的输入清理和验证函数"""
+    if not text:
+        return ""
 
-def _generate_fallback_answer() -> str:
-    """生成降级答案"""
-    return """很抱歉，AI助手服务当前不可用。
+    # 使用预编译的正则表达式提高性能
+    cleaned = HARMFUL_CHARS_PATTERN.sub("", text)
+
+    # 限制长度
+    if len(cleaned) > max_length:
+        cleaned = cleaned[:max_length] + "..."
+
+    return cleaned.strip()
+
+
+def validate_session_id(session_id: str) -> bool:
+    """优化的会话ID验证函数"""
+    if not session_id:
+        return False
+
+    # 长度检查
+    if not (SESSION_ID_MIN_LENGTH <= len(session_id) <= SESSION_ID_MAX_LENGTH):
+        return False
+
+    try:
+        # 尝试解析为UUID（最常见的情况）
+        uuid.UUID(session_id)
+        return True
+    except ValueError:
+        # 如果不是UUID格式，使用预编译的正则表达式检查
+        return bool(SESSION_ID_PATTERN.match(session_id))
+
+
+@lru_cache(maxsize=100)
+def create_session_id() -> str:
+    """创建新的会话ID（带缓存优化）"""
+    return str(uuid.uuid4())
+
+
+def build_context_with_history(session: Optional[SessionData]) -> Optional[str]:
+    """优化的历史上下文构建函数"""
+    if not session or not session.history:
+        return None
+
+    # 获取最近的对话历史
+    recent_history = session.history[-3:]  # 最近3轮对话
+
+    if not recent_history:
+        return None
+
+    # 使用列表推导式和join提高性能
+    context_parts = ["## 对话历史"] + [
+        f"{i}. {item}" for i, item in enumerate(recent_history, 1)
+    ]
+
+    return "\n".join(context_parts)
+
+
+def format_error_response(
+    error_message: str,
+    error_code: ErrorCode = ErrorCode.UNKNOWN,
+    additional_info: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """优化的错误响应格式化函数"""
+    response = {
+        "error": True,
+        "error_code": error_code.value,
+        "error_message": error_message,
+        "timestamp": datetime.now().isoformat(),
+        "suggestion": "请检查输入参数或稍后重试",
+    }
+
+    if additional_info:
+        response.update(additional_info)
+
+    return response
+
+
+def generate_fallback_answer(context: Optional[ResponseContext] = None) -> str:
+    """生成智能降级答案"""
+    base_message = """很抱歉，AI助手服务当前不可用。
 
 **可能的原因：**
 - 服务正在维护中
@@ -274,73 +502,71 @@ def _generate_fallback_answer() -> str:
 
 感谢您的理解！"""
 
+    # 如果有上下文信息，可以提供更个性化的建议
+    if context and context.session and context.session.history:
+        base_message += f"\n\n**基于您的历史记录：**\n- 最近关注: {', '.join(context.session.history[-2:])}"
 
-def _build_context_with_history(session: Optional[SessionData]) -> Optional[str]:
-    """构建包含历史的上下文"""
-    if not session or not session.history:
-        return None
-
-    # 获取最近的对话历史
-    recent_history = session.history[-3:]  # 最近3轮对话
-
-    if not recent_history:
-        return None
-
-    context_parts = ["## 对话历史"]
-    for i, item in enumerate(recent_history, 1):
-        context_parts.append(f"{i}. {item}")
-
-    return "\n".join(context_parts)
+    return base_message
 
 
-def sanitize_input(text: str, max_length: int = 10000) -> str:
-    """清理和验证输入文本"""
-    if not text:
-        return ""
+class SessionManager:
+    """会话管理器"""
 
-    # 移除潜在的有害字符
-    import re
-    cleaned = re.sub(r'[<>{}]', '', text)
+    def __init__(self):
+        self._sessions: Dict[str, SessionData] = {}
 
-    # 限制长度
-    if len(cleaned) > max_length:
-        cleaned = cleaned[:max_length] + "..."
+    def get_session(self, session_id: str) -> Optional[SessionData]:
+        """获取会话"""
+        if not validate_session_id(session_id):
+            return None
+        return self._sessions.get(session_id)
 
-    return cleaned.strip()
+    def create_session(self, session_id: Optional[str] = None) -> SessionData:
+        """创建新会话"""
+        if not session_id:
+            session_id = create_session_id()
 
+        session = SessionData(session_id=session_id)
+        self._sessions[session_id] = session
+        return session
 
-def validate_session_id(session_id: str) -> bool:
-    """验证会话ID格式 - 更宽松的验证"""
-    if not session_id:
+    def update_session(self, session_id: str, item: str) -> bool:
+        """更新会话历史"""
+        session = self.get_session(session_id)
+        if session:
+            session.add_to_history(item)
+            return True
         return False
 
-    # 长度检查
-    if len(session_id) < 3 or len(session_id) > 128:
-        return False
+    def cleanup_expired_sessions(self, max_age_hours: int = 24) -> int:
+        """清理过期会话"""
+        from datetime import timedelta
 
-    try:
-        # 尝试解析为UUID
-        uuid.UUID(session_id)
-        return True
-    except ValueError:
-        # 如果不是UUID格式，检查是否为合理的字符串
-        # 允许字母、数字、连字符、下划线
-        import re
-        pattern = r'^[a-zA-Z0-9_-]+$'
-        return bool(re.match(pattern, session_id))
+        cutoff_time = datetime.now() - timedelta(hours=max_age_hours)
+        expired_sessions = [
+            sid
+            for sid, session in self._sessions.items()
+            if session.last_activity < cutoff_time
+        ]
 
+        for sid in expired_sessions:
+            del self._sessions[sid]
 
-def create_session_id() -> str:
-    """创建新的会话ID"""
-    return str(uuid.uuid4())
+        return len(expired_sessions)
 
 
-def format_error_response(error_message: str, error_code: str = "UNKNOWN") -> Dict[str, Any]:
-    """格式化错误响应"""
-    return {
-        "error": True,
-        "error_code": error_code,
-        "error_message": error_message,
-        "timestamp": datetime.now().isoformat(),
-        "suggestion": "请检查输入参数或稍后重试"
-    }
+__all__ = [
+    "SessionData",
+    "ResponseContext",
+    "FallbackEmbeddings",
+    "FallbackChatModel",
+    "SessionManager",
+    "ResponseTemplateManager",
+    "ErrorCode",
+    "sanitize_input",
+    "validate_session_id",
+    "create_session_id",
+    "build_context_with_history",
+    "format_error_response",
+    "generate_fallback_answer",
+]

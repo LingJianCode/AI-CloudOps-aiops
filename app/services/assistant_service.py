@@ -106,11 +106,84 @@ class OptimizedAssistantService(BaseService):
                 
             except asyncio.TimeoutError:
                 logger.error(f"请求超时: {timeout}秒")
-                raise AssistantError("请求处理超时，请稍后重试")
+                # 使用备用实现处理超时情况
+                return await self._use_fallback_response(question, session_id, "超时")
             except Exception as e:
                 self._performance_monitor.record_failure()
                 logger.error(f"获取答案失败: {str(e)}")
-                raise AssistantError(f"处理失败: {str(e)}")
+                # 使用备用实现处理错误情况
+                return await self._use_fallback_response(question, session_id, str(e))
+    
+    async def _use_fallback_response(
+        self, question: str, session_id: Optional[str], error_reason: str
+    ) -> Dict[str, Any]:
+        """使用备用实现生成响应"""
+        try:
+            logger.warning(f"使用备用实现处理请求，原因: {error_reason}")
+            
+            from app.core.agents.fallback_models import (
+                generate_fallback_answer, 
+                ResponseContext, 
+                SessionManager,
+                sanitize_input
+            )
+            
+            # 清理输入
+            cleaned_question = sanitize_input(question)
+            
+            # 创建或获取会话
+            session_manager = SessionManager()
+            session = None
+            if session_id:
+                session = session_manager.get_session(session_id)
+                if not session:
+                    session = session_manager.create_session(session_id)
+            
+            # 创建响应上下文
+            context = ResponseContext(
+                user_input=cleaned_question,
+                session=session,
+                additional_context={
+                    "error_reason": error_reason,
+                    "service": "assistant_service"
+                }
+            )
+            
+            # 生成备用答案
+            fallback_answer = generate_fallback_answer(context)
+            
+            # 更新会话历史
+            if session:
+                session_manager.update_session(session_id, cleaned_question)
+            
+            # 构建响应
+            return {
+                "answer": fallback_answer,
+                "confidence_score": 0.3,  # 备用实现的置信度较低
+                "source_documents": [],
+                "cache_hit": False,
+                "processing_time": 0.1,  # 快速响应时间
+                "session_id": session_id,
+                "success": True,
+                "fallback_used": True,
+                "fallback_reason": error_reason,
+                "timestamp": datetime.now().isoformat()
+            }
+            
+        except Exception as fallback_e:
+            logger.error(f"备用实现也失败: {fallback_e}")
+            # 返回最基础的错误响应
+            return {
+                "answer": "抱歉，当前服务不可用，请稍后重试或联系技术支持。",
+                "confidence_score": 0.0,
+                "source_documents": [],
+                "cache_hit": False,
+                "processing_time": 0.0,
+                "session_id": session_id,
+                "success": False,
+                "error": f"主要服务: {error_reason}, 备用服务: {str(fallback_e)}",
+                "timestamp": datetime.now().isoformat()
+            }
     
     async def refresh_knowledge_base(self) -> Dict[str, Any]:
         """刷新知识库"""
@@ -147,14 +220,22 @@ class OptimizedAssistantService(BaseService):
         try:
             health = await self._assistant.health_check() if self._assistant else {}
             
+            # 检查备用实现的可用性
+            fallback_status = self._check_fallback_availability()
+            
             # 添加性能指标
             perf_stats = self._performance_monitor.get_stats()
             
+            # 合并组件状态和备用状态
+            components = health.get("components", {})
+            components.update(fallback_status)
+            
             return {
                 "service": "optimized_assistant",
-                "status": "healthy" if health.get("status") == "healthy" else "unhealthy",
-                "components": health.get("components", {}),
+                "status": "healthy" if health.get("status") == "healthy" else "degraded",
+                "components": components,
                 "performance": perf_stats,
+                "fallback_capabilities": fallback_status,
                 "timestamp": datetime.now().isoformat()
             }
             
@@ -165,6 +246,49 @@ class OptimizedAssistantService(BaseService):
                 "error": str(e),
                 "timestamp": datetime.now().isoformat()
             }
+    
+    def _check_fallback_availability(self) -> Dict[str, bool]:
+        """检查备用实现的可用性"""
+        fallback_status = {
+            "fallback_chat_model": False,
+            "fallback_embeddings": False,
+            "session_manager": False,
+            "response_templates": False
+        }
+        
+        try:
+            # 检查备用聊天模型
+            from app.core.agents.fallback_models import FallbackChatModel
+            FallbackChatModel()
+            fallback_status["fallback_chat_model"] = True
+        except Exception:
+            pass
+        
+        try:
+            # 检查备用嵌入模型
+            from app.core.agents.fallback_models import FallbackEmbeddings
+            FallbackEmbeddings()
+            fallback_status["fallback_embeddings"] = True
+        except Exception:
+            pass
+        
+        try:
+            # 检查会话管理器
+            from app.core.agents.fallback_models import SessionManager
+            SessionManager()
+            fallback_status["session_manager"] = True
+        except Exception:
+            pass
+        
+        try:
+            # 检查响应模板管理器
+            from app.core.agents.fallback_models import ResponseTemplateManager
+            ResponseTemplateManager()
+            fallback_status["response_templates"] = True
+        except Exception:
+            pass
+        
+        return fallback_status
     
     async def get_assistant_config(self) -> Dict[str, Any]:
         """获取配置信息"""

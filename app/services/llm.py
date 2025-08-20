@@ -375,9 +375,16 @@ class LLMService:
                 f"主要提供商({self.provider})失败: {str(e)}，切换到备用提供商({self.backup_provider})"
             )
 
-            # 如果所有提供商都已尝试过，则抛出异常
-            if "backup_attempt" in str(e):
-                raise ExternalServiceError(f"所有LLM提供商都失败: {str(e)}", self.provider)
+            # 如果所有提供商都已尝试过，使用最终备用方案
+            if "backup_attempt" in str(e) or "all_failed" in str(e):
+                logger.warning("所有标准LLM提供商都失败，使用最终备用聊天模型")
+                try:
+                    return await self._use_fallback_chat_model(messages)
+                except Exception as fallback_e:
+                    raise ExternalServiceError(
+                        f"所有LLM服务都彻底失败: {str(e)} | 降级({str(fallback_e)})", 
+                        self.provider
+                    )
 
             # 切换到备用提供商
             backup_response = None
@@ -398,13 +405,53 @@ class LLMService:
                         stream=stream,
                     )
             except Exception as backup_e:
-                # 备用提供商也失败，抛出组合异常
-                raise ExternalServiceError(
-                    f"备用提供商({self.backup_provider})也失败: {str(backup_e)} (原错误: {str(e)})",
-                    f"{self.provider}_backup_attempt",
+                # 备用提供商也失败，尝试使用最终的备用聊天模型
+                logger.warning(
+                    f"备用提供商({self.backup_provider})也失败: {str(backup_e)}，使用最终备用聊天模型"
                 )
+                try:
+                    return await self._use_fallback_chat_model(messages)
+                except Exception as fallback_e:
+                    # 所有方案都失败，抛出组合异常
+                    raise ExternalServiceError(
+                        f"所有LLM服务都失败: 主要({str(e)}) | 备用({str(backup_e)}) | 降级({str(fallback_e)})",
+                        f"{self.provider}_all_failed",
+                    )
 
             return backup_response
+
+    async def _use_fallback_chat_model(self, messages: List[Dict[str, str]]) -> str:
+        """使用最终的备用聊天模型"""
+        try:
+            from app.core.agents.fallback_models import FallbackChatModel
+            from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+            
+            # 转换消息格式为LangChain格式
+            langchain_messages = []
+            for msg in messages:
+                role = msg.get("role", "user")
+                content = msg.get("content", "")
+                
+                if role == "system":
+                    langchain_messages.append(SystemMessage(content=content))
+                elif role == "assistant":
+                    langchain_messages.append(AIMessage(content=content))
+                else:  # user或其他角色默认为human
+                    langchain_messages.append(HumanMessage(content=content))
+            
+            # 创建并使用备用聊天模型
+            fallback_model = FallbackChatModel()
+            result = fallback_model._generate(langchain_messages)
+            
+            if result.generations and len(result.generations) > 0:
+                return result.generations[0].message.content
+            else:
+                return "抱歉，当前服务不可用，请稍后重试。"
+                
+        except Exception as e:
+            logger.error(f"备用聊天模型也失败: {e}")
+            # 返回基础错误消息
+            return "很抱歉，AI服务暂时不可用。请稍后重试或联系技术支持。"
 
     async def _call_openai_api(
         self,

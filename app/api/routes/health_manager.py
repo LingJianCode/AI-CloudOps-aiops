@@ -55,6 +55,49 @@ class HealthManager:
         
         return self._service_cache[service_name]
     
+    def _check_fallback_capabilities(self) -> Dict[str, bool]:
+        """检查备用实现的可用性"""
+        fallback_status = {
+            "fallback_chat_model": False,
+            "fallback_embeddings": False,
+            "session_manager": False,
+            "response_templates": False
+        }
+        
+        try:
+            # 检查备用聊天模型
+            from app.core.agents.fallback_models import FallbackChatModel
+            FallbackChatModel()
+            fallback_status["fallback_chat_model"] = True
+        except Exception as e:
+            logger.debug(f"备用聊天模型不可用: {e}")
+        
+        try:
+            # 检查备用嵌入模型
+            from app.core.agents.fallback_models import FallbackEmbeddings
+            FallbackEmbeddings()
+            fallback_status["fallback_embeddings"] = True
+        except Exception as e:
+            logger.debug(f"备用嵌入模型不可用: {e}")
+        
+        try:
+            # 检查会话管理器
+            from app.core.agents.fallback_models import SessionManager
+            SessionManager()
+            fallback_status["session_manager"] = True
+        except Exception as e:
+            logger.debug(f"会话管理器不可用: {e}")
+        
+        try:
+            # 检查响应模板管理器
+            from app.core.agents.fallback_models import ResponseTemplateManager
+            ResponseTemplateManager()
+            fallback_status["response_templates"] = True
+        except Exception as e:
+            logger.debug(f"响应模板管理器不可用: {e}")
+        
+        return fallback_status
+    
     def check_component_health(self, component: str) -> Dict[str, Any]:
 
         current_time = time.time()
@@ -204,6 +247,9 @@ class HealthManager:
         components = self.check_all_components()
         system_metrics = self.get_system_metrics()
         
+        # 检查备用实现的可用性
+        fallback_status = self._check_fallback_capabilities()
+        
         # 判断整体健康状态
         all_healthy = all(comp.get("healthy", False) for comp in components.values())
         
@@ -214,10 +260,15 @@ class HealthManager:
             for comp in critical_components
         )
         
+        # 考虑备用实现的状态
+        fallback_available = any(fallback_status.values())
+        
         if all_healthy:
             status = "healthy"
-        elif critical_healthy:
-            status = "degraded"
+        elif critical_healthy and fallback_available:
+            status = "degraded"  # 关键组件正常且有备用实现
+        elif fallback_available:
+            status = "degraded"  # 至少有备用实现可用
         else:
             status = "unhealthy"
         
@@ -228,6 +279,7 @@ class HealthManager:
             "version": "1.0.0",
             "timestamp": datetime.utcnow().isoformat(),
             "components": {name: comp.get("healthy", False) for name, comp in components.items()},
+            "fallback_capabilities": fallback_status,
             "system": system_metrics,
             "details": components
         }

@@ -13,15 +13,15 @@ import asyncio
 import hashlib
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional, TypedDict, Annotated, Literal
+from typing import Any, Dict, List, Optional, TypedDict
 
 from langchain_core.documents import Document
-from langgraph.graph import StateGraph, START, END
+from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
-from pydantic import BaseModel, Field
+
 
 logger = logging.getLogger("aiops.rag_assistant")
 
@@ -333,7 +333,22 @@ class AnswerGenerator:
             return {"answer": response, "confidence": self._calculate_confidence(docs)}
         except Exception as e:
             logger.error(f"答案生成失败: {e}")
-            return {"answer": f"生成答案时出错: {str(e)}", "confidence": 0.0}
+            # 使用备用响应生成器
+            try:
+                from app.core.agents.fallback_models import generate_fallback_answer, ResponseContext, SessionData
+                
+                # 创建响应上下文
+                context = ResponseContext(
+                    user_input=question,
+                    session=None,  # 可以后续添加会话支持
+                    additional_context={"docs": docs} if docs else None
+                )
+                
+                fallback_answer = generate_fallback_answer(context)
+                return {"answer": fallback_answer, "confidence": 0.3}  # 降低置信度
+            except Exception as fallback_e:
+                logger.error(f"备用答案生成也失败: {fallback_e}")
+                return {"answer": f"生成答案时出错: {str(e)}", "confidence": 0.0}
 
     def _prepare_context(self, docs: List[Document], max_length: int = 3000) -> str:
         """准备上下文"""
@@ -390,6 +405,10 @@ class OptimizedRAGAssistant:
         self.retriever = DocumentRetriever(vector_store, RetrievalStrategy())
         self.reranker = DocumentReranker(llm_service)
         self.generator = AnswerGenerator(llm_service)
+
+        # 初始化会话管理器
+        from app.core.agents.fallback_models import SessionManager
+        self.session_manager = SessionManager()
 
         # 初始化checkpointer
         self.checkpointer = MemorySaver()
@@ -559,6 +578,15 @@ class OptimizedRAGAssistant:
     ) -> Dict[str, Any]:
         """获取答案 - 主接口"""
         try:
+            # 管理会话
+            session = None
+            if session_id:
+                session = self.session_manager.get_session(session_id)
+                if not session:
+                    session = self.session_manager.create_session(session_id)
+                # 更新会话活动时间
+                session.update_activity()
+
             # 初始状态
             initial_state = {
                 "question": question,
@@ -570,6 +598,10 @@ class OptimizedRAGAssistant:
             config = {"thread_id": session_id or "default"}
             result = await self.graph.ainvoke(initial_state, config=config)
 
+            # 更新会话历史
+            if session:
+                self.session_manager.update_session(session_id, question)
+
             # 构建响应
             response = {
                 "answer": result.get("answer", ""),
@@ -577,6 +609,7 @@ class OptimizedRAGAssistant:
                 "source_documents": result.get("sources", []),
                 "cache_hit": result.get("cache_hit", False),
                 "processing_time": result.get("latency_breakdown", {}).get("total", 0),
+                "session_id": session_id,
                 "success": True,
             }
 
@@ -588,16 +621,55 @@ class OptimizedRAGAssistant:
 
         except Exception as e:
             logger.error(f"处理失败: {e}")
-            return {
-                "answer": f"处理出错: {str(e)}",
-                "confidence_score": 0.0,
-                "source_documents": [],
-                "success": False,
-                "error": str(e),
-            }
+            
+            # 使用备用响应生成
+            try:
+                from app.core.agents.fallback_models import generate_fallback_answer, ResponseContext
+                
+                # 获取会话信息
+                session = None
+                if session_id:
+                    session = self.session_manager.get_session(session_id)
+                
+                # 创建响应上下文
+                context = ResponseContext(
+                    user_input=question,
+                    session=session,
+                    additional_context={"error": str(e)}
+                )
+                
+                fallback_answer = generate_fallback_answer(context)
+                
+                return {
+                    "answer": fallback_answer,
+                    "confidence_score": 0.2,  # 低置信度
+                    "source_documents": [],
+                    "success": False,
+                    "error": str(e),
+                    "fallback_used": True,
+                    "session_id": session_id,
+                }
+            except Exception as fallback_e:
+                logger.error(f"备用答案生成也失败: {fallback_e}")
+                return {
+                    "answer": f"处理出错: {str(e)}",
+                    "confidence_score": 0.0,
+                    "source_documents": [],
+                    "success": False,
+                    "error": str(e),
+                    "session_id": session_id,
+                }
 
     async def health_check(self) -> Dict[str, Any]:
         """健康检查"""
+        # 检查备用实现的可用性
+        fallback_available = False
+        try:
+            from app.core.agents.fallback_models import FallbackChatModel, FallbackEmbeddings
+            fallback_available = True
+        except Exception:
+            pass
+            
         return {
             "status": "healthy",
             "components": {
@@ -605,6 +677,8 @@ class OptimizedRAGAssistant:
                 "llm_service": bool(self.llm_service),
                 "cache": bool(self.cache_manager),
                 "graph": bool(self.graph),
+                "session_manager": bool(self.session_manager),
+                "fallback_models": fallback_available,
             },
             "timestamp": datetime.now().isoformat(),
         }
@@ -729,43 +803,67 @@ async def _create_embedding_model():
         # 获取有效的嵌入模型名称
         embedding_model_name = config.rag.effective_embedding_model
         provider = config.llm.provider.lower()
+        api_key = config.llm.effective_api_key
         
         logger.info(f"正在初始化嵌入模型: {embedding_model_name} (provider: {provider})")
+        
+        # 检查API密钥有效性
+        if provider == "openai" and (not api_key or api_key in ["sk-xxx", "", "your-api-key"]):
+            logger.warning("检测到无效的 OpenAI API 密钥，使用备用嵌入模型")
+            from app.core.agents.fallback_models import FallbackEmbeddings
+            return FallbackEmbeddings()
         
         if provider == "openai":
             # 使用 OpenAI 嵌入模型
             try:
                 from langchain_openai import OpenAIEmbeddings
-                return OpenAIEmbeddings(
+                embedding_model = OpenAIEmbeddings(
                     model=embedding_model_name,
                     openai_api_key=config.llm.effective_api_key,
                     openai_api_base=config.llm.effective_base_url
                 )
+                logger.info("OpenAI嵌入模型创建成功")
+                return embedding_model
             except ImportError:
-                logger.warning("OpenAI embeddings 不可用，尝试使用通用实现")
+                logger.warning("OpenAI embeddings 包不可用，尝试使用通用实现")
                 # 尝试使用通用的 OpenAI 客户端
                 return _create_openai_embeddings(embedding_model_name)
+            except Exception as e:
+                logger.error(f"OpenAI嵌入模型创建失败: {e}")
+                # 不立即返回备用模型，继续尝试自定义实现
+                try:
+                    return _create_openai_embeddings(embedding_model_name)
+                except Exception as e2:
+                    logger.error(f"自定义OpenAI嵌入模型也创建失败: {e2}")
         
         elif provider == "ollama":
             # 使用 Ollama 嵌入模型
             try:
                 from langchain_community.embeddings import OllamaEmbeddings
-                return OllamaEmbeddings(
+                embedding_model = OllamaEmbeddings(
                     model=embedding_model_name,
                     base_url=config.llm.ollama_base_url.replace("/v1", "")
                 )
+                logger.info("Ollama嵌入模型创建成功")
+                return embedding_model
             except ImportError:
-                logger.warning("Ollama embeddings 不可用，尝试使用自定义实现")
+                logger.warning("Ollama embeddings 包不可用，尝试使用自定义实现")
                 return _create_ollama_embeddings(embedding_model_name)
+            except Exception as e:
+                logger.error(f"Ollama嵌入模型创建失败: {e}")
+                try:
+                    return _create_ollama_embeddings(embedding_model_name)
+                except Exception as e2:
+                    logger.error(f"自定义Ollama嵌入模型也创建失败: {e2}")
         
         else:
-            logger.warning(f"不支持的 provider: {provider}，使用备用嵌入模型")
+            logger.warning(f"不支持的 provider: {provider}")
             
     except Exception as e:
-        logger.error(f"创建嵌入模型失败: {e}")
+        logger.error(f"创建嵌入模型时发生异常: {e}")
     
-    # 备用方案：使用 FallbackEmbeddings
-    logger.warning("使用备用嵌入模型")
+    # 最终备用方案：使用 FallbackEmbeddings
+    logger.warning("所有嵌入模型创建失败，使用备用嵌入模型")
     from app.core.agents.fallback_models import FallbackEmbeddings
     return FallbackEmbeddings()
 
@@ -773,18 +871,37 @@ async def _create_embedding_model():
 def _create_openai_embeddings(model_name: str):
     """创建自定义 OpenAI 嵌入模型"""
     from langchain_core.embeddings import Embeddings
-    from openai import OpenAI
     from app.config.settings import config
+    
+    # 提前检查API密钥
+    api_key = config.llm.effective_api_key
+    if not api_key or api_key in ["sk-xxx", "", "your-api-key"]:
+        logger.warning("API密钥无效，直接使用备用嵌入模型")
+        from app.core.agents.fallback_models import FallbackEmbeddings
+        return FallbackEmbeddings()
     
     class CustomOpenAIEmbeddings(Embeddings):
         def __init__(self, model: str):
-            self.client = OpenAI(
-                api_key=config.llm.effective_api_key,
-                base_url=config.llm.effective_base_url
-            )
             self.model = model
+            self.fallback_used = False
+            
+            try:
+                from openai import OpenAI
+                self.client = OpenAI(
+                    api_key=config.llm.effective_api_key,
+                    base_url=config.llm.effective_base_url,
+                    timeout=config.llm.request_timeout  # 设置超时避免长时间等待
+                )
+                logger.debug(f"OpenAI客户端初始化成功，模型: {model}")
+            except Exception as e:
+                logger.error(f"OpenAI客户端初始化失败: {e}")
+                self.client = None
+                self.fallback_used = True
         
         def embed_documents(self, texts):
+            if self.fallback_used or not self.client:
+                return self._use_fallback().embed_documents(texts)
+                
             try:
                 response = self.client.embeddings.create(
                     model=self.model,
@@ -793,12 +910,13 @@ def _create_openai_embeddings(model_name: str):
                 return [data.embedding for data in response.data]
             except Exception as e:
                 logger.error(f"OpenAI embeddings 调用失败: {e}")
-                # 使用备用方案
-                from app.core.agents.fallback_models import FallbackEmbeddings
-                fallback = FallbackEmbeddings()
-                return fallback.embed_documents(texts)
+                self.fallback_used = True
+                return self._use_fallback().embed_documents(texts)
         
         def embed_query(self, text):
+            if self.fallback_used or not self.client:
+                return self._use_fallback().embed_query(text)
+                
             try:
                 response = self.client.embeddings.create(
                     model=self.model,
@@ -807,10 +925,17 @@ def _create_openai_embeddings(model_name: str):
                 return response.data[0].embedding
             except Exception as e:
                 logger.error(f"OpenAI embeddings 查询失败: {e}")
-                # 使用备用方案
+                self.fallback_used = True
+                return self._use_fallback().embed_query(text)
+        
+        def _use_fallback(self):
+            """使用备用嵌入模型"""
+            if not hasattr(self, '_fallback'):
                 from app.core.agents.fallback_models import FallbackEmbeddings
-                fallback = FallbackEmbeddings()
-                return fallback.embed_query(text)
+                self._fallback = FallbackEmbeddings()
+                if not self.fallback_used:
+                    logger.warning("切换到备用嵌入模型")
+            return self._fallback
     
     return CustomOpenAIEmbeddings(model_name)
 
@@ -860,8 +985,11 @@ def _get_embedding_dimension(embedding_model):
     """获取嵌入模型的维度"""
     try:
         # 尝试通过测试嵌入获取维度
+        logger.debug("正在测试嵌入模型以获取维度...")
         test_embedding = embedding_model.embed_query("test")
-        return len(test_embedding)
+        dimension = len(test_embedding)
+        logger.info(f"成功获取嵌入维度: {dimension}")
+        return dimension
     except Exception as e:
         logger.warning(f"无法获取嵌入维度: {e}")
         
@@ -869,15 +997,38 @@ def _get_embedding_dimension(embedding_model):
         from app.config.settings import config
         model_name = config.rag.effective_embedding_model.lower()
         
-        if "bge-m3" in model_name:
-            return 1024
-        elif "nomic-embed" in model_name:
-            return 768
-        elif "text-embedding" in model_name:
-            return 1536  # OpenAI text-embedding-ada-002
-        else:
-            # 默认维度
-            return 384
+        # 更准确的维度映射
+        dimension_map = {
+            "bge-m3": 1024,
+            "bge-large": 1024,
+            "bge-base": 768,
+            "bge-small": 512,
+            "nomic-embed": 768,
+            "text-embedding-ada-002": 1536,
+            "text-embedding-3-large": 3072,
+            "text-embedding-3-small": 1536,
+        }
+        
+        # 尝试找到匹配的模型
+        for model_key, dimension in dimension_map.items():
+            if model_key in model_name:
+                logger.info(f"根据模型名称 '{model_name}' 推断维度: {dimension}")
+                return dimension
+        
+        # 如果是 FallbackEmbeddings，返回其默认维度
+        try:
+            from app.core.agents.fallback_models import FallbackEmbeddings, DEFAULT_EMBEDDING_DIMENSION
+            if isinstance(embedding_model, FallbackEmbeddings):
+                dimension = getattr(embedding_model, 'dimension', DEFAULT_EMBEDDING_DIMENSION)
+                logger.info(f"使用备用嵌入模型，维度: {dimension}")
+                return dimension
+        except Exception as e:
+            logger.warning(f"检查备用嵌入模型时出错: {e}")
+            
+        # 默认维度
+        default_dimension = 1024
+        logger.warning(f"无法确定嵌入维度，使用默认值: {default_dimension}")
+        return default_dimension
 
 
 async def _load_knowledge_base(vector_store) -> None:
