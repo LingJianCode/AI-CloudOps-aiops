@@ -11,8 +11,10 @@ Description: 连续回答生成器 - 解决回答断层问题
 
 import asyncio
 import logging
-from typing import Dict, List, Any, Optional, AsyncGenerator
+from typing import Dict, List, Any, Optional
 from datetime import datetime
+
+from app.config.settings import config
 
 logger = logging.getLogger("aiops.streaming_answer")
 
@@ -22,7 +24,7 @@ class ContinuousAnswerGenerator:
 
     def __init__(self, base_generator):
         self.base_generator = base_generator
-        self.connection_timeout = 30
+        self.connection_timeout = config.rag.timeout
         self.retry_count = 2
 
     async def generate_continuous_answer(

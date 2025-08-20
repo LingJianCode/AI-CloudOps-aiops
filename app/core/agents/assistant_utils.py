@@ -63,9 +63,9 @@ def sanitize_result_data(data: Any) -> Any:
         return data
 
 
-def safe_async_run(coroutine: Union[Coroutine, Any]) -> Any:
+async def safe_async_run(coroutine: Union[Coroutine, Any]) -> Any:
     """
-    安全地运行异步函数，处理不同环境下的运行方式
+    安全地运行异步函数，适用于 FastAPI 异步环境
 
     Args:
         coroutine: 异步协程对象或其他值
@@ -77,58 +77,52 @@ def safe_async_run(coroutine: Union[Coroutine, Any]) -> Any:
         Exception: 执行过程中的任何异常
     """
     try:
+        # 如果是协程对象，直接等待执行
+        if asyncio.iscoroutine(coroutine):
+            return await coroutine
+        else:
+            # 如果不是协程对象，直接返回
+            return coroutine
+    except Exception as e:
+        logger.error(f"执行异步函数失败: {str(e)}")
+        raise e
+
+
+def safe_sync_run(coroutine: Union[Coroutine, Any]) -> Any:
+    """
+    在同步环境中安全地运行异步函数（仅用于非 FastAPI 环境）
+
+    Args:
+        coroutine: 异步协程对象或其他值
+
+    Returns:
+        Any: 协程执行的结果或原始值（如果不是协程）
+
+    Raises:
+        Exception: 执行过程中的任何异常
+    """
+    try:
+        # 如果不是协程对象，直接返回
+        if not asyncio.iscoroutine(coroutine):
+            return coroutine
+            
         # 检查是否已有事件循环在运行
         try:
-            loop = asyncio.get_running_loop()
-            # 如果有运行中的事件循环，使用 asyncio.create_task 或直接同步调用
-            # 对于Flask同步环境，我们需要在新线程中运行事件循环
-            import concurrent.futures
-            import threading
-
-            result = None
-            exception = None
-
-            def run_in_thread():
-                nonlocal result, exception
-                try:
-                    new_loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(new_loop)
-                    try:
-                        # 确保所有协程都被等待
-                        if asyncio.iscoroutine(coroutine):
-                            result = new_loop.run_until_complete(coroutine)
-                        else:
-                            # 如果不是协程对象，直接返回
-                            result = coroutine
-                    finally:
-                        new_loop.close()
-                except Exception as e:
-                    exception = e
-
-            thread = threading.Thread(target=run_in_thread)
-            thread.start()
-            thread.join()
-
-            if exception:
-                raise exception
-            return result
-
+            asyncio.get_running_loop()
+            logger.warning("在异步环境中使用同步运行函数，这可能导致问题")
+            # 如果有运行中的事件循环，返回 None 而不是阻塞
+            return None
         except RuntimeError:
             # 没有运行中的事件循环，可以安全创建新的
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             try:
-                # 确保所有协程都被等待
-                if asyncio.iscoroutine(coroutine):
-                    return loop.run_until_complete(coroutine)
-                else:
-                    # 如果不是协程对象，直接返回
-                    return coroutine
+                return loop.run_until_complete(coroutine)
             finally:
                 loop.close()
 
     except Exception as e:
-        logger.error(f"执行异步函数失败: {str(e)}")
+        logger.error(f"同步执行异步函数失败: {str(e)}")
         raise e
 
 

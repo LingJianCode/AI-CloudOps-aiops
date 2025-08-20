@@ -12,251 +12,154 @@ Description: 错误处理中间件 - 提供统一的HTTP错误响应格式和异
 import logging
 import traceback
 from datetime import datetime
+from typing import Dict, Any
 
-from flask import jsonify, request
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.exception_handlers import http_exception_handler
+from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.models.response_models import APIResponse
 
 logger = logging.getLogger("aiops.error_handler")
 
 
-def setup_error_handlers(app):
+async def custom_http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
+    """自定义HTTP异常处理器"""
+    try:
+        logger.error(f"HTTP异常处理器被触发 - 状态码: {exc.status_code}, 详情: {exc.detail}")
+        logger.error(f"请求信息 - URL: {request.url}, Method: {request.method}")
+
+        # 构建错误响应
+        error_response = APIResponse(
+            code=exc.status_code,
+            message=str(exc.detail),
+            data={
+                "timestamp": datetime.now().isoformat(),
+                "path": str(request.url.path),
+                "method": request.method,
+                "status_code": exc.status_code
+            }
+        )
+
+        return JSONResponse(
+            status_code=exc.status_code,
+            content=error_response.dict()
+        )
+
+    except Exception as e:
+        logger.error(f"错误处理器本身出错: {str(e)}")
+        logger.error(f"错误堆栈: {traceback.format_exc()}")
+        
+        # 回退到基本错误响应
+        fallback_response = {
+            "code": 500,
+            "message": "内部服务器错误",
+            "data": {
+                "timestamp": datetime.now().isoformat(),
+                "error": "错误处理器异常"
+            }
+        }
+        
+        return JSONResponse(
+            status_code=500,
+            content=fallback_response
+        )
+
+
+async def validation_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """处理验证异常"""
+    try:
+        logger.error(f"验证异常: {str(exc)}")
+        logger.error(f"请求信息 - URL: {request.url}, Method: {request.method}")
+
+        error_response = APIResponse(
+            code=422,
+            message="请求参数验证失败",
+            data={
+                "detail": str(exc),
+                "timestamp": datetime.now().isoformat(),
+                "path": str(request.url.path),
+                "method": request.method
+            }
+        )
+
+        return JSONResponse(
+            status_code=422,
+            content=error_response.dict()
+        )
+
+    except Exception as e:
+        logger.error(f"验证异常处理器出错: {str(e)}")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "code": 500,
+                "message": "验证异常处理器错误",
+                "data": {"error": str(e)}
+            }
+        )
+
+
+async def general_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """处理一般异常"""
+    try:
+        logger.error(f"未捕获的异常: {str(exc)}")
+        logger.error(f"异常类型: {type(exc).__name__}")
+        logger.error(f"请求信息 - URL: {request.url}, Method: {request.method}")
+        logger.error(f"异常堆栈: {traceback.format_exc()}")
+
+        error_response = APIResponse(
+            code=500,
+            message="内部服务器错误",
+            data={
+                "error": str(exc),
+                "type": type(exc).__name__,
+                "timestamp": datetime.now().isoformat(),
+                "path": str(request.url.path),
+                "method": request.method
+            }
+        )
+
+        return JSONResponse(
+            status_code=500,
+            content=error_response.dict()
+        )
+
+    except Exception as handler_error:
+        logger.critical(f"异常处理器本身出现严重错误: {str(handler_error)}")
+        logger.critical(f"原异常: {str(exc)}")
+        
+        # 最基本的错误响应
+        return JSONResponse(
+            status_code=500,
+            content={
+                "code": 500,
+                "message": "严重内部错误",
+                "data": {
+                    "timestamp": datetime.now().isoformat(),
+                    "error": "异常处理器失败"
+                }
+            }
+        )
+
+
+def setup_error_handlers(app: FastAPI):
     """设置错误处理器"""
+    try:
+        # 注册HTTP异常处理器
+        app.add_exception_handler(HTTPException, custom_http_exception_handler)
+        app.add_exception_handler(StarletteHTTPException, custom_http_exception_handler)
+        
+        # 注册验证异常处理器
+        from pydantic import ValidationError
+        app.add_exception_handler(ValidationError, validation_exception_handler)
+        
+        # 注册通用异常处理器
+        app.add_exception_handler(Exception, general_exception_handler)
 
-    @app.errorhandler(400)
-    def bad_request(error):
-        """处理400错误"""
-        try:
-            # 添加详细的调试信息
-            logger.error(f"400错误处理器被触发 - 错误: {str(error)}")
-            logger.error(f"错误类型: {type(error).__name__}")
+        logger.info("错误处理器设置完成")
 
-            # 安全地获取请求信息
-            try:
-                url = request.url if request else "unknown"
-                path = request.path if request else "unknown"
-                method = request.method if request else "unknown"
-                content_type = request.content_type if request else "unknown"
-
-                logger.error(
-                    f"请求信息 - URL: {url}, Method: {method}, Content-Type: {content_type}"
-                )
-            except Exception as req_e:
-                logger.error(f"无法获取请求信息: {req_e}")
-                url = "error"
-                path = "error"
-
-            error_description = (
-                str(error.description) if hasattr(error, "description") else "请求参数错误"
-            )
-            logger.warning(f"Bad request: {url} - {error_description}")
-
-            return (
-                jsonify(
-                    APIResponse(
-                        code=400,
-                        message=error_description,
-                        data={"timestamp": datetime.utcnow().isoformat(), "path": path},
-                    ).dict()
-                ),
-                400,
-            )
-
-        except Exception as handler_error:
-            # 如果错误处理器本身出错，返回最基本的响应
-            logger.error(f"400错误处理器本身出错: {handler_error}")
-            return jsonify({"code": 400, "message": "请求错误", "data": {}}), 400
-
-    @app.errorhandler(401)
-    def unauthorized(error):
-        """处理401错误"""
-        logger.warning(f"Unauthorized access: {request.url}")
-        return (
-            jsonify(
-                APIResponse(
-                    code=401,
-                    message="未授权访问",
-                    data={"timestamp": datetime.utcnow().isoformat(), "path": request.path},
-                ).dict()
-            ),
-            401,
-        )
-
-    @app.errorhandler(403)
-    def forbidden(error):
-        """处理403错误"""
-        logger.warning(f"Forbidden access: {request.url}")
-        return (
-            jsonify(
-                APIResponse(
-                    code=403,
-                    message="访问被禁止",
-                    data={"timestamp": datetime.utcnow().isoformat(), "path": request.path},
-                ).dict()
-            ),
-            403,
-        )
-
-    @app.errorhandler(404)
-    def not_found(error):
-        """处理404错误"""
-        logger.warning(f"Not found: {request.url}")
-        return (
-            jsonify(
-                APIResponse(
-                    code=404,
-                    message=f"请求的资源 {request.path} 不存在",
-                    data={"timestamp": datetime.utcnow().isoformat(), "path": request.path},
-                ).dict()
-            ),
-            404,
-        )
-
-    @app.errorhandler(405)
-    def method_not_allowed(error):
-        """处理405错误"""
-        logger.warning(f"Method not allowed: {request.method} {request.url}")
-        return (
-            jsonify(
-                APIResponse(
-                    code=405,
-                    message=f"方法 {request.method} 不被允许用于 {request.path}",
-                    data={
-                        "timestamp": datetime.utcnow().isoformat(),
-                        "path": request.path,
-                        "method": request.method,
-                    },
-                ).dict()
-            ),
-            405,
-        )
-
-    @app.errorhandler(422)
-    def unprocessable_entity(error):
-        """处理422错误"""
-        logger.warning(f"Unprocessable entity: {request.url} - {str(error)}")
-        return (
-            jsonify(
-                APIResponse(
-                    code=422,
-                    message="请求格式正确但语义错误",
-                    data={"timestamp": datetime.utcnow().isoformat(), "path": request.path},
-                ).dict()
-            ),
-            422,
-        )
-
-    @app.errorhandler(429)
-    def rate_limit_exceeded(error):
-        """处理429错误"""
-        logger.warning(f"Rate limit exceeded: {request.url}")
-        return (
-            jsonify(
-                APIResponse(
-                    code=429,
-                    message="请求过于频繁，请稍后再试",
-                    data={"timestamp": datetime.utcnow().isoformat(), "path": request.path},
-                ).dict()
-            ),
-            429,
-        )
-
-    @app.errorhandler(500)
-    def internal_server_error(error):
-        """处理500错误"""
-        error_id = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-        logger.error(f"Internal server error [{error_id}]: {request.url}")
-        logger.error(f"Error details: {str(error)}")
-        logger.error(f"Traceback: {traceback.format_exc()}")
-
-        return (
-            jsonify(
-                APIResponse(
-                    code=500,
-                    message="服务器遇到意外错误",
-                    data={
-                        "error_id": error_id,
-                        "timestamp": datetime.utcnow().isoformat(),
-                        "path": request.path,
-                    },
-                ).dict()
-            ),
-            500,
-        )
-
-    @app.errorhandler(502)
-    def bad_gateway(error):
-        """处理502错误"""
-        logger.error(f"Bad gateway: {request.url}")
-        return (
-            jsonify(
-                APIResponse(
-                    code=502,
-                    message="上游服务器返回无效响应",
-                    data={"timestamp": datetime.utcnow().isoformat(), "path": request.path},
-                ).dict()
-            ),
-            502,
-        )
-
-    @app.errorhandler(503)
-    def service_unavailable(error):
-        """处理503错误"""
-        logger.error(f"Service unavailable: {request.url}")
-        return (
-            jsonify(
-                APIResponse(
-                    code=503,
-                    message="服务暂时不可用，请稍后重试",
-                    data={"timestamp": datetime.utcnow().isoformat(), "path": request.path},
-                ).dict()
-            ),
-            503,
-        )
-
-    @app.errorhandler(Exception)
-    def handle_unexpected_error(error):
-        """处理未预期的错误"""
-        error_id = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-        logger.error(f"Unexpected error [{error_id}]: {request.url}")
-        logger.error(f"Error type: {type(error).__name__}")
-        logger.error(f"Error message: {str(error)}")
-        logger.error(f"Traceback: {traceback.format_exc()}")
-
-        # 在开发模式下返回详细错误信息
-        from app.config.settings import config
-
-        if config.debug:
-            return (
-                jsonify(
-                    APIResponse(
-                        code=500,
-                        message=f"意外错误（调试模式）: {str(error)}",
-                        data={
-                            "type": type(error).__name__,
-                            "error_id": error_id,
-                            "timestamp": datetime.utcnow().isoformat(),
-                            "path": request.path,
-                            "traceback": traceback.format_exc().split("\n"),
-                        },
-                    ).dict()
-                ),
-                500,
-            )
-        else:
-            return (
-                jsonify(
-                    APIResponse(
-                        code=500,
-                        message="服务器遇到意外错误，请联系管理员",
-                        data={
-                            "error_id": error_id,
-                            "timestamp": datetime.utcnow().isoformat(),
-                            "path": request.path,
-                        },
-                    ).dict()
-                ),
-                500,
-            )
-
-    logger.info("错误处理器设置完成")
+    except Exception as e:
+        logger.error(f"错误处理器设置失败: {str(e)}")
+        logger.error(f"错误堆栈: {traceback.format_exc()}")

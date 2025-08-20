@@ -15,6 +15,14 @@ import threading
 import time
 from typing import Any, Dict, Optional, Union
 
+from app.constants import (
+    ASSISTANT_MANAGER_WAIT_CYCLES,
+    ASSISTANT_MANAGER_SLEEP_INTERVAL,
+    ASSISTANT_CACHE_DB_OFFSET,
+    ASSISTANT_CACHE_DEFAULT_TTL,
+    ASSISTANT_CACHE_MAX_SIZE
+)
+
 # 创建日志器
 logger = logging.getLogger("aiops.core.assistant.manager")
 
@@ -46,8 +54,8 @@ def get_assistant_agent() -> Optional["AssistantAgent"]:
         if _is_initializing:
             # 如果正在初始化中，等待一小段时间后再检查
             logger.info("另一个线程正在初始化小助手，等待...")
-            for _ in range(20):  # 最多等待10秒
-                time.sleep(0.5)
+            for _ in range(ASSISTANT_MANAGER_WAIT_CYCLES):  # 最多等待一定时间
+                time.sleep(ASSISTANT_MANAGER_SLEEP_INTERVAL)
                 if _assistant_agent is not None:
                     return _assistant_agent
 
@@ -62,8 +70,8 @@ def get_assistant_agent() -> Optional["AssistantAgent"]:
             _assistant_agent = AssistantAgent()
             
             # 异步初始化（避免阻塞）
-            from app.core.agents.assistant_utils import safe_async_run
-            init_success = safe_async_run(_assistant_agent.initialize())
+            from app.core.agents.assistant_utils import safe_sync_run
+            init_success = safe_sync_run(_assistant_agent.initialize())
             
             if init_success:
                 init_time = time.time() - start_time
@@ -126,9 +134,9 @@ def reinitialize_assistant() -> Optional["AssistantAgent"]:
             try:
                 logger.info("关闭当前小助手实例...")
                 # 异步函数需要安全执行
-                from app.core.agents.assistant_utils import safe_async_run
+                from app.core.agents.assistant_utils import safe_sync_run
 
-                safe_async_run(_assistant_agent.shutdown())
+                safe_sync_run(_assistant_agent.shutdown())
                 logger.info("当前小助手实例已关闭")
             except Exception as e:
                 logger.error(f"关闭当前小助手实例时出错: {str(e)}")
@@ -147,7 +155,7 @@ def reinitialize_assistant() -> Optional["AssistantAgent"]:
             redis_config = {
                 "host": config.redis.host,
                 "port": config.redis.port,
-                "db": config.redis.db + 1,
+                "db": config.redis.db + ASSISTANT_CACHE_DB_OFFSET,
                 "password": config.redis.password,
                 "connection_timeout": config.redis.connection_timeout,
                 "socket_timeout": config.redis.socket_timeout,
@@ -158,8 +166,8 @@ def reinitialize_assistant() -> Optional["AssistantAgent"]:
             temp_cache_manager = RedisCacheManager(
                 redis_config=redis_config,
                 cache_prefix="aiops_assistant_cache:",
-                default_ttl=3600,
-                max_cache_size=1000,
+                default_ttl=ASSISTANT_CACHE_DEFAULT_TTL,
+                max_cache_size=ASSISTANT_CACHE_MAX_SIZE,
                 enable_compression=True,
             )
             temp_cache_manager.clear_all()

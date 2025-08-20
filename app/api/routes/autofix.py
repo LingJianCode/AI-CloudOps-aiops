@@ -6,15 +6,17 @@ AI-CloudOps-aiops
 Author: Bamboo
 Email: bamboocloudops@gmail.com
 License: Apache 2.0
-Description: 自动修复API路由 - 提供Kubernetes问题自动诊断、修复和工作流管理
+Description: 自动修复FastAPI路由 - 提供Kubernetes问题自动诊断、修复和工作流管理
 """
 
 import asyncio
 import logging
 import time
 from datetime import datetime
+from typing import Dict, Any, Optional
 
-from flask import Blueprint, jsonify, request
+from fastapi import APIRouter, HTTPException, Query, BackgroundTasks
+from pydantic import BaseModel, Field
 
 from app.config.settings import config
 from app.core.agents.k8s_fixer import K8sFixerAgent
@@ -31,7 +33,8 @@ from app.utils.validators import (
 
 logger = logging.getLogger("aiops.autofix")
 
-autofix_bp = Blueprint("autofix", __name__)
+# 创建路由器
+router = APIRouter(tags=["autofix"])
 
 # 初始化Agent
 supervisor_agent = SupervisorAgent()
@@ -39,602 +42,406 @@ k8s_fixer_agent = K8sFixerAgent()
 notifier_agent = NotifierAgent()
 notification_service = NotificationService()
 
+# 请求模型
+class AutoFixRequestModel(BaseModel):
+    deployment: str = Field(..., description="Kubernetes Deployment名称")
+    namespace: str = Field("default", description="Kubernetes命名空间")
+    event: str = Field(..., description="问题描述或事件信息")
+    auto_apply: bool = Field(False, description="是否自动应用修复")
+    severity: str = Field("medium", description="问题严重级别", pattern="^(low|medium|high|critical)$")
+    timeout: int = Field(300, description="修复超时时间(秒)", ge=60, le=1800)
 
-@autofix_bp.route("/autofix", methods=["POST"])
-def autofix_k8s():
+class DiagnoseRequestModel(BaseModel):
+    deployment: str = Field(..., description="Kubernetes Deployment名称")
+    namespace: str = Field("default", description="Kubernetes命名空间")
+    include_logs: bool = Field(True, description="是否包含日志分析")
+    include_events: bool = Field(True, description="是否包含事件分析")
+
+# 响应模型
+class AutoFixResponseModel(BaseModel):
+    code: int
+    message: str
+    data: Dict[str, Any]
+
+
+@router.post("/autofix", response_model=AutoFixResponseModel, summary="Kubernetes自动修复")
+async def autofix_k8s(request: AutoFixRequestModel, background_tasks: BackgroundTasks) -> AutoFixResponseModel:
     """自动修复Kubernetes问题"""
     try:
-        data = request.get_json() or {}
-
-        # 验证请求参数
-        try:
-            autofix_request = AutoFixRequest(**data)
-        except Exception as e:
-            logger.warning(f"自动修复请求参数错误: {str(e)}")
-            return (
-                jsonify(APIResponse(code=400, message=f"请求参数错误: {str(e)}", data={}).dict()),
-                400,
-            )
+        logger.info(f"收到自动修复请求: {request.dict()}")
 
         # 验证Kubernetes资源名称
-        if not validate_deployment_name(autofix_request.deployment):
-            return (
-                jsonify(APIResponse(code=400, message="无效的Deployment名称", data={}).dict()),
-                400,
-            )
+        if not validate_deployment_name(request.deployment):
+            raise HTTPException(status_code=400, detail="无效的Deployment名称")
 
-        if not validate_namespace(autofix_request.namespace):
-            return jsonify(APIResponse(code=400, message="无效的命名空间名称", data={}).dict()), 400
+        if not validate_namespace(request.namespace):
+            raise HTTPException(status_code=400, detail="无效的命名空间名称")
 
         # 清理输入
-        event_description = sanitize_input(autofix_request.event, 2000)
+        event_description = sanitize_input(request.event, 2000)
 
-        logger.info(
-            f"开始自动修复: deployment={autofix_request.deployment}, namespace={autofix_request.namespace}"
+        logger.info(f"开始自动修复: deployment={request.deployment}, namespace={request.namespace}")
+
+        # 创建AutoFixRequest对象
+        autofix_request = AutoFixRequest(
+            deployment=request.deployment,
+            namespace=request.namespace,
+            event=event_description,
+            auto_apply=request.auto_apply,
+            severity=request.severity,
+            timeout=request.timeout
         )
 
         # 执行自动修复
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
         try:
             # 首先检查部署状态，判断是否有CrashLoopBackOff问题
             deployment = None
             pods = []
+            
             try:
-                # 使用run_until_complete替代直接await
-                deployment = loop.run_until_complete(
-                    k8s_fixer_agent.k8s_service.get_deployment(
-                        autofix_request.deployment, autofix_request.namespace
-                    )
+                deployment = await k8s_fixer_agent.k8s_service.get_deployment(
+                    autofix_request.deployment, autofix_request.namespace
                 )
 
                 if deployment:
-                    pods = loop.run_until_complete(
-                        k8s_fixer_agent.k8s_service.get_pods(
-                            namespace=autofix_request.namespace,
-                            label_selector=f"app={autofix_request.deployment}",
-                        )
+                    pods = await k8s_fixer_agent.k8s_service.get_pods(
+                        namespace=autofix_request.namespace,
+                        label_selector=f"app={autofix_request.deployment}",
                     )
 
                     # 检查是否有CrashLoopBackOff问题
                     for pod in pods:
-                        status = pod.get("status", {})
-                        container_statuses = status.get("container_statuses", [])
-                        for c_status in container_statuses:
-                            if (
-                                c_status.get("state", {}).get("waiting", {}).get("reason")
-                                == "CrashLoopBackOff"
-                            ):
-                                # 在事件描述中添加CrashLoopBackOff信息
-                                if "CrashLoopBackOff" not in event_description:
-                                    event_description += " Pod处于CrashLoopBackOff状态，需要检查和修复livenessProbe和readinessProbe配置。"
-                                autofix_request.force = True  # 强制修复模式
-                                logger.info(f"检测到CrashLoopBackOff问题，设置强制修复模式")
-                                break
-            except Exception as e:
-                logger.error(f"检查部署状态时出错: {str(e)}")
+                        if pod.get("status", {}).get("phase") == "Running":
+                            continue
+                        
+                        container_statuses = pod.get("status", {}).get("containerStatuses", [])
+                        for status in container_statuses:
+                            waiting = status.get("state", {}).get("waiting", {})
+                            if waiting.get("reason") == "CrashLoopBackOff":
+                                logger.warning(f"检测到CrashLoopBackOff: Pod {pod.get('metadata', {}).get('name')}")
+                                # 可以添加特殊处理逻辑
 
-            # 执行自动修复工作流
-            result = loop.run_until_complete(
-                execute_autofix_workflow(
+            except Exception as k8s_e:
+                logger.warning(f"获取Kubernetes资源状态失败: {str(k8s_e)}")
+
+            # 如果有工作流系统，使用Supervisor Agent
+            start_time = time.time()
+            
+            if hasattr(supervisor_agent, 'execute_workflow'):
+                logger.info("使用工作流执行自动修复")
+                
+                workflow_result = await supervisor_agent.execute_workflow(
+                    problem_description=f"Kubernetes问题: {event_description}",
+                    deployment_name=autofix_request.deployment,
+                    namespace=autofix_request.namespace,
+                    auto_apply=autofix_request.auto_apply
+                )
+                
+                result = workflow_result
+            else:
+                # 直接使用K8s修复Agent
+                logger.info("使用K8s修复Agent执行修复")
+                
+                result = await k8s_fixer_agent.analyze_and_fix_deployment(
                     autofix_request.deployment,
                     autofix_request.namespace,
-                    event_description,
-                    autofix_request.force,
+                    event_description
                 )
+
+            execution_time = time.time() - start_time
+
+            # 包装响应
+            response_data = AutoFixResponse(
+                deployment=autofix_request.deployment,
+                namespace=autofix_request.namespace,
+                event=event_description,
+                **({} if isinstance(result, str) else result),
+                execution_time=execution_time,
+                timestamp=datetime.now().isoformat()
             )
 
-            # 如果没有明确的结果，或修复失败，尝试直接调用K8sFixerAgent
-            if not result.get("success") or result.get("error_message"):
-                logger.info("自动修复工作流未成功，尝试直接使用K8sFixerAgent修复")
+            # 如果需要，异步发送通知
+            if hasattr(notification_service, 'send_notification'):
+                background_tasks.add_task(
+                    notification_service.send_notification,
+                    "autofix_completed",
+                    response_data.dict()
+                )
 
-                fix_result = loop.run_until_complete(
-                    k8s_fixer_agent.analyze_and_fix_deployment(
-                        autofix_request.deployment, autofix_request.namespace, event_description
+            return AutoFixResponseModel(
+                code=0,
+                message="自动修复完成",
+                data=response_data.dict()
+            )
+
+        except Exception as e:
+            logger.error(f"自动修复执行失败: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"自动修复失败: {str(e)}")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"自动修复请求处理失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"自动修复请求处理失败: {str(e)}")
+
+
+@router.post("/autofix/diagnose", response_model=AutoFixResponseModel, summary="Kubernetes问题诊断")
+async def diagnose_k8s(request: DiagnoseRequestModel) -> AutoFixResponseModel:
+    """诊断Kubernetes问题（不进行修复）"""
+    try:
+        logger.info(f"收到诊断请求: {request.dict()}")
+
+        # 验证参数
+        if not validate_deployment_name(request.deployment):
+            raise HTTPException(status_code=400, detail="无效的Deployment名称")
+
+        if not validate_namespace(request.namespace):
+            raise HTTPException(status_code=400, detail="无效的命名空间名称")
+
+        # 执行诊断
+        try:
+            # 获取部署信息
+            deployment = await k8s_fixer_agent.k8s_service.get_deployment(
+                request.deployment, request.namespace
+            )
+
+            if not deployment:
+                raise HTTPException(status_code=404, detail="找不到指定的Deployment")
+
+            # 获取Pod信息
+            pods = await k8s_fixer_agent.k8s_service.get_pods(
+                namespace=request.namespace,
+                label_selector=f"app={request.deployment}"
+            )
+
+            # 分析问题
+            diagnosis = {
+                "deployment_status": deployment.get("status", {}),
+                "pods": [],
+                "issues": [],
+                "recommendations": []
+            }
+
+            # 分析每个Pod
+            for pod in pods:
+                pod_info = {
+                    "name": pod.get("metadata", {}).get("name"),
+                    "status": pod.get("status", {}),
+                    "issues": []
+                }
+
+                # 检查Pod状态
+                phase = pod.get("status", {}).get("phase")
+                if phase != "Running":
+                    pod_info["issues"].append(f"Pod状态异常: {phase}")
+
+                # 检查容器状态
+                container_statuses = pod.get("status", {}).get("containerStatuses", [])
+                for status in container_statuses:
+                    if not status.get("ready", False):
+                        waiting = status.get("state", {}).get("waiting", {})
+                        if waiting:
+                            pod_info["issues"].append(f"容器等待: {waiting}")
+
+                # 获取日志（如果需要）
+                if request.include_logs and pod_info["issues"]:
+                    try:
+                        logs = await k8s_fixer_agent.k8s_service.get_pod_logs(
+                            pod_info["name"], request.namespace
+                        )
+                        pod_info["recent_logs"] = logs[-10:] if logs else []
+                    except Exception as log_e:
+                        logger.warning(f"获取Pod日志失败: {str(log_e)}")
+
+                diagnosis["pods"].append(pod_info)
+
+            # 获取事件（如果需要）
+            if request.include_events:
+                try:
+                    events = await k8s_fixer_agent.k8s_service.get_events(
+                        namespace=request.namespace,
+                        field_selector=f"involvedObject.name={request.deployment}"
                     )
-                )
+                    diagnosis["events"] = events[-20:] if events else []
+                except Exception as event_e:
+                    logger.warning(f"获取事件失败: {str(event_e)}")
 
-                if fix_result and ("自动修复" in fix_result or "修复完成" in fix_result):
-                    result["success"] = True
-                    result["result"] = fix_result
-                    result["error_message"] = None
-                    result["actions_taken"] = ["执行K8s自动修复: " + autofix_request.deployment]
-                    logger.info(f"直接修复成功: {fix_result[:100]}...")
+            # 生成总体分析
+            total_pods = len(pods)
+            healthy_pods = len([p for p in pods if p.get("status", {}).get("phase") == "Running"])
+            
+            if healthy_pods < total_pods:
+                diagnosis["issues"].append(f"有 {total_pods - healthy_pods} 个Pod不健康")
 
-            # 如果仍然没有明确的结果，检查Pod状态
-            if not result.get("success") and not result.get("error_message"):
-                # 检查Pod是否已经修复
-                pod_status = loop.run_until_complete(
-                    k8s_fixer_agent.diagnose_cluster_health(autofix_request.namespace)
-                )
-                if f"部署 {autofix_request.deployment}: 0/" in pod_status:
-                    result["error_message"] = "修复后Pod仍未就绪，请检查日志或配置"
-                else:
-                    result["success"] = True
-                    result["result"] = "Pod状态已改善，修复可能已成功"
-
-            # 等待几秒钟，让修复生效
-            time.sleep(3)
-        finally:
-            loop.close()
-
-        # 发送通知
-        if result.get("success"):
-            logger.info(f"自动修复成功: {autofix_request.deployment}")
-
-            # 发送成功通知
-            asyncio.run(
-                notification_service.send_autofix_notification(
-                    autofix_request.deployment,
-                    autofix_request.namespace,
-                    "success",
-                    result.get("actions_taken", []),
-                )
-            )
-        else:
-            logger.error(f"自动修复失败: {autofix_request.deployment}")
-
-            # 发送失败通知
-            asyncio.run(
-                notification_service.send_autofix_notification(
-                    autofix_request.deployment,
-                    autofix_request.namespace,
-                    "failed",
-                    result.get("actions_taken", []),
-                    result.get("error_message"),
-                )
-            )
-
-        # 构建响应
-        response = AutoFixResponse(
-            status="success" if result.get("success") else "failed",
-            result=result.get("result", ""),
-            deployment=autofix_request.deployment,
-            namespace=autofix_request.namespace,
-            actions_taken=result.get("actions_taken", []),
-            timestamp=datetime.utcnow().isoformat(),
-            success=result.get("success", False),
-            error_message=result.get("error_message"),
-        )
-
-        message = (
-            "自动修复成功"
-            if result.get("success")
-            else f"自动修复失败: {result.get('error_message', '')}"
-        )
-        code = 0 if result.get("success") else 500
-
-        return jsonify(APIResponse(code=code, message=message, data=response.dict()).dict())
-
-    except Exception as e:
-        logger.error(f"自动修复请求失败: {str(e)}")
-        return (
-            jsonify(
-                APIResponse(
-                    code=500,
-                    message=f"自动修复失败: {str(e)}",
-                    data={"timestamp": datetime.utcnow().isoformat()},
-                ).dict()
-            ),
-            500,
-        )
-
-
-@autofix_bp.route("/autofix/workflow", methods=["POST"])
-def execute_workflow():
-    """执行完整的自动修复工作流"""
-    try:
-        data = request.get_json() or {}
-        problem_description = data.get("problem_description", "")
-
-        if not problem_description:
-            return jsonify(APIResponse(code=400, message="必须提供问题描述", data={}).dict()), 400
-
-        # 清理输入
-        problem_description = sanitize_input(problem_description, 2000)
-
-        logger.info(f"执行自动修复工作流: {problem_description[:100]}...")
-
-        # 创建初始状态
-        initial_state = supervisor_agent.create_initial_state(problem_description)
-
-        # 执行工作流
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            workflow_result = loop.run_until_complete(execute_full_workflow(initial_state))
-        finally:
-            loop.close()
-
-        return jsonify(APIResponse(code=0, message="工作流执行完成", data=workflow_result).dict())
-
-    except Exception as e:
-        logger.error(f"工作流执行失败: {str(e)}")
-        return (
-            jsonify(
-                APIResponse(
-                    code=500,
-                    message=f"工作流执行失败: {str(e)}",
-                    data={"timestamp": datetime.utcnow().isoformat()},
-                ).dict()
-            ),
-            500,
-        )
-
-
-@autofix_bp.route("/autofix/diagnose", methods=["POST"])
-def diagnose_cluster():
-    """诊断集群健康状态"""
-    try:
-        data = request.get_json() or {}
-        namespace = data.get("namespace", "default")
-
-        if not validate_namespace(namespace):
-            return jsonify(APIResponse(code=400, message="无效的命名空间名称", data={}).dict()), 400
-
-        logger.info(f"开始集群健康诊断: namespace={namespace}")
-
-        # 执行集群诊断
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            diagnosis_result = loop.run_until_complete(
-                k8s_fixer_agent.diagnose_cluster_health(namespace)
-            )
-        finally:
-            loop.close()
-
-        return jsonify(
-            APIResponse(
+            return AutoFixResponseModel(
                 code=0,
-                message="集群诊断完成",
+                message="诊断完成",
                 data={
-                    "status": "success",
-                    "namespace": namespace,
-                    "diagnosis": diagnosis_result,
-                    "timestamp": datetime.utcnow().isoformat(),
-                },
-            ).dict()
-        )
-
-    except Exception as e:
-        logger.error(f"集群诊断失败: {str(e)}")
-        return (
-            jsonify(
-                APIResponse(
-                    code=500,
-                    message=f"集群诊断失败: {str(e)}",
-                    data={"timestamp": datetime.utcnow().isoformat()},
-                ).dict()
-            ),
-            500,
-        )
-
-
-@autofix_bp.route("/autofix/notify", methods=["POST"])
-def send_notification():
-    """发送通知"""
-    try:
-        data = request.get_json() or {}
-
-        # 验证必要参数
-        if not data.get("message"):
-            return jsonify(APIResponse(code=400, message="必须提供通知消息", data={}).dict()), 400
-
-        notification_type = data.get("type", "info")
-        title = data.get("title", "系统通知")
-        message = data.get("message")
-
-        logger.info(f"发送通知: {title}, 类型={notification_type}")
-
-        # 发送通知
-        asyncio.run(
-            notification_service.send_notification(
-                title=title, message=message, notification_type=notification_type
+                    "deployment": request.deployment,
+                    "namespace": request.namespace,
+                    "diagnosis": diagnosis,
+                    "summary": {
+                        "total_pods": total_pods,
+                        "healthy_pods": healthy_pods,
+                        "issues_found": len(diagnosis["issues"])
+                    },
+                    "timestamp": datetime.now().isoformat()
+                }
             )
-        )
 
-        return jsonify(
-            APIResponse(
-                code=0,
-                message="通知发送成功",
-                data={
-                    "success": True,
-                    "type": notification_type,
-                    "timestamp": datetime.utcnow().isoformat(),
-                },
-            ).dict()
-        )
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"诊断失败: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"诊断失败: {str(e)}")
 
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"发送通知失败: {str(e)}")
-        return (
-            jsonify(
-                APIResponse(
-                    code=500,
-                    message=f"发送通知失败: {str(e)}",
-                    data={"timestamp": datetime.utcnow().isoformat()},
-                ).dict()
-            ),
-            500,
-        )
+        logger.error(f"诊断请求处理失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"诊断请求处理失败: {str(e)}")
 
 
-@autofix_bp.route("/autofix/health", methods=["GET"])
-def autofix_health():
+@router.get("/autofix/health", response_model=AutoFixResponseModel, summary="自动修复服务健康检查")
+async def autofix_health() -> AutoFixResponseModel:
     """自动修复服务健康检查"""
     try:
-        # 检查各组件状态
-        k8s_healthy = k8s_fixer_agent.k8s_service.is_healthy()
-        llm_healthy = k8s_fixer_agent.llm_service.is_healthy()
-        notification_healthy = notification_service.is_healthy()
-
-        # 总体状态
-        overall_status = k8s_healthy  # 只要k8s正常，其他组件可以通过备用服务实现
-
         health_status = {
-            "status": "healthy" if overall_status else "degraded",
-            "healthy": overall_status,
+            "service": "autofix",
+            "status": "healthy",
+            "timestamp": datetime.now().isoformat(),
             "components": {
-                "kubernetes": k8s_healthy,
-                "llm": llm_healthy,
-                "notification": notification_healthy,
-                "supervisor": True,  # 纯计算模块，通常健康
-            },
-            "timestamp": datetime.utcnow().isoformat(),
+                "supervisor_agent": "unknown",
+                "k8s_fixer_agent": "unknown",
+                "notifier_agent": "unknown",
+                "kubernetes_api": "unknown"
+            }
         }
 
-        return jsonify(
-            APIResponse(code=0, message="自动修复服务健康检查完成", data=health_status).dict()
+        # 检查各组件状态
+        try:
+            if supervisor_agent:
+                health_status["components"]["supervisor_agent"] = "healthy"
+        except Exception:
+            health_status["components"]["supervisor_agent"] = "unhealthy"
+
+        try:
+            if k8s_fixer_agent:
+                health_status["components"]["k8s_fixer_agent"] = "healthy"
+                
+                # 检查Kubernetes API连接
+                if hasattr(k8s_fixer_agent, 'k8s_service'):
+                    k8s_health = await k8s_fixer_agent.k8s_service.health_check()
+                    health_status["components"]["kubernetes_api"] = "healthy" if k8s_health else "unhealthy"
+        except Exception:
+            health_status["components"]["k8s_fixer_agent"] = "unhealthy"
+
+        try:
+            if notifier_agent:
+                health_status["components"]["notifier_agent"] = "healthy"
+        except Exception:
+            health_status["components"]["notifier_agent"] = "unhealthy"
+
+        # 检查整体健康状态
+        unhealthy_components = [k for k, v in health_status["components"].items() if v == "unhealthy"]
+        if unhealthy_components:
+            health_status["status"] = "degraded"
+            health_status["unhealthy_components"] = unhealthy_components
+
+        return AutoFixResponseModel(
+            code=0,
+            message="健康检查完成",
+            data=health_status
         )
 
     except Exception as e:
         logger.error(f"自动修复健康检查失败: {str(e)}")
-        return (
-            jsonify(
-                APIResponse(
-                    code=500,
-                    message=f"健康检查失败: {str(e)}",
-                    data={"status": "error", "timestamp": datetime.utcnow().isoformat()},
-                ).dict()
-            ),
-            500,
-        )
+        raise HTTPException(status_code=500, detail=f"健康检查失败: {str(e)}")
 
 
-@autofix_bp.route("/autofix/ready", methods=["GET"])
-def autofix_ready():
-    """自动修复服务就绪性检查"""
+@router.get("/autofix/ready", response_model=AutoFixResponseModel, summary="自动修复服务就绪检查")
+async def autofix_ready() -> AutoFixResponseModel:
+    """自动修复服务就绪检查"""
     try:
-        # 检查核心组件是否就绪
-        k8s_ready = k8s_fixer_agent.k8s_service.is_healthy()
-        
-        if k8s_ready:
-            return jsonify(
-                APIResponse(
-                    code=0,
-                    message="自动修复服务就绪",
-                    data={
-                        "status": "ready",
-                        "timestamp": datetime.utcnow().isoformat(),
-                        "kubernetes_healthy": k8s_ready,
-                    },
-                ).dict()
-            )
-        else:
-            return (
-                jsonify(
-                    APIResponse(
-                        code=503,
-                        message="自动修复服务未就绪",
-                        data={
-                            "status": "not ready",
-                            "timestamp": datetime.utcnow().isoformat(),
-                            "kubernetes_healthy": k8s_ready,
-                        },
-                    ).dict()
-                ),
-                503,
-            )
-    
-    except Exception as e:
-        logger.error(f"自动修复就绪性检查失败: {str(e)}")
-        return (
-            jsonify(
-                APIResponse(
-                    code=500,
-                    message=f"就绪性检查失败: {str(e)}",
-                    data={"status": "error", "timestamp": datetime.utcnow().isoformat()},
-                ).dict()
-            ),
-            500,
+        is_ready = (
+            supervisor_agent and
+            k8s_fixer_agent and
+            notifier_agent and
+            hasattr(k8s_fixer_agent, 'k8s_service') and k8s_fixer_agent.k8s_service
         )
 
+        if not is_ready:
+            raise HTTPException(status_code=503, detail="自动修复服务未就绪")
 
-async def execute_autofix_workflow(
-    deployment: str, namespace: str, event: str, force: bool = False
-):
-    """执行自动修复工作流"""
-    try:
-        # 创建工作流初始状态
-        problem_description = (
-            f"Kubernetes部署 {deployment} 在命名空间 {namespace} 中出现问题：{event}"
+        return AutoFixResponseModel(
+            code=0,
+            message="自动修复服务已就绪",
+            data={
+                "ready": True,
+                "timestamp": datetime.now().isoformat()
+            }
         )
 
-        # 创建初始状态，同时添加部署特定信息到context中
-        initial_state = supervisor_agent.create_initial_state(problem_description)
-
-        # 更新初始上下文，而不是直接对AgentState赋值
-        # 使用dataclasses方法创建更新的上下文
-        from dataclasses import asdict, replace
-
-        # 获取当前上下文的副本
-        context = dict(initial_state.context)
-
-        # 更新上下文
-        context["deployment"] = deployment
-        context["namespace"] = namespace
-        context["force"] = force
-
-        # 使用replace创建新的AgentState实例
-        initial_state = replace(initial_state, context=context)
-
-        logger.info(
-            f"创建自动修复工作流初始状态: deployment={deployment}, namespace={namespace}, force={force}"
-        )
-
-        # 执行步骤1: 分析和诊断
-        state = await execute_agent_action("researcher", initial_state)
-
-        # 步骤2: 自动修复
-        state = await execute_agent_action("k8s_fixer", state)
-
-        # 处理结果
-        result = {
-            "success": getattr(state, "success", False),
-            "result": getattr(state, "result", ""),
-            "actions_taken": getattr(state, "actions_taken", []),
-            "error_message": getattr(state, "error", None),
-        }
-
-        return result
-
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"执行自动修复工作流失败: {str(e)}")
-        return {"success": False, "error_message": f"执行修复工作流失败: {str(e)}"}
+        logger.error(f"自动修复就绪检查失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"就绪检查失败: {str(e)}")
 
 
-async def execute_full_workflow(initial_state):
-    """执行完整工作流"""
-    try:
-        # 不需要将AgentState对象转换为可序列化的字典
-        state = initial_state
-
-        # 步骤1: 研究与分析
-        logger.info("步骤1: 执行研究与分析")
-        state = await execute_agent_action("researcher", state)
-
-        # 步骤2: K8s修复
-        logger.info("步骤2: 执行Kubernetes修复")
-        state = await execute_agent_action("k8s_fixer", state)
-
-        # 步骤3: 通知
-        logger.info("步骤3: 发送通知")
-        state = await execute_agent_action("notifier", state)
-
-        # 步骤4: 总结
-        logger.info("步骤4: 由监督者总结")
-        state = await supervisor_agent.process_agent_state(state)
-
-        # 从AgentState中获取结果
-        from dataclasses import asdict
-
-        # 获取当前上下文
-        context = dict(state.context)
-
-        # 生成最终结果
-        result = {
-            "success": context.get("success", False),
-            "result": context.get("result", ""),
-            "actions_taken": context.get("actions_taken", []),
-            "summary": context.get("summary", ""),
-            "steps": context.get("steps", []),
-            "error": context.get("error"),
-        }
-
-        return result
-
-    except Exception as e:
-        logger.error(f"执行完整工作流失败: {str(e)}")
-        return {"success": False, "error": f"执行完整工作流失败: {str(e)}"}
-
-
-@autofix_bp.route("/autofix/info", methods=["GET"])
-def autofix_info():
+@router.get("/autofix/info", response_model=AutoFixResponseModel, summary="自动修复服务信息")
+async def autofix_info() -> AutoFixResponseModel:
     """获取自动修复服务信息"""
     try:
-        info_data = {
-            "service": "自动修复服务",
+        info = {
+            "service": "自动修复",
             "version": "1.0.0",
-            "components": {
-                "kubernetes": {
-                    "available": k8s_fixer_agent.k8s_service.is_healthy(),
-                },
-                "llm": {
-                    "available": k8s_fixer_agent.llm_service.is_healthy(),
-                },
-                "notification": {
-                    "available": notification_service.is_healthy(),
-                    "enabled": notification_service.enabled,
-                },
-                "supervisor": {
-                    "available": True,
-                },
-            },
-            "features": [
-                "自动修复Kubernetes问题",
-                "集群健康诊断",
-                "工作流执行",
-                "通知发送",
+            "description": "基于AI的Kubernetes问题自动诊断和修复服务",
+            "capabilities": [
+                "Kubernetes问题诊断",
+                "自动修复建议",
+                "工作流管理",
+                "智能通知"
             ],
-            "timestamp": datetime.utcnow().isoformat(),
+            "endpoints": {
+                "fix": "/api/v1/autofix",
+                "diagnose": "/api/v1/autofix/diagnose",
+                "health": "/api/v1/autofix/health",
+                "ready": "/api/v1/autofix/ready",
+                "info": "/api/v1/autofix/info"
+            },
+            "supported_resources": [
+                "Deployment",
+                "Pod", 
+                "Service",
+                "ConfigMap",
+                "Secret"
+            ],
+            "fix_strategies": [
+                "资源配置优化",
+                "健康检查修复",
+                "镜像问题解决",
+                "网络连接修复"
+            ],
+            "agents": {
+                "supervisor": "工作流协调器",
+                "k8s_fixer": "Kubernetes修复器",
+                "notifier": "通知服务"
+            },
+            "status": "available",
+            "timestamp": datetime.now().isoformat()
         }
 
-        return jsonify(
-            APIResponse(code=0, message="获取自动修复服务信息成功", data=info_data).dict()
+        return AutoFixResponseModel(
+            code=0,
+            message="获取信息成功", 
+            data=info
         )
 
     except Exception as e:
         logger.error(f"获取自动修复服务信息失败: {str(e)}")
-        return (
-            jsonify(
-                APIResponse(
-                    code=500,
-                    message=f"获取服务信息失败: {str(e)}",
-                    data={"timestamp": datetime.utcnow().isoformat()},
-                ).dict()
-            ),
-            500,
-        )
+        raise HTTPException(status_code=500, detail=f"获取服务信息失败: {str(e)}")
 
 
-async def execute_agent_action(agent_name: str, state):
-    """执行特定智能体动作"""
-    try:
-        logger.info(f"执行智能体: {agent_name}")
-
-        if agent_name == "researcher":
-            # 研究者智能体
-            from app.core.agents.researcher import ResearcherAgent
-
-            agent = ResearcherAgent()
-            updated_state = await agent.process_agent_state(state)
-
-        elif agent_name == "k8s_fixer":
-            # K8s修复智能体
-            updated_state = await k8s_fixer_agent.process_agent_state(state)
-
-        elif agent_name == "notifier":
-            # 通知智能体
-            updated_state = await notifier_agent.process_agent_state(state)
-
-        else:
-            logger.warning(f"未知的智能体: {agent_name}")
-            updated_state = state
-            # 使用dataclasses更新error属性
-            from dataclasses import replace
-
-            context = dict(updated_state.context)
-            context["error"] = f"未知的智能体: {agent_name}"
-            updated_state = replace(updated_state, context=context)
-
-        return updated_state
-
-    except Exception as e:
-        logger.error(f"执行智能体 {agent_name} 失败: {str(e)}")
-        # 使用dataclasses更新error属性
-        from dataclasses import replace
-
-        context = dict(state.context)
-        context["error"] = f"执行智能体 {agent_name} 失败: {str(e)}"
-        return replace(state, context=context)
+# 导出
+__all__ = ["router"]

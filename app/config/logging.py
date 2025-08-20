@@ -13,12 +13,10 @@ import logging
 import sys
 from typing import Optional
 
-from flask import Flask
-
 from app.config.settings import config
 
 
-def setup_logging(app: Optional[Flask] = None) -> None:
+def setup_logging(app: Optional["FastAPI"] = None) -> None:
     """设置日志配置"""
 
     # 日志格式
@@ -41,19 +39,19 @@ def setup_logging(app: Optional[Flask] = None) -> None:
 
     root_logger.addHandler(console_handler)
 
-    # Flask应用日志配置
-    if app:
-        app.logger.setLevel(getattr(logging, config.log_level.upper()))
-        for handler in app.logger.handlers[:]:
-            app.logger.removeHandler(handler)
-        app.logger.addHandler(console_handler)
+    # FastAPI应用不需要特殊的日志配置，它使用Python标准logging
 
-    # 设置第三方库日志级别
+    # 设置特定日志器的级别
+    aiops_logger = logging.getLogger("aiops")
+    aiops_logger.setLevel(getattr(logging, config.log_level.upper()))
+
+    # 抑制一些第三方库的冗余日志
     logging.getLogger("urllib3").setLevel(logging.WARNING)
     logging.getLogger("requests").setLevel(logging.WARNING)
-    logging.getLogger("kubernetes").setLevel(logging.WARNING)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("openai").setLevel(logging.WARNING)
+    logging.getLogger("uvicorn").setLevel(logging.INFO)
+    logging.getLogger("fastapi").setLevel(logging.INFO)
 
-    # 设置应用日志器
-    app_logger = logging.getLogger("aiops")
-    app_logger.setLevel(getattr(logging, config.log_level.upper()))
+    logger = logging.getLogger("aiops.logging")
+    logger.info(f"日志系统初始化完成，级别: {config.log_level.upper()}")

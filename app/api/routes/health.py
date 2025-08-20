@@ -6,25 +6,33 @@ AI-CloudOps-aiops
 Author: Bamboo
 Email: bamboocloudops@gmail.com
 License: Apache 2.0
-Description: 系统健康检查API模块 - 提供系统级健康监控和状态检查功能
+Description: 系统健康检查FastAPI模块 - 提供系统级健康监控和状态检查功能
 """
 
 import logging
 from datetime import datetime
+from typing import Dict, Any
 
-from flask import Blueprint, jsonify
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 
 from app.models.response_models import APIResponse
 from .health_manager import health_manager
 
 logger = logging.getLogger("aiops.health")
 
-# 创建健康检查蓝图
-health_bp = Blueprint("health", __name__)
+# 创建路由器
+router = APIRouter(tags=["health"])
+
+# 响应模型
+class HealthResponse(BaseModel):
+    code: int
+    message: str
+    data: Dict[str, Any]
 
 
-@health_bp.route("/health", methods=["GET"])
-def health_check():
+@router.get("/health", response_model=HealthResponse, summary="系统综合健康检查")
+async def health_check() -> HealthResponse:
     """
     系统综合健康检查API
     
@@ -33,176 +41,217 @@ def health_check():
     """
     try:
         health_data = health_manager.get_overall_health()
-        return jsonify(APIResponse(code=0, message="健康检查完成", data=health_data).dict())
+        return HealthResponse(
+            code=0,
+            message="健康检查完成",
+            data=health_data
+        )
 
     except Exception as e:
         logger.error(f"健康检查失败: {str(e)}")
-        return (
-            jsonify(
-                APIResponse(
-                    code=500,
-                    message=f"健康检查失败: {str(e)}",
-                    data={"timestamp": datetime.utcnow().isoformat()},
-                ).dict()
-            ),
-            500,
+        raise HTTPException(
+            status_code=500,
+            detail=f"健康检查失败: {str(e)}"
         )
 
 
-@health_bp.route("/health/components", methods=["GET"])
-def components_health():
+@router.get("/health/components", response_model=HealthResponse, summary="组件健康检查")
+async def components_health() -> HealthResponse:
     """
-    组件详细健康检查API
+    各组件健康检查API
     
     Returns:
-        JSON: 所有组件的详细健康状态
+        JSON: 各组件的健康状态详情
     """
     try:
-        components_detail = health_manager.check_all_components()
-        
-        return jsonify(
-            APIResponse(
-                code=0,
-                message="组件健康检查完成",
-                data={
-                    "timestamp": datetime.utcnow().isoformat(),
-                    "components": components_detail,
-                },
-            ).dict()
+        components_data = health_manager.get_components_health()
+        return HealthResponse(
+            code=0,
+            message="组件健康检查完成",
+            data=components_data
         )
 
     except Exception as e:
         logger.error(f"组件健康检查失败: {str(e)}")
-        return (
-            jsonify(
-                APIResponse(
-                    code=500,
-                    message=f"组件健康检查失败: {str(e)}",
-                    data={"timestamp": datetime.utcnow().isoformat()},
-                ).dict()
-            ),
-            500,
+        raise HTTPException(
+            status_code=500,
+            detail=f"组件健康检查失败: {str(e)}"
         )
 
 
-@health_bp.route("/health/metrics", methods=["GET"])
-def health_metrics():
+@router.get("/health/metrics", response_model=HealthResponse, summary="系统指标检查")
+async def metrics_health() -> HealthResponse:
     """
-    系统健康指标API
+    系统指标检查API
     
     Returns:
-        JSON: 详细的系统资源监控指标
+        JSON: 系统资源使用指标
     """
     try:
-        metrics = health_manager.get_system_metrics()
-        metrics["uptime"] = health_manager.get_uptime()
-        
-        return jsonify(APIResponse(code=0, message="健康指标获取成功", data=metrics).dict())
+        metrics_data = health_manager.get_system_metrics()
+        return HealthResponse(
+            code=0,
+            message="系统指标检查完成",
+            data=metrics_data
+        )
 
     except Exception as e:
-        logger.error(f"获取健康指标失败: {str(e)}")
-        return (
-            jsonify(
-                APIResponse(
-                    code=500,
-                    message=f"获取健康指标失败: {str(e)}",
-                    data={"timestamp": datetime.utcnow().isoformat()},
-                ).dict()
-            ),
-            500,
+        logger.error(f"系统指标检查失败: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"系统指标检查失败: {str(e)}"
         )
 
 
-@health_bp.route("/health/ready", methods=["GET"])
-def readiness_probe():
+@router.get("/health/ready", response_model=HealthResponse, summary="就绪状态检查")
+async def readiness_check() -> HealthResponse:
     """
-    Kubernetes就绪性探针API
+    就绪状态检查API - 检查服务是否准备好接收请求
     
     Returns:
-        JSON: 服务就绪状态检查结果
+        JSON: 服务就绪状态
     """
     try:
-        components = health_manager.check_all_components()
+        ready_status = health_manager.check_readiness()
         
-        # 定义核心组件
-        required_components = ["prometheus", "prediction"]
+        # 如果未就绪，返回503状态
+        if not ready_status.get("ready", False):
+            raise HTTPException(
+                status_code=503,
+                detail="服务未就绪"
+            )
         
-        # 检查核心组件是否就绪
-        ready = all(
-            components.get(comp, {}).get("healthy", False) 
-            for comp in required_components
+        return HealthResponse(
+            code=0,
+            message="服务已就绪",
+            data=ready_status
         )
 
-        if ready:
-            return jsonify(
-                APIResponse(
-                    code=0,
-                    message="服务就绪",
-                    data={"status": "ready", "timestamp": datetime.utcnow().isoformat()},
-                ).dict()
-            )
-        else:
-            return (
-                jsonify(
-                    APIResponse(
-                        code=503,
-                        message="服务未就绪",
-                        data={
-                            "status": "not ready",
-                            "timestamp": datetime.utcnow().isoformat(),
-                            "components": {name: comp.get("healthy", False) for name, comp in components.items()},
-                        },
-                    ).dict()
-                ),
-                503,
-            )
-
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"就绪性检查失败: {str(e)}")
-        return (
-            jsonify(
-                APIResponse(
-                    code=500,
-                    message=f"就绪性检查失败: {str(e)}",
-                    data={"status": "error", "timestamp": datetime.utcnow().isoformat()},
-                ).dict()
-            ),
-            500,
+        logger.error(f"就绪检查失败: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"就绪检查失败: {str(e)}"
         )
 
 
-@health_bp.route("/health/live", methods=["GET"])
-def liveness_probe():
+@router.get("/health/live", response_model=HealthResponse, summary="存活状态检查")
+async def liveness_check() -> HealthResponse:
     """
-    Kubernetes存活性探针API
+    存活状态检查API - 检查服务是否正在运行
     
     Returns:
         JSON: 服务存活状态
     """
     try:
-        return jsonify(
-            APIResponse(
-                code=0,
-                message="服务存活",
-                data={
-                    "status": "alive",
-                    "timestamp": datetime.utcnow().isoformat(),
-                    "uptime": health_manager.get_uptime(),
-                },
-            ).dict()
+        live_status = health_manager.check_liveness()
+        
+        return HealthResponse(
+            code=0,
+            message="服务存活",
+            data=live_status
         )
 
     except Exception as e:
-        logger.error(f"存活性检查失败: {str(e)}")
-        return (
-            jsonify(
-                APIResponse(
-                    code=500,
-                    message=f"存活性检查失败: {str(e)}",
-                    data={"status": "error", "timestamp": datetime.utcnow().isoformat()},
-                ).dict()
-            ),
-            500,
+        logger.error(f"存活检查失败: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"存活检查失败: {str(e)}"
         )
 
 
+@router.get("/health/startup", response_model=HealthResponse, summary="启动状态检查")
+async def startup_check() -> HealthResponse:
+    """
+    启动状态检查API - 检查服务启动是否完成
+    
+    Returns:
+        JSON: 服务启动状态
+    """
+    try:
+        startup_status = health_manager.check_startup()
+        
+        # 如果启动未完成，返回503状态
+        if not startup_status.get("started", False):
+            raise HTTPException(
+                status_code=503,
+                detail="服务启动未完成"
+            )
+        
+        return HealthResponse(
+            code=0,
+            message="服务启动完成",
+            data=startup_status
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"启动检查失败: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"启动检查失败: {str(e)}"
+        )
+
+
+@router.get("/health/dependencies", response_model=HealthResponse, summary="依赖服务检查")
+async def dependencies_check() -> HealthResponse:
+    """
+    依赖服务健康检查API
+    
+    Returns:
+        JSON: 依赖服务的健康状态
+    """
+    try:
+        deps_status = health_manager.check_dependencies()
+        
+        return HealthResponse(
+            code=0,
+            message="依赖检查完成",
+            data=deps_status
+        )
+
+    except Exception as e:
+        logger.error(f"依赖检查失败: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"依赖检查失败: {str(e)}"
+        )
+
+
+@router.get("/health/detail", response_model=HealthResponse, summary="详细健康检查")
+async def detailed_health() -> HealthResponse:
+    """
+    详细健康检查API - 包含所有健康检查信息
+    
+    Returns:
+        JSON: 完整的系统健康状态
+    """
+    try:
+        detailed_data = {
+            "overall": health_manager.get_overall_health(),
+            "components": health_manager.get_components_health(),
+            "metrics": health_manager.get_system_metrics(),
+            "dependencies": health_manager.check_dependencies(),
+            "timestamp": datetime.utcnow().isoformat(),
+            "check_duration": "N/A"  # 可以添加计时逻辑
+        }
+        
+        return HealthResponse(
+            code=0,
+            message="详细健康检查完成",
+            data=detailed_data
+        )
+
+    except Exception as e:
+        logger.error(f"详细健康检查失败: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"详细健康检查失败: {str(e)}"
+        )
+
+
+# 导出
+__all__ = ["router"]

@@ -385,6 +385,9 @@ class RAGConfig:
     temperature: float = field(
         default_factory=lambda: get_env_or_config("RAG_TEMPERATURE", "rag.temperature", 0.1, float)
     )
+    timeout: int = field(
+        default_factory=lambda: get_env_or_config("RAG_TIMEOUT", "rag.timeout", 360, int)
+    )
 
     @property
     def effective_embedding_model(self) -> str:

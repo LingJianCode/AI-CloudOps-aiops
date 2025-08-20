@@ -15,10 +15,8 @@ import os
 import time
 from typing import Any, Dict, List, Optional
 
-import requests
 import yaml
 from langchain_core.tools import tool
-from langchain_experimental.agents import create_pandas_dataframe_agent
 
 from app.config.settings import config
 from app.services.kubernetes import KubernetesService
@@ -38,30 +36,9 @@ class K8sFixerAgent:
         self.max_retries = 3
         self.retry_delay = 2
         logger.info("K8s Fixer Agent initialized")
-
-        # 测试LLM服务是否正常
-        try:
-            is_healthy = self.llm_service.is_healthy()
-            if is_healthy:
-                logger.info("LLM服务连接正常，K8s修复Agent准备就绪")
-                # 输出当前激活的模型配置
-                logger.info(
-                    f"当前激活的LLM配置: provider={config.llm.provider}, model={config.llm.effective_model}"
-                )
-            else:
-                logger.warning("LLM服务连接异常，K8s修复Agent将尝试使用备用LLM服务")
-                # 尝试输出当前的LLM配置信息用于诊断
-                logger.info(
-                    f"主要LLM配置: provider={config.llm.provider}, model={config.llm.effective_model}, base_url={config.llm.effective_base_url}"
-                )
-                logger.info(
-                    f"备用LLM配置: provider={'ollama' if config.llm.provider.lower() == 'openai' else 'openai'}, model={config.llm.ollama_model if config.llm.provider.lower() == 'openai' else config.llm.model}"
-                )
-
-                # 尝试故障切换检查 - 检查主模型和备用模型的可用性
-                self._test_model_failover()
-        except Exception as e:
-            logger.warning(f"检查LLM服务状态失败: {str(e)}")
+        
+        # 延迟进行LLM健康检查，避免阻塞初始化
+        self._llm_checked = False
 
     def _test_model_failover(self):
         """测试模型故障切换功能"""

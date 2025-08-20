@@ -24,6 +24,8 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 
+from app.config.settings import config
+
 logger = logging.getLogger("aiops.answer_generator")
 
 
@@ -134,8 +136,11 @@ class ReliableAnswerGenerator:
         
         return "\n".join(prompt_parts)
 
-    async def _call_llm_with_timeout(self, system_prompt: str, user_prompt: str, timeout: int = 20) -> str:
+    async def _call_llm_with_timeout(self, system_prompt: str, user_prompt: str, timeout: int = None) -> str:
         """带超时的LLM调用"""
+        if timeout is None:
+            timeout = config.rag.timeout
+        
         try:
             # 创建超时任务
             task = asyncio.create_task(

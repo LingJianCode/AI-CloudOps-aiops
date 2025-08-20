@@ -10,11 +10,12 @@ Description: 大语言模型服务 - 提供LLM服务接口，支持多种LLM提�
 """
 
 # ==================== 核心依赖导入 ====================
+import asyncio
 import json
 import logging
 import os
 import re
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Union
 
 import ollama  # Ollama本地模型客户端
 
@@ -438,7 +439,11 @@ class LLMService:
             if not client:
                 client = OpenAI(api_key=config.llm.api_key, base_url=config.llm.base_url)
 
-            response = client.chat.completions.create(**kwargs)
+            # 使用 asyncio.to_thread 在线程池中执行同步调用
+            def _sync_call():
+                return client.chat.completions.create(**kwargs)
+            
+            response = await asyncio.to_thread(_sync_call)
 
             if stream:
                 # 处理流式响应
@@ -474,26 +479,34 @@ class LLMService:
             logger.debug(f"使用Ollama host: {os.environ.get('OLLAMA_HOST')}")
 
             # 将消息转换为Ollama格式
-            if stream:
-                # 流式处理
-                response = ""
-                for chunk in ollama.chat(
-                    model=config.llm.ollama_model,
-                    messages=[{"role": m["role"], "content": m["content"]} for m in messages],
-                    stream=True,
-                    options={"temperature": temperature, "num_predict": max_tokens},
-                ):
-                    if "message" in chunk and "content" in chunk["message"]:
-                        response += chunk["message"]["content"]
+            formatted_messages = [{"role": m["role"], "content": m["content"]} for m in messages]
+            options = {"temperature": temperature, "num_predict": max_tokens}
 
-                return response
+            if stream:
+                # 流式处理 - 使用 asyncio.to_thread 避免阻塞
+                def _sync_stream_call():
+                    response = ""
+                    for chunk in ollama.chat(
+                        model=config.llm.ollama_model,
+                        messages=formatted_messages,
+                        stream=True,
+                        options=options,
+                    ):
+                        if "message" in chunk and "content" in chunk["message"]:
+                            response += chunk["message"]["content"]
+                    return response
+
+                return await asyncio.to_thread(_sync_stream_call)
             else:
-                # 常规响应
-                response = ollama.chat(
-                    model=config.llm.ollama_model,
-                    messages=[{"role": m["role"], "content": m["content"]} for m in messages],
-                    options={"temperature": temperature, "num_predict": max_tokens},
-                )
+                # 常规响应 - 使用 asyncio.to_thread 避免阻塞
+                def _sync_call():
+                    return ollama.chat(
+                        model=config.llm.ollama_model,
+                        messages=formatted_messages,
+                        options=options,
+                    )
+
+                response = await asyncio.to_thread(_sync_call)
 
                 if "message" in response and "content" in response["message"]:
                     return response["message"]["content"]
@@ -735,7 +748,7 @@ class LLMService:
             logger.error(f"生成修复说明失败: {str(e)}")
             return None
 
-    def is_healthy(self) -> bool:
+    async def is_healthy(self) -> bool:
         """
         检查LLM服务是否健康 - 综合服务健康状态检查方法
 
@@ -768,7 +781,7 @@ class LLMService:
             logger.info("检查LLM服务健康状态")
 
             # 检查主要提供商健康状态
-            provider_health = self._check_provider_health(self.provider)
+            provider_health = await self._check_provider_health(self.provider)
 
             if provider_health:
                 logger.info(f"LLM服务({self.provider})健康状态: 正常")
@@ -778,7 +791,7 @@ class LLMService:
             logger.warning(
                 f"LLM服务({self.provider})不可用，检查备用提供商({self.backup_provider})"
             )
-            backup_health = self._check_provider_health(self.backup_provider)
+            backup_health = await self._check_provider_health(self.backup_provider)
 
             if backup_health:
                 logger.info(f"备用LLM服务({self.backup_provider})健康状态: 正常")
@@ -792,7 +805,7 @@ class LLMService:
             logger.error(f"检查LLM服务健康状态时出错: {str(e)}")
             return False
 
-    def _check_provider_health(self, provider: str) -> bool:
+    async def _check_provider_health(self, provider: str) -> bool:
         """
         检查特定提供商的健康状态 - 单个提供商健康检查方法
 
@@ -822,9 +835,9 @@ class LLMService:
         """
         try:
             if provider.lower() == "openai":
-                return self._check_openai_health()
+                return await self._check_openai_health()
             elif provider.lower() == "ollama":
-                return self._check_ollama_health()
+                return await self._check_ollama_health()
             else:
                 logger.warning(f"不支持的LLM提供商: {provider}")
                 return False
@@ -832,7 +845,7 @@ class LLMService:
             logger.error(f"检查{provider}健康状态失败: {str(e)}")
             return False
 
-    def _check_openai_health(self) -> bool:
+    async def _check_openai_health(self) -> bool:
         """
         检查OpenAI服务健康状态 - OpenAI提供商健康检查方法
 
@@ -871,13 +884,15 @@ class LLMService:
                 # 如果没有现有客户端，创建新的临时客户端进行测试
                 client = OpenAI(api_key=config.llm.api_key, base_url=config.llm.base_url)
 
-            # 发送简单的测试请求验证API连接和服务可用性
-            # 使用最小令牌数以减少测试成本
-            response = client.chat.completions.create(
-                model=config.llm.model,
-                messages=[{"role": "user", "content": "测试"}],
-                max_tokens=5,  # 最小令牌数，仅用于连接验证
-            )
+            # 使用 asyncio.to_thread 在线程池中执行同步调用
+            def _sync_health_check():
+                return client.chat.completions.create(
+                    model=config.llm.model,
+                    messages=[{"role": "user", "content": "测试"}],
+                    max_tokens=5,  # 最小令牌数，仅用于连接验证
+                )
+
+            response = await asyncio.to_thread(_sync_health_check)
 
             # 验证响应的完整性和有效性
             if response and hasattr(response, "choices") and len(response.choices) > 0:
@@ -891,7 +906,7 @@ class LLMService:
             logger.warning(f"OpenAI健康检查失败: {str(e)}")
             return False
 
-    def _check_ollama_health(self) -> bool:
+    async def _check_ollama_health(self) -> bool:
         """
         检查Ollama服务健康状态 - Ollama提供商健康检查方法
 
@@ -930,7 +945,11 @@ class LLMService:
 
             # 首先尝试获取模型列表来验证服务连接性和模型可用性
             try:
-                response = ollama.list()
+                def _sync_list_check():
+                    return ollama.list()
+
+                response = await asyncio.to_thread(_sync_list_check)
+                
                 if response and "models" in response:
                     # 检查所需的模型是否在可用模型列表中
                     model_available = any(
@@ -949,9 +968,13 @@ class LLMService:
                 logger.warning(f"获取Ollama模型列表失败: {str(e)}")
 
                 # 如果模型列表检查失败，尝试直接发送聊天请求作为备选验证方法
-                response = ollama.chat(
-                    model=config.llm.ollama_model, messages=[{"role": "user", "content": "测试"}]
-                )
+                def _sync_chat_check():
+                    return ollama.chat(
+                        model=config.llm.ollama_model, 
+                        messages=[{"role": "user", "content": "测试"}]
+                    )
+
+                response = await asyncio.to_thread(_sync_chat_check)
 
                 # 验证聊天响应的结构完整性
                 if response and "message" in response:

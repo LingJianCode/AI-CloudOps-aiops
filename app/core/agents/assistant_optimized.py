@@ -31,6 +31,20 @@ from app.core.vector.redis_vector_store import (
     RedisVectorStoreManager,
 )
 from app.config.settings import config
+from app.constants import (
+    ASSISTANT_PERFORMANCE_METRICS_MAX_SAMPLES,
+    ASSISTANT_DEFAULT_VECTOR_DIM,
+    ASSISTANT_INIT_SLEEP_INTERVAL,
+    ASSISTANT_SESSION_HISTORY_MAX_LENGTH,
+    ASSISTANT_ANSWER_TRUNCATE_LENGTH,
+    ASSISTANT_RELEVANCE_CACHE_THRESHOLD,
+    ASSISTANT_CACHE_TTL_SECONDS,
+    ASSISTANT_CACHE_DB_OFFSET,
+    ASSISTANT_CACHE_DEFAULT_TTL,
+    ASSISTANT_CACHE_MAX_SIZE,
+    ASSISTANT_DEFAULT_MAX_CONTEXT_DOCS,
+    DEFAULT_TOP_K
+)
 from app.services.llm import LLMService
 
 logger = logging.getLogger("aiops.assistant")
@@ -46,12 +60,16 @@ class PerformanceMetrics:
     total_requests: int = 0
     successful_requests: int = 0
     success_rate: float = 0.0
+    document_retrieval_times: List[float] = field(default_factory=list)
+    avg_document_retrieval_time: float = 0.0
+    llm_call_times: List[float] = field(default_factory=list)
+    avg_llm_call_time: float = 0.0
     
     def update_response_time(self, time_taken: float):
         self.response_times.append(time_taken)
         self.avg_response_time = sum(self.response_times) / len(self.response_times)
-        if len(self.response_times) > 100:
-            self.response_times = self.response_times[-100:]
+        if len(self.response_times) > ASSISTANT_PERFORMANCE_METRICS_MAX_SAMPLES:
+            self.response_times = self.response_times[-ASSISTANT_PERFORMANCE_METRICS_MAX_SAMPLES:]
     
     def update_cache_stats(self, hit: bool):
         if hit:
@@ -66,6 +84,18 @@ class PerformanceMetrics:
         if success:
             self.successful_requests += 1
         self.success_rate = (self.successful_requests / self.total_requests * 100) if self.total_requests > 0 else 0.0
+    
+    def update_document_retrieval_time(self, time_taken: float):
+        self.document_retrieval_times.append(time_taken)
+        self.avg_document_retrieval_time = sum(self.document_retrieval_times) / len(self.document_retrieval_times)
+        if len(self.document_retrieval_times) > ASSISTANT_PERFORMANCE_METRICS_MAX_SAMPLES:
+            self.document_retrieval_times = self.document_retrieval_times[-ASSISTANT_PERFORMANCE_METRICS_MAX_SAMPLES:]
+    
+    def update_llm_call_time(self, time_taken: float):
+        self.llm_call_times.append(time_taken)
+        self.avg_llm_call_time = sum(self.llm_call_times) / len(self.llm_call_times)
+        if len(self.llm_call_times) > ASSISTANT_PERFORMANCE_METRICS_MAX_SAMPLES:
+            self.llm_call_times = self.llm_call_times[-ASSISTANT_PERFORMANCE_METRICS_MAX_SAMPLES:]
     
     def get_stats_dict(self) -> Dict[str, Any]:
         return {
@@ -82,6 +112,14 @@ class PerformanceMetrics:
                 "total": self.total_requests,
                 "successful": self.successful_requests,
                 "success_rate": round(self.success_rate, 2)
+            },
+            "document_retrieval": {
+                "avg_time": round(self.avg_document_retrieval_time, 3),
+                "total_samples": len(self.document_retrieval_times)
+            },
+            "llm_calls": {
+                "avg_time": round(self.avg_llm_call_time, 3),
+                "total_samples": len(self.llm_call_times)
             }
         }
 
@@ -134,8 +172,8 @@ class VectorStoreManager:
                 test_embedding = self.embeddings.embed_query("测试")
                 vector_dim = len(test_embedding)
             except Exception as e:
-                logger.warning(f"无法检测嵌入维度，使用默认值1536: {e}")
-                vector_dim = 1536
+                logger.warning(f"无法检测嵌入维度，使用默认值{ASSISTANT_DEFAULT_VECTOR_DIM}: {e}")
+                vector_dim = ASSISTANT_DEFAULT_VECTOR_DIM
             
             self.redis_manager = RedisVectorStoreManager(
                 redis_config=redis_config,
@@ -253,7 +291,7 @@ class AssistantAgent:
 
             if self.is_initializing:
                 while self.is_initializing:
-                    time.sleep(0.1)
+                    time.sleep(ASSISTANT_INIT_SLEEP_INTERVAL)
                 return self.initialization_complete
 
             self.is_initializing = True
@@ -289,7 +327,7 @@ class AssistantAgent:
         try:
             self.llm_service = LLMService()
             if hasattr(self.llm_service, 'is_healthy') and callable(self.llm_service.is_healthy):
-                if not self.llm_service.is_healthy():
+                if not await self.llm_service.is_healthy():
                     logger.warning("LLM服务健康检查失败，但继续初始化")
             return True
         except Exception as e:
@@ -301,7 +339,7 @@ class AssistantAgent:
             redis_config = {
                 "host": config.redis.host,
                 "port": config.redis.port,
-                "db": config.redis.db + 1,
+                "db": config.redis.db + ASSISTANT_CACHE_DB_OFFSET,
                 "password": config.redis.password,
                 "connection_timeout": config.redis.connection_timeout,
                 "socket_timeout": config.redis.socket_timeout,
@@ -312,8 +350,8 @@ class AssistantAgent:
             self.cache_manager = RedisCacheManager(
                 redis_config=redis_config,
                 cache_prefix="aiops_assistant_optimized_cache:",
-                default_ttl=3600,
-                max_cache_size=1000,
+                default_ttl=ASSISTANT_CACHE_DEFAULT_TTL,
+                max_cache_size=ASSISTANT_CACHE_MAX_SIZE,
                 enable_compression=True,
             )
         except Exception as e:
@@ -347,7 +385,7 @@ class AssistantAgent:
         self,
         question: str,
         session_id: Optional[str] = None,
-        max_context_docs: int = 1  # 从2减少到1
+        max_context_docs: int = ASSISTANT_DEFAULT_MAX_CONTEXT_DOCS
     ) -> Dict[str, Any]:
         """
         获取问题答案
@@ -420,19 +458,19 @@ class AssistantAgent:
             # 更新会话历史
             if session:
                 session.history.append(f"Q: {clean_question}")
-                session.history.append(f"A: {answer_result['answer'][:50]}...")  # 从100减少剀50
+                session.history.append(f"A: {answer_result['answer'][:ASSISTANT_ANSWER_TRUNCATE_LENGTH]}...")
                 session.last_activity = datetime.now()
                 
-                # 限制历史长度，从10减少到4
-                if len(session.history) > 4:
-                    session.history = session.history[-4:]
+                # 限制历史长度
+                if len(session.history) > ASSISTANT_SESSION_HISTORY_MAX_LENGTH:
+                    session.history = session.history[-ASSISTANT_SESSION_HISTORY_MAX_LENGTH:]
 
             # 添加召回率信息
             answer_result["recall_rate"] = recall_rate
 
-            # 缓存结果，提高阈值至0.7
-            if self.cache_manager and answer_result.get("relevance_score", 0) > 0.7:
-                self.cache_manager.set(clean_question, answer_result, session_id, ttl=1800)  # 减少TTL到1800秒
+            # 缓存结果
+            if self.cache_manager and answer_result.get("relevance_score", 0) > ASSISTANT_RELEVANCE_CACHE_THRESHOLD:
+                self.cache_manager.set(clean_question, answer_result, session_id, ttl=ASSISTANT_CACHE_TTL_SECONDS)
 
             success = True
             logger.info(f"问答完成: 召回率={recall_rate:.2f}, 相关性={answer_result.get('relevance_score', 0):.2f}, 检索时间={retrieval_time:.2f}s, LLM时间={llm_time:.2f}s")
@@ -522,8 +560,8 @@ class AssistantAgent:
                 return False
 
             # 同步包装异步调用
-            from app.core.agents.assistant_utils import safe_async_run
-            success = safe_async_run(self.vector_store_manager.add_documents([document]))
+            from app.core.agents.assistant_utils import safe_sync_run
+            success = safe_sync_run(self.vector_store_manager.add_documents([document]))
             
             if success:
                 logger.info("文档添加成功")

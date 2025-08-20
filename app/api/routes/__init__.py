@@ -6,66 +6,64 @@ AI-CloudOps-aiops
 Author: Bamboo
 Email: bamboocloudops@gmail.com
 License: Apache 2.0
-Description: API路由模块初始化文件，负责注册和管理所有API端点
+Description: API路由模块初始化文件，负责注册和管理所有FastAPI端点
 """
 
 import logging
-
-from flask import Blueprint
+from fastapi import APIRouter
 
 logger = logging.getLogger("aiops.routes")
 
-api_v1 = Blueprint("api_v1", __name__, url_prefix="/api/v1")
+# 创建API v1路由器
+api_v1 = APIRouter(prefix="/api/v1", tags=["api_v1"])
 
+# 导入所有路由器
 try:
-    from .health import health_bp
-
-    api_v1.register_blueprint(health_bp)
+    from .health import router as health_router
+    api_v1.include_router(health_router)
     logger.info("已注册健康检查路由")
 except Exception as e:
     logger.warning(f"注册健康检查路由失败: {str(e)}")
 
 try:
-    from .predict import predict_bp
-
-    api_v1.register_blueprint(predict_bp)
+    from .predict import router as predict_router
+    api_v1.include_router(predict_router)
     logger.info("已注册预测路由")
 except Exception as e:
     logger.warning(f"注册预测路由失败: {str(e)}")
 
 try:
-    from .rca import rca_bp
-
-    api_v1.register_blueprint(rca_bp)
+    from .rca import router as rca_router
+    api_v1.include_router(rca_router)
     logger.info("已注册根因分析路由")
 except Exception as e:
     logger.warning(f"注册根因分析路由失败: {str(e)}")
 
 try:
-    from .autofix import autofix_bp
-
-    api_v1.register_blueprint(autofix_bp)
+    from .autofix import router as autofix_router
+    api_v1.include_router(autofix_router)
     logger.info("已注册自动修复路由")
 except Exception as e:
     logger.warning(f"注册自动修复路由失败: {str(e)}")
 
 try:
-    from .assistant import assistant_bp
-
-    api_v1.register_blueprint(assistant_bp, url_prefix="/assistant")
+    from .assistant import router as assistant_router
+    api_v1.include_router(assistant_router, prefix="/assistant")
     logger.info("已注册智能助手路由")
 except Exception as e:
     logger.warning(f"注册智能助手路由失败: {str(e)}")
 
 
 def register_routes(app):
-    """注册所有路由"""
-
-    app.register_blueprint(api_v1)
-
-    # 根路径重定向到健康检查
-    @app.route("/")
-    def index():
+    """注册所有FastAPI路由"""
+    
+    # 注册API v1路由
+    app.include_router(api_v1)
+    
+    # 根路径端点
+    @app.get("/", tags=["root"])
+    async def root():
+        """根路径端点，返回平台信息"""
         return {
             "service": "AIOps Platform",
             "version": "1.0.0",

@@ -9,12 +9,15 @@ License: Apache 2.0
 Description: 健康检查管理器 - 统一健康检查逻辑和组件状态管理
 """
 
+import asyncio
 import logging
 import time
 from datetime import datetime
 from typing import Dict, Any
 
 import psutil
+
+from app.config.settings import config
 
 from app.core.prediction.predictor import PredictionService
 from app.services.kubernetes import KubernetesService
@@ -59,10 +62,10 @@ class HealthManager:
         """检查单个组件健康状态"""
         current_time = time.time()
         
-        # 检查缓存
-        if (component in self._last_check and 
-            current_time - self._last_check[component]['time'] < self._cache_ttl):
-            return self._last_check[component]['result']
+        # 检查缓存 - 优化缓存查询
+        last_check = self._last_check.get(component)
+        if last_check and current_time - last_check['time'] < self._cache_ttl:
+            return last_check['result']
         
         try:
             service = self.get_service(component)
@@ -73,18 +76,43 @@ class HealthManager:
                     "timestamp": datetime.utcnow().isoformat()
                 }
             else:
-                is_healthy = service.is_healthy()
+                # 特殊处理 LLM 服务的异步健康检查
+                if component == 'llm' and hasattr(service, 'is_healthy'):
+                    try:
+                        # 检查是否有运行中的事件循环
+                        try:
+                            asyncio.get_running_loop()
+                            # 如果在事件循环中，使用 asyncio.create_task 但需要在线程中执行
+                            import concurrent.futures
+                            with concurrent.futures.ThreadPoolExecutor() as executor:
+                                # 在新线程中创建新的事件循环运行异步方法
+                                future = executor.submit(
+                                    lambda: asyncio.run(service.is_healthy())
+                                )
+                                is_healthy = future.result(timeout=config.rag.timeout)
+                        except RuntimeError:
+                            # 没有运行中的事件循环，可以直接使用 asyncio.run
+                            is_healthy = asyncio.run(service.is_healthy())
+                    except Exception as e:
+                        logger.error(f"LLM健康检查失败: {str(e)}")
+                        is_healthy = False
+                else:
+                    # 其他服务的同步健康检查
+                    is_healthy = service.is_healthy()
+                
                 result = {
                     "healthy": is_healthy,
                     "timestamp": datetime.utcnow().isoformat()
                 }
                 
-                # 添加组件特定信息
-                if hasattr(service, 'get_service_info'):
+                # 添加组件特定信息 - 优化异常处理
+                if hasattr(service, 'get_service_info') and callable(service.get_service_info):
                     try:
-                        result.update(service.get_service_info())
-                    except:
-                        pass
+                        service_info = service.get_service_info()
+                        if isinstance(service_info, dict):
+                            result.update(service_info)
+                    except Exception as e:
+                        logger.debug(f"获取组件信息失败: {str(e)}")
         
         except Exception as e:
             result = {
@@ -107,15 +135,44 @@ class HealthManager:
         return {comp: self.check_component_health(comp) for comp in components}
     
     def get_system_metrics(self) -> Dict[str, Any]:
-        """获取系统资源指标"""
+        """获取系统资源指标 - 优化性能"""
         try:
-            cpu_percent = psutil.cpu_percent(interval=1)
+            # 减少CPU采样时间以提高响应速度
+            cpu_percent = psutil.cpu_percent(interval=0.1)
             memory = psutil.virtual_memory()
-            disk = psutil.disk_usage("/")
-            network = psutil.net_io_counters()
             
-            process = psutil.Process()
-            process_memory = process.memory_info()
+            # 只获取主要的磁盘信息
+            try:
+                disk = psutil.disk_usage("/")
+                disk_info = {
+                    "usage_percent": round((disk.used / disk.total) * 100, 2),
+                    "free_gb": round(disk.free / (1024 * 1024 * 1024), 2),
+                    "total_gb": round(disk.total / (1024 * 1024 * 1024), 2)
+                }
+            except Exception:
+                disk_info = {"error": "无法获取磁盘信息"}
+            
+            # 获取网络信息
+            try:
+                network = psutil.net_io_counters()
+                network_info = {
+                    "bytes_sent_mb": round(network.bytes_sent / (1024 * 1024), 2),
+                    "bytes_recv_mb": round(network.bytes_recv / (1024 * 1024), 2)
+                }
+            except Exception:
+                network_info = {"error": "无法获取网络信息"}
+            
+            # 获取进程信息
+            try:
+                process = psutil.Process()
+                process_memory = process.memory_info()
+                process_info = {
+                    "memory_mb": round(process_memory.rss / (1024 * 1024), 2),
+                    "cpu_percent": process.cpu_percent(interval=0.1),
+                    "threads": process.num_threads()
+                }
+            except Exception:
+                process_info = {"error": "无法获取进程信息"}
             
             return {
                 "cpu": {
@@ -124,29 +181,12 @@ class HealthManager:
                 },
                 "memory": {
                     "usage_percent": memory.percent,
-                    "available_bytes": memory.available,
-                    "total_bytes": memory.total,
-                    "used_bytes": memory.used
+                    "available_gb": round(memory.available / (1024 * 1024 * 1024), 2),
+                    "total_gb": round(memory.total / (1024 * 1024 * 1024), 2)
                 },
-                "disk": {
-                    "usage_percent": round((disk.used / disk.total) * 100, 2),
-                    "free_bytes": disk.free,
-                    "total_bytes": disk.total,
-                    "used_bytes": disk.used
-                },
-                "network": {
-                    "bytes_sent": network.bytes_sent,
-                    "bytes_recv": network.bytes_recv,
-                    "packets_sent": network.packets_sent,
-                    "packets_recv": network.packets_recv
-                },
-                "process": {
-                    "memory_rss": process_memory.rss,
-                    "memory_vms": process_memory.vms,
-                    "cpu_percent": process.cpu_percent(),
-                    "threads": process.num_threads(),
-                    "created": process.create_time()
-                },
+                "disk": disk_info,
+                "network": network_info,
+                "process": process_info,
                 "timestamp": datetime.utcnow().isoformat()
             }
         except Exception as e:

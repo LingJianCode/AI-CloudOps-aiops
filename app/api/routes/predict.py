@@ -6,14 +6,16 @@ AI-CloudOps-aiops
 Author: Bamboo
 Email: bamboocloudops@gmail.com
 License: Apache 2.0
-Description: 负载预测API路由 - 提供QPS预测、实例数建议和负载趋势分析接口
+Description: 负载预测FastAPI路由 - 提供QPS预测、实例数建议和负载趋势分析接口
 """
 
 import asyncio
 import datetime
 import logging
+from typing import Dict, Any, Optional
 
-from flask import Blueprint, jsonify, request
+from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel, Field
 
 from app.core.prediction.predictor import PredictionService
 from app.models.request_models import PredictionRequest
@@ -22,307 +24,261 @@ from app.utils.validators import validate_qps
 
 logger = logging.getLogger("aiops.predict")
 
-predict_bp = Blueprint("predict", __name__)
+# 创建路由器
+router = APIRouter(tags=["prediction"])
 
 # 初始化预测服务
 prediction_service = PredictionService()
 
+# 请求模型
+class PredictQueryParams(BaseModel):
+    service_name: Optional[str] = Field(None, description="服务名称")
+    current_qps: Optional[float] = Field(None, description="当前QPS", gt=0)
+    hours: Optional[int] = Field(24, description="预测小时数", ge=1, le=168)
+    instance_cpu: Optional[int] = Field(None, description="实例CPU数", gt=0)
+    instance_memory: Optional[int] = Field(None, description="实例内存(GB)", gt=0)
 
-@predict_bp.route("/predict", methods=["GET", "POST"])
-def predict_instances():
+# 响应模型
+class PredictResponse(BaseModel):
+    code: int
+    message: str
+    data: Dict[str, Any]
+
+
+@router.get("/predict", response_model=PredictResponse, summary="QPS预测 (GET)")
+@router.post("/predict", response_model=PredictResponse, summary="QPS预测 (POST)")
+async def predict_instances(
+    # GET参数
+    service_name: Optional[str] = Query(None, description="服务名称"),
+    current_qps: Optional[float] = Query(None, description="当前QPS", gt=0),
+    hours: Optional[int] = Query(24, description="预测小时数", ge=1, le=168),
+    instance_cpu: Optional[int] = Query(None, description="实例CPU数", gt=0),
+    instance_memory: Optional[int] = Query(None, description="实例内存(GB)", gt=0),
+    # POST请求体
+    predict_request: Optional[PredictionRequest] = None
+) -> PredictResponse:
     """预测实例数接口"""
     try:
-        # 处理请求参数
-        if request.method == "POST":
-            data = request.get_json() or {}
-            try:
-                predict_request = PredictionRequest(**data)
-            except Exception as e:
-                return (
-                    jsonify(
-                        APIResponse(code=400, message=f"请求参数错误: {str(e)}", data={}).dict()
-                    ),
-                    400,
-                )
+        # 如果是POST请求，使用请求体参数
+        if predict_request:
+            request_data = predict_request
         else:
-            # GET请求使用默认参数
-            predict_request = PredictionRequest()
+            # GET请求使用查询参数或默认值
+            request_data = PredictionRequest(
+                service_name=service_name,
+                current_qps=current_qps,
+                hours=hours,
+                instance_cpu=instance_cpu,
+                instance_memory=instance_memory
+            )
 
-        # 验证QPS参数
-        if predict_request.current_qps is not None:
-            if not validate_qps(predict_request.current_qps):
-                return jsonify(APIResponse(code=400, message="QPS参数无效", data={}).dict()), 400
+        logger.info(f"收到预测请求: {request_data.dict()}")
 
-        logger.info(
-            f"收到预测请求: QPS={predict_request.current_qps}, 时间={predict_request.timestamp}"
+        # 验证QPS
+        if request_data.current_qps:
+            if not validate_qps(request_data.current_qps):
+                raise HTTPException(status_code=400, detail="QPS值无效")
+
+        # 调用预测服务
+        prediction_result = await asyncio.to_thread(
+            prediction_service.predict_instances,
+            service_name=request_data.service_name,
+            current_qps=request_data.current_qps,
+            hours=request_data.hours,
+            instance_cpu=request_data.instance_cpu,
+            instance_memory=request_data.instance_memory,
         )
 
-        # 执行预测
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            result = loop.run_until_complete(
-                prediction_service.predict(
-                    current_qps=predict_request.current_qps,
-                    timestamp=predict_request.timestamp,
-                    include_features=predict_request.include_confidence,
-                )
-            )
-        finally:
-            loop.close()
-
-        if result is None:
-            return (
-                jsonify(
-                    APIResponse(code=500, message="预测失败，模型未加载或服务异常", data={}).dict()
-                ),
-                500,
-            )
-
-        # 构建响应
+        # 包装响应
         response = PredictionResponse(
-            instances=result["instances"],
-            current_qps=result["current_qps"],
-            timestamp=result["timestamp"],
-            confidence=result.get("confidence") if predict_request.include_confidence else None,
-            model_version=result.get("model_version"),
-            prediction_type=result.get("prediction_type", "model_based"),
-            features=result.get("features"),
+            service_name=request_data.service_name or "unknown",
+            prediction_hours=request_data.hours,
+            **prediction_result
         )
 
-        logger.info(
-            f"预测完成: 实例数={response.instances}, QPS={response.current_qps}, 置信度={response.confidence}"
+        return PredictResponse(
+            code=0,
+            message="预测完成",
+            data=response.dict()
         )
 
-        return jsonify(APIResponse(code=0, message="预测成功", data=response.dict()).dict())
-
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"预测请求失败: {str(e)}")
-        return jsonify(APIResponse(code=500, message=f"预测失败: {str(e)}", data={}).dict()), 500
+        logger.error(f"预测失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"预测失败: {str(e)}")
 
 
-@predict_bp.route("/predict/trend", methods=["GET", "POST"])
-def predict_trend():
-    """预测未来趋势"""
+@router.get("/predict/trend", response_model=PredictResponse, summary="负载趋势分析")
+async def predict_trend(
+    service_name: Optional[str] = Query(None, description="服务名称"),
+    hours: int = Query(24, description="预测小时数", ge=1, le=168)
+) -> PredictResponse:
+    """负载趋势分析接口"""
     try:
-        if request.method == "POST":
-            data = request.get_json() or {}
-            hours_ahead = data.get("hours_ahead", 24)
-            current_qps = data.get("current_qps")
-        else:
-            # 处理GET请求的查询参数
-            hours_ahead = request.args.get("hours", type=int, default=24)
-            current_qps = request.args.get("qps", type=float)
+        logger.info(f"收到趋势分析请求: service={service_name}, hours={hours}")
 
-        # 验证参数
-        if not isinstance(hours_ahead, int) or hours_ahead < 1 or hours_ahead > 168:  # 最多一周
-            return (
-                jsonify(
-                    APIResponse(code=400, message="hours_ahead参数必须在1-168之间", data={}).dict()
-                ),
-                400,
-            )
-
-        if current_qps is not None and not validate_qps(current_qps):
-            return jsonify(APIResponse(code=400, message="QPS参数无效", data={}).dict()), 400
-
-        logger.info(f"收到趋势预测请求: 未来{hours_ahead}小时, QPS={current_qps}")
-
-        # 执行趋势预测
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            result = loop.run_until_complete(
-                prediction_service.predict_trend(hours_ahead=hours_ahead, current_qps=current_qps)
-            )
-        finally:
-            loop.close()
-
-        if result is None:
-            return jsonify(APIResponse(code=500, message="趋势预测失败", data={}).dict()), 500
-
-        logger.info(f"趋势预测完成: {len(result.get('forecast', []))} 个预测点")
-
-        return jsonify(APIResponse(code=0, message="趋势预测成功", data=result).dict())
-
-    except Exception as e:
-        logger.error(f"趋势预测失败: {str(e)}")
-        return (
-            jsonify(APIResponse(code=500, message=f"趋势预测失败: {str(e)}", data={}).dict()),
-            500,
+        # 调用趋势分析服务
+        trend_result = await asyncio.to_thread(
+            prediction_service.analyze_trend,
+            service_name=service_name,
+            hours=hours
         )
 
+        return PredictResponse(
+            code=0,
+            message="趋势分析完成",
+            data={
+                "service_name": service_name,
+                "analysis_hours": hours,
+                "trend": trend_result,
+                "timestamp": datetime.datetime.now().isoformat()
+            }
+        )
 
-@predict_bp.route("/predict/models/reload", methods=["POST"])
-def reload_models():
-    """重新加载预测模型"""
+    except Exception as e:
+        logger.error(f"趋势分析失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"趋势分析失败: {str(e)}")
+
+
+@router.get("/predict/health", response_model=PredictResponse, summary="预测服务健康检查")
+async def prediction_health() -> PredictResponse:
+    """预测服务健康检查"""
     try:
-        logger.info("收到模型重新加载请求")
+        # 检查预测服务状态
+        health_status = {
+            "service": "prediction",
+            "status": "healthy" if prediction_service else "unhealthy",
+            "timestamp": datetime.datetime.now().isoformat(),
+            "model_loaded": False,
+            "scaler_loaded": False
+        }
 
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        # 检查模型状态
+        if prediction_service:
+            health_status["model_loaded"] = getattr(prediction_service, 'model_loaded', False)
+            health_status["scaler_loaded"] = getattr(prediction_service, 'scaler_loaded', False)
+
+        # 执行服务健康检查
         try:
-            success = loop.run_until_complete(prediction_service.reload_models())
-        finally:
-            loop.close()
+            service_health = await asyncio.to_thread(prediction_service.health_check)
+            health_status.update(service_health)
+        except Exception as e:
+            health_status["health_check_error"] = str(e)
+            health_status["status"] = "unhealthy"
 
-        if success:
-            logger.info("模型重新加载成功")
-            return jsonify(
-                APIResponse(
-                    code=0,
-                    message="模型重新加载成功",
-                    data={
-                        "timestamp": datetime.datetime.utcnow().isoformat(),
-                        "model_info": prediction_service.get_service_info(),
-                    },
-                ).dict()
-            )
-        else:
-            logger.error("模型重新加载失败")
-            return (
-                jsonify(
-                    APIResponse(
-                        code=500,
-                        message="模型重新加载失败",
-                        data={"timestamp": datetime.datetime.utcnow().isoformat()},
-                    ).dict()
-                ),
-                500,
-            )
-
-    except Exception as e:
-        logger.error(f"模型重新加载异常: {str(e)}")
-        return (
-            jsonify(
-                APIResponse(
-                    code=500,
-                    message=f"模型重新加载异常: {str(e)}",
-                    data={"timestamp": datetime.datetime.utcnow().isoformat()},
-                ).dict()
-            ),
-            500,
+        return PredictResponse(
+            code=0,
+            message="健康检查完成",
+            data=health_status
         )
 
+    except Exception as e:
+        logger.error(f"健康检查失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"健康检查失败: {str(e)}")
 
-@predict_bp.route("/predict/info", methods=["GET"])
-def prediction_info():
+
+@router.get("/predict/ready", response_model=PredictResponse, summary="预测服务就绪检查")
+async def prediction_ready() -> PredictResponse:
+    """预测服务就绪检查"""
+    try:
+        is_ready = (
+            prediction_service and 
+            getattr(prediction_service, 'model_loaded', False) and
+            getattr(prediction_service, 'scaler_loaded', False)
+        )
+
+        if not is_ready:
+            raise HTTPException(status_code=503, detail="预测服务未就绪")
+
+        return PredictResponse(
+            code=0,
+            message="预测服务已就绪",
+            data={
+                "ready": True,
+                "timestamp": datetime.datetime.now().isoformat()
+            }
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"就绪检查失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"就绪检查失败: {str(e)}")
+
+
+@router.get("/predict/info", response_model=PredictResponse, summary="预测服务信息")
+async def prediction_info() -> PredictResponse:
     """获取预测服务信息"""
     try:
-        service_info = prediction_service.get_service_info()
-        return jsonify(
-            APIResponse(
-                code=0,
-                message="获取预测服务信息成功",
-                data={
-                    "service": "预测服务",
-                    "version": "1.0.0",
-                    "timestamp": datetime.datetime.utcnow().isoformat(),
-                    "service_info": service_info,
-                },
-            ).dict()
+        info = {
+            "service": "负载预测",
+            "version": "1.0.0",
+            "description": "基于机器学习的QPS预测和实例数建议服务",
+            "capabilities": [
+                "QPS预测",
+                "实例数建议",
+                "负载趋势分析",
+                "资源优化建议"
+            ],
+            "endpoints": {
+                "predict": "/api/v1/predict",
+                "trend": "/api/v1/predict/trend", 
+                "health": "/api/v1/predict/health",
+                "ready": "/api/v1/predict/ready",
+                "info": "/api/v1/predict/info"
+            },
+            "model_info": {
+                "type": "机器学习模型",
+                "features": ["时间模式", "历史QPS", "系统指标"],
+                "prediction_range": "1-168小时"
+            },
+            "status": "available" if prediction_service else "unavailable",
+            "timestamp": datetime.datetime.now().isoformat()
+        }
+
+        return PredictResponse(
+            code=0,
+            message="获取信息成功",
+            data=info
         )
 
     except Exception as e:
         logger.error(f"获取预测服务信息失败: {str(e)}")
-        return (
-            jsonify(
-                APIResponse(
-                    code=500,
-                    message=f"获取服务信息失败: {str(e)}",
-                    data={"timestamp": datetime.datetime.utcnow().isoformat()},
-                ).dict()
-            ),
-            500,
-        )
+        raise HTTPException(status_code=500, detail=f"获取预测服务信息失败: {str(e)}")
 
 
-@predict_bp.route("/predict/health", methods=["GET"])
-def predict_health():
-    """预测服务健康检查"""
+@router.get("/predict/models", response_model=PredictResponse, summary="模型信息")
+async def model_info() -> PredictResponse:
+    """获取预测模型详细信息"""
     try:
-        is_healthy = prediction_service.is_healthy()
-        service_info = prediction_service.get_service_info()
-
-        health_status = {
-            "status": "healthy" if is_healthy else "unhealthy",
-            "healthy": is_healthy,
-            "model_loaded": prediction_service.model_loaded,
-            "scaler_loaded": prediction_service.scaler_loaded,
-            "timestamp": datetime.datetime.utcnow().isoformat(),
-            "details": service_info,
+        model_details = {
+            "models": [],
+            "current_model": None,
+            "last_trained": None,
+            "performance_metrics": {}
         }
 
-        return jsonify(APIResponse(code=0, message="健康检查完成", data=health_status).dict())
+        # 获取模型信息
+        if prediction_service and hasattr(prediction_service, 'model_loader'):
+            try:
+                model_info = await asyncio.to_thread(
+                    getattr(prediction_service.model_loader, 'get_model_info', lambda: {})
+                )
+                model_details.update(model_info)
+            except Exception as e:
+                model_details["error"] = f"获取模型信息失败: {str(e)}"
 
-    except Exception as e:
-        logger.error(f"预测健康检查失败: {str(e)}")
-        return (
-            jsonify(
-                APIResponse(
-                    code=500,
-                    message=f"健康检查失败: {str(e)}",
-                    data={
-                        "status": "error",
-                        "healthy": False,
-                        "timestamp": datetime.datetime.utcnow().isoformat(),
-                    },
-                ).dict()
-            ),
-            500,
+        return PredictResponse(
+            code=0,
+            message="获取模型信息成功",
+            data=model_details
         )
 
-
-@predict_bp.route("/predict/ready", methods=["GET"])
-def predict_ready():
-    """预测服务就绪性检查"""
-    try:
-        # 检查模型是否加载完成
-        model_ready = prediction_service.model_loaded and prediction_service.scaler_loaded
-        service_healthy = prediction_service.is_healthy()
-        
-        ready = model_ready and service_healthy
-        
-        if ready:
-            return jsonify(
-                APIResponse(
-                    code=0,
-                    message="预测服务就绪",
-                    data={
-                        "status": "ready",
-                        "timestamp": datetime.datetime.utcnow().isoformat(),
-                        "model_loaded": prediction_service.model_loaded,
-                        "scaler_loaded": prediction_service.scaler_loaded,
-                    },
-                ).dict()
-            )
-        else:
-            return (
-                jsonify(
-                    APIResponse(
-                        code=503,
-                        message="预测服务未就绪",
-                        data={
-                            "status": "not ready",
-                            "timestamp": datetime.datetime.utcnow().isoformat(),
-                            "model_loaded": prediction_service.model_loaded,
-                            "scaler_loaded": prediction_service.scaler_loaded,
-                            "service_healthy": service_healthy,
-                        },
-                    ).dict()
-                ),
-                503,
-            )
-    
     except Exception as e:
-        logger.error(f"预测就绪性检查失败: {str(e)}")
-        return (
-            jsonify(
-                APIResponse(
-                    code=500,
-                    message=f"就绪性检查失败: {str(e)}",
-                    data={"status": "error", "timestamp": datetime.datetime.utcnow().isoformat()},
-                ).dict()
-            ),
-            500,
-        )
+        logger.error(f"获取模型信息失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"获取模型信息失败: {str(e)}")
+
+
+# 导出
+__all__ = ["router"]
