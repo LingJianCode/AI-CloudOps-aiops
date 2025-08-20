@@ -24,11 +24,7 @@ from openai import OpenAI  # OpenAI官方客户端
 
 # ==================== 内部组件导入 ====================
 from app.config.settings import config  # 系统配置
-from app.constants import (  # LLM相关常量
-    LLM_MAX_RETRIES,
-    LLM_TEMPERATURE_MAX,
-    LLM_TEMPERATURE_MIN,
-)
+from app.common.constants import ServiceConstants  # 服务相关常量
 from app.utils.error_handlers import (  # 错误处理工具
     ErrorHandler,
     ExternalServiceError,
@@ -174,7 +170,7 @@ class LLMService:
             temperature (float): 输入的温度值
 
         Returns:
-            float: 验证后的温度值，范围在[LLM_TEMPERATURE_MIN, LLM_TEMPERATURE_MAX]之内
+            float: 验证后的温度值，范围在[ServiceConstants.LLM_TEMPERATURE_MIN, ServiceConstants.LLM_TEMPERATURE_MAX]之内
 
         验证规则：
         - 温度必须在配置的最小值和最大值之间
@@ -187,9 +183,9 @@ class LLMService:
         - 0.8-1.0: 富有创造性的输出，适合文学创作等
         """
         # 检查温度值是否在允许的范围内
-        if not (LLM_TEMPERATURE_MIN <= temperature <= LLM_TEMPERATURE_MAX):
+        if not (ServiceConstants.LLM_TEMPERATURE_MIN <= temperature <= ServiceConstants.LLM_TEMPERATURE_MAX):
             logger.warning(
-                f"温度参数 {temperature} 超出范围 [{LLM_TEMPERATURE_MIN}, {LLM_TEMPERATURE_MAX}]，使用默认值"
+                f"温度参数 {temperature} 超出范围 [{ServiceConstants.LLM_TEMPERATURE_MIN}, ServiceConstants.LLM_TEMPERATURE_MAX]，使用默认值"
             )
             return 0.7  # 返回平衡的默认温度值
         return temperature
@@ -248,8 +244,8 @@ class LLMService:
             validate_field_range(
                 {"temperature": temperature},
                 "temperature",
-                LLM_TEMPERATURE_MIN,
-                LLM_TEMPERATURE_MAX,
+                ServiceConstants.LLM_TEMPERATURE_MIN,
+                ServiceConstants.LLM_TEMPERATURE_MAX,
             )
 
         # 返回验证后的参数字典
@@ -318,7 +314,7 @@ class LLMService:
             error_msg, details = self.error_handler.log_and_return_error(e, "LLM响应生成失败")
             raise ServiceError(error_msg, "llm_service", "generate_response")
 
-    @retry_on_exception(max_retries=LLM_MAX_RETRIES, delay=1.0, exceptions=(ExternalServiceError,))
+    @retry_on_exception(max_retries=ServiceConstants.LLM_MAX_RETRIES, delay=1.0, exceptions=(ExternalServiceError,))
     async def _execute_generation_with_fallback(
         self,
         messages: List[Dict[str, str]],

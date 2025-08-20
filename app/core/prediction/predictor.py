@@ -18,15 +18,7 @@ import numpy as np
 import pandas as pd
 
 from app.config.settings import config  # 系统配置
-from app.constants import (  # 预测相关常量
-    DAY_FACTORS,
-    DEFAULT_PREDICTION_HOURS,
-    HOUR_FACTORS,
-    LOW_QPS_THRESHOLD,
-    MAX_PREDICTION_HOURS,
-    PREDICTION_VARIATION_FACTOR,
-    QPS_CONFIDENCE_THRESHOLDS,
-)
+from app.common.constants import ServiceConstants  # 预测相关常量
 
 # ==================== 内部组件导入 ====================
 from app.core.prediction.model_loader import ModelLoader  # 模型加载器
@@ -185,9 +177,9 @@ class PredictionService:
                 current_qps = 0
 
             # 步骤5：低流量处理 - QPS为0或极低时直接返回最小实例数
-            if current_qps == 0 or current_qps < LOW_QPS_THRESHOLD:
+            if current_qps == 0 or current_qps < ServiceConstants.LOW_QPS_THRESHOLD:
                 logger.info(
-                    f"当前QPS({current_qps})低于阈值{LOW_QPS_THRESHOLD}，返回最小实例数: {config.prediction.min_instances}"
+                    f"当前QPS({current_qps})低于阈值{ServiceConstants.LOW_QPS_THRESHOLD}，返回最小实例数: {config.prediction.min_instances}"
                 )
                 return {
                     "instances": config.prediction.min_instances,
@@ -757,7 +749,7 @@ class PredictionService:
         - 休闲时间（湍在因子中等）
         """
         # 从常量配置中获取时间因子，如果找不到则使用默认值
-        return HOUR_FACTORS.get(hour, 0.5)  # 默认为0.5，表示中等流量水平
+        return ServiceConstants.HOUR_FACTORS.get(hour, 0.5)  # 默认为0.5，表示中等流量水平
 
     def _get_day_factor(self, day_of_week: int) -> float:
         """
@@ -783,7 +775,7 @@ class PredictionService:
         - 特殊日期（可配置不同因子）
         """
         # 从常量配置中获取星期因子，如果找不到则使用默认值
-        return DAY_FACTORS.get(day_of_week, 1.0)  # 默认为1.0，表示正常流量水平
+        return ServiceConstants.DAY_FACTORS.get(day_of_week, 1.0)  # 默认为1.0，表示正常流量水平
 
     def is_healthy(self) -> bool:
         """

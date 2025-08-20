@@ -13,7 +13,7 @@ import logging
 from typing import Dict, Any
 
 from .base import BaseService, HealthCheckMixin
-from ..api.routes.health_manager import health_manager
+from .health_manager import health_manager
 
 
 logger = logging.getLogger("aiops.services.health")

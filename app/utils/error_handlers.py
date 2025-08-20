@@ -17,14 +17,7 @@ from datetime import datetime
 from functools import wraps
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
 
-from app.constants import (
-    ERROR_MESSAGES,
-    HTTP_STATUS_BAD_REQUEST,
-    HTTP_STATUS_INTERNAL_ERROR,
-    HTTP_STATUS_NOT_FOUND,
-    HTTP_STATUS_UNAUTHORIZED,
-    SUCCESS_MESSAGES,
-)
+from app.common.constants import HttpStatusCodes, Messages
 
 
 class AICloudOpsError(Exception):
@@ -183,11 +176,11 @@ class ErrorHandler:
         message, details = self.log_and_return_error(error, f"Validation error: {context}", False)
 
         return {
-            "code": HTTP_STATUS_BAD_REQUEST,
-            "message": ERROR_MESSAGES.get("invalid_input", message),
+            "code": HttpStatusCodes.BAD_REQUEST,
+            "message": Messages.ERROR_MESSAGES.get("invalid_input", message),
             "data": {},
             "error_details": details,
-        }, HTTP_STATUS_BAD_REQUEST
+        }, HttpStatusCodes.BAD_REQUEST
 
     def handle_service_error(
         self, error: Exception, context: str = ""
@@ -205,11 +198,11 @@ class ErrorHandler:
         message, details = self.log_and_return_error(error, f"Service error: {context}")
 
         return {
-            "code": HTTP_STATUS_INTERNAL_ERROR,
-            "message": ERROR_MESSAGES.get("internal_error", message),
+            "code": HttpStatusCodes.INTERNAL_SERVER_ERROR,
+            "message": Messages.ERROR_MESSAGES.get("internal_error", message),
             "data": {},
             "error_details": details,
-        }, HTTP_STATUS_INTERNAL_ERROR
+        }, HttpStatusCodes.INTERNAL_SERVER_ERROR
 
     def handle_not_found_error(
         self, resource: str, identifier: str = ""
@@ -231,15 +224,15 @@ class ErrorHandler:
         self.logger.warning(message)
 
         return {
-            "code": HTTP_STATUS_NOT_FOUND,
-            "message": ERROR_MESSAGES.get("not_found", message),
+            "code": HttpStatusCodes.NOT_FOUND,
+            "message": Messages.ERROR_MESSAGES.get("not_found", message),
             "data": {},
             "error_details": {
                 "resource": resource,
                 "identifier": identifier,
                 "timestamp": datetime.now().isoformat(),
             },
-        }, HTTP_STATUS_NOT_FOUND
+        }, HttpStatusCodes.NOT_FOUND
 
 
 def error_handler(

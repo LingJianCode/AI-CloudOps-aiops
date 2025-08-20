@@ -8,8 +8,36 @@ set -e
 SCRIPT_DIR=$(cd $(dirname $0) && pwd)
 ROOT_DIR=$(cd $SCRIPT_DIR/.. && pwd)
 
-# 导入配置读取工具
-source "$SCRIPT_DIR/config_reader.sh"
+# 配置读取函数
+read_config() {
+    # 设置默认配置值
+    APP_HOST="${APP_HOST:-0.0.0.0}"
+    APP_PORT="${APP_PORT:-8080}"
+    
+    # 从Python配置中读取值（如果可能的话）
+    if [ -f "config/config.yaml" ] && command -v python3 &> /dev/null; then
+        # 尝试从YAML配置读取
+        APP_PORT=$(python3 -c "
+import yaml
+try:
+    with open('config/config.yaml', 'r') as f:
+        config = yaml.safe_load(f)
+    print(config.get('app', {}).get('port', 8080))
+except:
+    print(8080)
+" 2>/dev/null || echo "8080")
+        
+        APP_HOST=$(python3 -c "
+import yaml
+try:
+    with open('config/config.yaml', 'r') as f:
+        config = yaml.safe_load(f)
+    print(config.get('app', {}).get('host', '0.0.0.0'))
+except:
+    print('0.0.0.0')
+" 2>/dev/null || echo "0.0.0.0")
+    fi
+}
 
 # 配置
 APP_NAME="AIOps Platform"
