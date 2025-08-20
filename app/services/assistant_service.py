@@ -66,53 +66,34 @@ class OptimizedAssistantService(BaseService):
     async def get_answer(
         self,
         question: str,
+        mode: int = 1,
         session_id: Optional[str] = None,
         max_context_docs: int = ServiceConstants.ASSISTANT_DEFAULT_CONTEXT_DOCS
     ) -> Dict[str, Any]:
         """
         获取智能回答
         
+        Args:
+            question: 用户问题
+            mode: 助手模式，1=RAG模式，2=MCP模式
+            session_id: 会话ID
+            max_context_docs: 最大上下文文档数（仅RAG模式使用）
+        
         优化点：
         1. 并行预热缓存和向量索引
         2. 智能超时管理
         3. 性能监控
+        4. 模式隔离处理
         """
         # 参数验证
         self._validate_question(question)
+        self._validate_mode(mode)
         
-        # 确保服务就绪
-        await self._ensure_ready()
-        
-        # 记录性能
-        with self._performance_monitor.measure("get_answer"):
-            try:
-                # 设置智能超时
-                timeout = self._calculate_timeout(question)
-                
-                # 调用优化的助手
-                result = await asyncio.wait_for(
-                    self._assistant.get_answer(
-                        question=question,
-                        session_id=session_id
-                    ),
-                    timeout=timeout
-                )
-                
-                # 记录成功指标
-                self._performance_monitor.record_success()
-                
-                # 增强结果
-                return self._enhance_result(result, question, session_id)
-                
-            except asyncio.TimeoutError:
-                logger.error(f"请求超时: {timeout}秒")
-                # 使用备用实现处理超时情况
-                return await self._use_fallback_response(question, session_id, "超时")
-            except Exception as e:
-                self._performance_monitor.record_failure()
-                logger.error(f"获取答案失败: {str(e)}")
-                # 使用备用实现处理错误情况
-                return await self._use_fallback_response(question, session_id, str(e))
+        # 根据模式选择处理方式
+        if mode == 2:  # MCP模式
+            return await self._handle_mcp_mode(question, session_id)
+        else:  # RAG模式 (mode == 1 或其他值默认为RAG)
+            return await self._handle_rag_mode(question, session_id, max_context_docs)
     
     async def _use_fallback_response(
         self, question: str, session_id: Optional[str], error_reason: str
@@ -401,6 +382,141 @@ class OptimizedAssistantService(BaseService):
             }
         
         return enhanced
+    
+    async def _handle_rag_mode(self, question: str, session_id: Optional[str], max_context_docs: int) -> Dict[str, Any]:
+        """处理RAG模式请求"""
+        # 确保服务就绪
+        await self._ensure_ready()
+        
+        # 记录性能
+        with self._performance_monitor.measure("get_answer_rag"):
+            try:
+                # 设置智能超时
+                timeout = self._calculate_timeout(question)
+                
+                # 调用优化的助手
+                result = await asyncio.wait_for(
+                    self._assistant.get_answer(
+                        question=question,
+                        session_id=session_id
+                    ),
+                    timeout=timeout
+                )
+                
+                # 记录成功指标
+                self._performance_monitor.record_success()
+                
+                # 增强结果
+                enhanced_result = self._enhance_result(result, question, session_id)
+                enhanced_result["mode"] = "rag"  # 标记模式
+                return enhanced_result
+                
+            except asyncio.TimeoutError:
+                logger.error(f"RAG请求超时: {timeout}秒")
+                return await self._use_fallback_response(question, session_id, "超时")
+            except Exception as e:
+                self._performance_monitor.record_failure()
+                logger.error(f"RAG获取答案失败: {str(e)}")
+                return await self._use_fallback_response(question, session_id, str(e))
+    
+    async def _handle_mcp_mode(self, question: str, session_id: Optional[str]) -> Dict[str, Any]:
+        """处理MCP模式请求"""
+        try:
+            # 懒加载MCP服务
+            mcp_service = await self._get_mcp_service()
+            
+            # 调用MCP服务处理
+            result = await mcp_service.get_answer(
+                question=question,
+                session_id=session_id
+            )
+            
+            # 记录成功指标
+            self._performance_monitor.record_success()
+            
+            return result
+            
+        except Exception as e:
+            self._performance_monitor.record_failure()
+            logger.error(f"MCP获取答案失败: {str(e)}")
+            return await self._use_mcp_fallback_response(question, session_id, str(e))
+    
+    async def _get_mcp_service(self):
+        """懒加载MCP服务"""
+        if not hasattr(self, '_mcp_service') or self._mcp_service is None:
+            from .mcp_service import MCPService
+            self._mcp_service = MCPService()
+            await self._mcp_service.initialize()
+        return self._mcp_service
+    
+    async def _use_mcp_fallback_response(self, question: str, session_id: Optional[str], error_reason: str) -> Dict[str, Any]:
+        """MCP模式的备用响应"""
+        logger.warning(f"使用MCP备用实现处理请求，原因: {error_reason}")
+        
+        # 简单的关键词匹配
+        question_lower = question.lower()
+        
+        if any(keyword in question_lower for keyword in ["时间", "几点", "现在", "当前时间"]):
+            from datetime import datetime
+            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            fallback_answer = f"当前时间是: {current_time}"
+        else:
+            fallback_answer = "抱歉，MCP服务当前不可用，请稍后重试或切换到RAG模式。"
+        
+        return {
+            "answer": fallback_answer,
+            "confidence_score": 0.3,
+            "source_documents": [],
+            "cache_hit": False,
+            "processing_time": 0.1,
+            "session_id": session_id,
+            "success": True,
+            "fallback_used": True,
+            "fallback_reason": error_reason,
+            "mode": "mcp",
+            "timestamp": datetime.now().isoformat()
+        }
+    
+    def _validate_mode(self, mode: int) -> None:
+        """验证模式参数"""
+        if not isinstance(mode, int) or mode not in [1, 2]:
+            raise ValidationError("mode", "模式参数必须是1(RAG)或2(MCP)")
+    
+    async def get_service_health_info_with_mode(self) -> Dict[str, Any]:
+        """获取包含两种模式的详细健康信息"""
+        try:
+            # 获取RAG健康信息
+            rag_health = await self.get_service_health_info()
+            
+            # 获取MCP健康信息
+            mcp_health = {"status": "unavailable"}
+            try:
+                mcp_service = await self._get_mcp_service()
+                mcp_health = await mcp_service.get_service_health_info()
+            except Exception as e:
+                logger.debug(f"获取MCP健康信息失败: {e}")
+                mcp_health = {"status": "unavailable", "error": str(e)}
+            
+            return {
+                "service": "assistant_service_unified",
+                "modes": {
+                    "rag": rag_health,
+                    "mcp": mcp_health
+                },
+                "supported_modes": [
+                    {"mode": 1, "name": "RAG", "description": "基于知识库的检索增强生成"},
+                    {"mode": 2, "name": "MCP", "description": "基于工具调用的模型上下文协议"}
+                ],
+                "timestamp": datetime.now().isoformat()
+            }
+            
+        except Exception as e:
+            return {
+                "service": "assistant_service_unified",
+                "status": "unhealthy",
+                "error": str(e),
+                "timestamp": datetime.now().isoformat()
+            }
 
 
 class PerformanceMonitor:

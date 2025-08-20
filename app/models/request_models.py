@@ -115,6 +115,7 @@ class AssistantRequest(BaseModel):
 
     Attributes:
         question: 用户提问内容
+        mode: 助手模式，1为RAG模式，2为MCP模式
         chat_history: 历史对话记录
         use_web_search: 是否使用网络搜索增强回答
         max_context_docs: 最大上下文文档数量
@@ -122,6 +123,7 @@ class AssistantRequest(BaseModel):
     """
 
     question: str = Field(..., min_length=1, description="用户提问")
+    mode: int = Field(default=1, description="助手模式：1=RAG模式，2=MCP模式", ge=1, le=2)
     chat_history: Optional[List[Dict[str, str]]] = Field(default=None, description="对话历史记录")
     use_web_search: bool = Field(default=False, description="是否使用网络搜索增强回答")
     max_context_docs: int = Field(default=4, ge=1, le=10, description="最大上下文文档数量")

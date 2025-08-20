@@ -398,6 +398,32 @@ class RAGConfig:
 
 
 @dataclass
+class MCPConfig:
+    """MCP配置"""
+    
+    server_url: str = field(
+        default_factory=lambda: get_env_or_config(
+            "MCP_SERVER_URL", "mcp.server_url", "http://localhost:9000"
+        )
+    )
+    timeout: int = field(
+        default_factory=lambda: get_env_or_config(
+            "MCP_TIMEOUT", "mcp.timeout", 30, int
+        )
+    )
+    max_retries: int = field(
+        default_factory=lambda: get_env_or_config(
+            "MCP_MAX_RETRIES", "mcp.max_retries", 3, int
+        )
+    )
+    health_check_interval: int = field(
+        default_factory=lambda: get_env_or_config(
+            "MCP_HEALTH_CHECK_INTERVAL", "mcp.health_check_interval", 30, int
+        )
+    )
+
+
+@dataclass
 class AppConfig:
     """应用程序主配置类"""
 
@@ -419,6 +445,7 @@ class AppConfig:
     tavily: TavilyConfig = field(default_factory=TavilyConfig)
     redis: RedisConfig = field(default_factory=RedisConfig)
     rag: RAGConfig = field(default_factory=RAGConfig)
+    mcp: MCPConfig = field(default_factory=MCPConfig)
 
 
 config = AppConfig()

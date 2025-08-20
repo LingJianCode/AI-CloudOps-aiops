@@ -27,6 +27,7 @@ assistant_service = OptimizedAssistantService()
 
 class AssistantQueryRequest(BaseModel):
     question: str = Field(..., description="用户问题", min_length=1)
+    mode: int = Field(default=1, description="助手模式：1=RAG模式，2=MCP模式", ge=1, le=2)
     session_id: Optional[str] = Field(None, description="会话ID")
     max_context_docs: int = Field(ServiceConstants.ASSISTANT_DEFAULT_CONTEXT_DOCS, description="最大上下文文档数", ge=1, le=ServiceConstants.ASSISTANT_MAX_CONTEXT_DOCS)
 
@@ -42,6 +43,7 @@ async def assistant_query(request: AssistantQueryRequest) -> Dict[str, Any]:
 
     answer_result = await assistant_service.get_answer(
         question=request.question,
+        mode=request.mode,
         session_id=request.session_id,
         max_context_docs=request.max_context_docs
     )
@@ -83,7 +85,8 @@ async def refresh_knowledge_base() -> Dict[str, Any]:
 async def assistant_health() -> Dict[str, Any]:
     await assistant_service.initialize()
     
-    health_status = await assistant_service.get_service_health_info()
+    # 使用新的包含两种模式的健康检查
+    health_status = await assistant_service.get_service_health_info_with_mode()
 
     return ResponseWrapper.success(
         data=health_status,
@@ -110,29 +113,39 @@ async def assistant_info() -> Dict[str, Any]:
     info = {
         "service": "企业级智能助手",
         "service_type": "enterprise_assistant",
-        "workflow_engine": "langgraph",
-        "version": AppConstants.APP_VERSION,
-        "description": "基于LangGraph的企业级智能运维助手，提供高可用、高性能的问答服务",
-        "capabilities": [
-            "智能意图识别",
-            "知识库问答",
-            "故障排查指导",
-            "操作步骤指导",
-            "上下文对话",
-            "文档检索",
-            "智能推荐",
-            "质量评估",
-            "自动重试"
-        ],
-        "enterprise_features": [
-            "LangGraph工作流引擎",
-            "多级缓存机制",
-            "智能质量评估",
-            "自动错误恢复",
-            "性能监控",
-            "并行处理",
-            "意图路由"
-        ],
+                    "workflow_engine": "langgraph + mcp",
+            "version": AppConstants.APP_VERSION,
+            "description": "企业级智能运维助手，支持RAG和MCP双模式，提供高可用、高性能的问答服务",
+            "supported_modes": [
+                {"mode": 1, "name": "RAG", "description": "基于知识库的检索增强生成"},
+                {"mode": 2, "name": "MCP", "description": "基于工具调用的模型上下文协议"}
+            ],
+            "capabilities": [
+                "智能意图识别",
+                "知识库问答", 
+                "工具调用",
+                "故障排查指导",
+                "操作步骤指导",
+                "上下文对话",
+                "文档检索",
+                "智能推荐",
+                "质量评估",
+                "自动重试",
+                "Kubernetes操作",
+                "系统信息查询"
+            ],
+                    "enterprise_features": [
+                "双模式架构(RAG+MCP)",
+                "LangGraph工作流引擎", 
+                "MCP工具调用协议",
+                "多级缓存机制",
+                "智能质量评估",
+                "自动错误恢复",
+                "性能监控",
+                "并行处理",
+                "意图路由",
+                "模式隔离"
+            ],
         "endpoints": {
             "query": ApiEndpoints.ASSISTANT_QUERY,
             "session": ApiEndpoints.ASSISTANT_SESSION,
@@ -154,8 +167,15 @@ async def assistant_info() -> Dict[str, Any]:
         ],
         "model_info": {
             "provider": "OpenAI/Ollama",
-            "architecture": "LangGraph + LLM",
-            "capabilities": ["text_generation", "conversation", "reasoning", "workflow_management"]
+            "architecture": "LangGraph + LLM + MCP",
+            "capabilities": [
+                "text_generation", 
+                "conversation", 
+                "reasoning", 
+                "workflow_management",
+                "tool_calling",
+                "kubernetes_operations"
+            ]
         },
         "constraints": {
             "max_question_length": 1000,
