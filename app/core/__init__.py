@@ -10,6 +10,6 @@ Description: 核心业务逻辑模块初始化文件，提供主要业务组件�
 """
 
 from .prediction.predictor import PredictionService
-from .rca.analyzer import RCAAnalyzer
+from .rca import RCAEngine
 
-__all__ = ["RCAAnalyzer", "PredictionService"]
+__all__ = ["RCAEngine", "PredictionService"]

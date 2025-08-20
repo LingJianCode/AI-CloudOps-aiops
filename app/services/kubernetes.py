@@ -312,6 +312,10 @@ class KubernetesService:
             logger.error(f"Kubernetes健康检查失败: {str(e)}")
             self.initialized = False
             return False
+    
+    async def health_check(self) -> bool:
+        """异步健康检查方法 - 为RCA模块提供兼容接口"""
+        return self.is_healthy()
 
     async def get_deployment_status(
         self, name: str, namespace: str = None
@@ -343,4 +347,106 @@ class KubernetesService:
 
         except Exception as e:
             logger.error(f"获取Deployment状态失败: {str(e)}")
+            return None
+
+    async def get_pod(self, namespace: str, pod_name: str) -> Optional[Dict]:
+        """
+        获取单个Pod的详细信息
+        
+        Args:
+            namespace: Kubernetes命名空间
+            pod_name: Pod名称
+            
+        Returns:
+            Optional[Dict]: Pod信息字典，如果不存在则返回None
+        """
+        if not self._ensure_initialized():
+            logger.warning("Kubernetes未初始化，无法获取Pod信息")
+            return None
+            
+        try:
+            pod = self.core_v1.read_namespaced_pod(
+                name=pod_name,
+                namespace=namespace
+            )
+            
+            pod_dict = pod.to_dict()
+            # 清理不必要的字段
+            if "metadata" in pod_dict:
+                metadata = pod_dict["metadata"]
+                for key in ["managed_fields", "resource_version", "uid"]:
+                    metadata.pop(key, None)
+                    
+            logger.debug(f"成功获取Pod {pod_name} 信息")
+            return pod_dict
+            
+        except ApiException as e:
+            if e.status == 404:
+                logger.warning(f"Pod {pod_name} 不存在于命名空间 {namespace}")
+            else:
+                logger.error(f"获取Pod {pod_name} 失败: {str(e)}")
+            return None
+        except Exception as e:
+            logger.error(f"获取Pod {pod_name} 异常: {str(e)}")
+            return None
+
+    async def get_pod_logs(
+        self, 
+        namespace: str, 
+        pod_name: str, 
+        container_name: str = None,
+        since_time: datetime = None,
+        tail_lines: int = None,
+        follow: bool = False
+    ) -> Optional[str]:
+        """
+        获取Pod容器的日志
+        
+        Args:
+            namespace: Kubernetes命名空间
+            pod_name: Pod名称
+            container_name: 容器名称，如果不指定则获取第一个容器的日志
+            since_time: 开始时间，获取此时间之后的日志
+            tail_lines: 获取最后N行日志
+            follow: 是否持续跟踪日志
+            
+        Returns:
+            Optional[str]: 日志内容，如果获取失败则返回None
+        """
+        if not self._ensure_initialized():
+            logger.warning("Kubernetes未初始化，无法获取Pod日志")
+            return None
+            
+        try:
+            # 构建日志查询参数
+            kwargs = {
+                "name": pod_name,
+                "namespace": namespace,
+                "follow": follow,
+                "timestamps": True,
+            }
+            
+            if container_name:
+                kwargs["container"] = container_name
+                
+            if since_time:
+                kwargs["since_seconds"] = int((datetime.now() - since_time).total_seconds())
+                
+            if tail_lines:
+                kwargs["tail_lines"] = tail_lines
+                
+            # 获取日志
+            logs = self.core_v1.read_namespaced_pod_log(**kwargs)
+            
+            logger.debug(f"成功获取Pod {pod_name} 容器 {container_name or 'default'} 的日志")
+            return logs
+            
+        except ApiException as e:
+            if e.status == 404:
+                logger.warning(f"Pod {pod_name} 或容器 {container_name} 不存在")
+            else:
+                logger.error(f"获取Pod {pod_name} 日志失败: {str(e)}")
+            return None
+        except Exception as e:
+            logger.error(f"获取Pod {pod_name} 日志异常: {str(e)}")
             return None

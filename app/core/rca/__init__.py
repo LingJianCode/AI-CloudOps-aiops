@@ -6,11 +6,17 @@ AI-CloudOps-aiops
 Author: Bamboo
 Email: bamboocloudops@gmail.com
 License: Apache 2.0
-Description: 根因分析模块初始化文件，提供智能故障诊断和根因分析功能
+Description: RCA根因分析模块初始化
 """
 
-from .analyzer import RCAAnalyzer
-from .correlator import CorrelationAnalyzer
-from .detector import AnomalyDetector
+from .rca_engine import RCAEngine
+from .correlation_analyzer import CorrelationAnalyzer
+from .collectors import MetricsCollector, EventsCollector, LogsCollector
 
-__all__ = ["RCAAnalyzer", "AnomalyDetector", "CorrelationAnalyzer"]
+__all__ = [
+    "RCAEngine",
+    "CorrelationAnalyzer", 
+    "MetricsCollector",
+    "EventsCollector",
+    "LogsCollector",
+]

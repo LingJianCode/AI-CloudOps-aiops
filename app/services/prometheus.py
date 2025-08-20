@@ -76,10 +76,10 @@ class PrometheusService:
             if all_series:
                 # 合并所有时间序列
                 combined_df = pd.concat(all_series, ignore_index=False)
-                # 重采样到指定频率
-                resampled = combined_df.resample("1T").mean()
-                # 前向填充缺失值
-                return resampled.fillna(method="ffill")
+                # 重采样到指定频率（使用min而不是已弃用的T）
+                resampled = combined_df.resample("1min").mean(numeric_only=True)
+                # 前向填充缺失值（使用新的方法）
+                return resampled.ffill()
 
             return None
 
@@ -149,6 +149,10 @@ class PrometheusService:
         except Exception as e:
             logger.error(f"Prometheus健康检查失败: {str(e)}")
             return False
+    
+    async def health_check(self) -> bool:
+        """异步健康检查方法 - 为RCA模块提供兼容接口"""
+        return self.is_healthy()
 
     async def get_metric_metadata(self, metric_name: str) -> Optional[Dict[str, Any]]:
         """获取指标元数据"""
