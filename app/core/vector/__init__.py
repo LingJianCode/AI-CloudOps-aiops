@@ -5,6 +5,6 @@
 向量存储模块
 """
 
-from .redis_vector_store import RedisVectorStore
+from .redis_vector_store import EnhancedRedisVectorStore
 
-__all__ = ["RedisVectorStore"]
+__all__ = ["EnhancedRedisVectorStore"]

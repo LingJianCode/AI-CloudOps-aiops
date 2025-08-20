@@ -90,20 +90,12 @@ class StartupService(BaseService):
             
             self.logger.info("正在初始化企业级智能助手...")
             
-            # 使用超时机制
-            agent = None
-            max_wait_time = getattr(ServiceConstants, 'DEFAULT_WARMUP_TIMEOUT', 60)
-            retry_count = 0
-            max_retries = max_wait_time // ServiceConstants.DEFAULT_RETRY_DELAY
-            
-            while agent is None and retry_count < max_retries:
-                try:
-                    agent = await get_enterprise_assistant()
-                    break
-                except Exception as e:
-                    self.logger.debug(f"企业级智能助手初始化中，第{retry_count + 1}次重试: {str(e)}")
-                    await asyncio.sleep(ServiceConstants.DEFAULT_RETRY_DELAY)
-                    retry_count += 1
+            # 单次初始化，避免重复调用
+            try:
+                agent = await get_enterprise_assistant()
+            except Exception as e:
+                self.logger.warning(f"企业级智能助手初始化失败: {str(e)}")
+                agent = None
             
             result["duration"] = time.time() - start_time
             
@@ -111,8 +103,8 @@ class StartupService(BaseService):
                 result["success"] = True
                 self.logger.info(f"智能助手预热完成，耗时: {result['duration']:.2f}秒")
             else:
-                result["error"] = f"预热超时({max_wait_time}秒)"
-                self.logger.warning(f"智能助手预热超时，将在首次使用时初始化")
+                result["error"] = "智能助手初始化失败"
+                self.logger.warning("智能助手预热失败，将在首次使用时初始化")
                 
         except Exception as e:
             result["duration"] = time.time() - start_time if 'start_time' in locals() else 0

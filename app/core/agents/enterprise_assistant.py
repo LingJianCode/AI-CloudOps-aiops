@@ -6,1043 +6,929 @@ AI-CloudOps-aiops
 Author: Bamboo
 Email: bamboocloudops@gmail.com
 License: Apache 2.0
-Description: 基于LangGraph的企业级智能助手 - 提供高可用、高性能、可扩展的AI问答服务
+Description: 基于LangGraph的企业级智能助手
 """
 
 import asyncio
 import hashlib
 import logging
 import time
+from dataclasses import dataclass, field
 from datetime import datetime
+from enum import Enum
 from typing import Any, Dict, List, Optional, TypedDict, Annotated, Literal
 
 from langchain_core.documents import Document
-from langchain_core.messages import HumanMessage, AIMessage
 from langgraph.graph import StateGraph, START, END
-from langgraph.graph.message import add_messages
 from langgraph.checkpoint.memory import MemorySaver
 from pydantic import BaseModel, Field
 
-from app.config.settings import config
-from app.constants import (
-    ASSISTANT_CACHE_TTL_SECONDS,
-    ASSISTANT_DEFAULT_MAX_CONTEXT_DOCS,
-    ASSISTANT_CACHE_DEFAULT_TTL,
-    ASSISTANT_RELEVANCE_CACHE_THRESHOLD
-)
-from app.services.llm import LLMService
-from app.core.cache.redis_cache_manager import RedisCacheManager
-from app.core.vector.redis_vector_store import OptimizedRedisVectorStore, RedisVectorStoreManager
-from .fallback_models import FallbackEmbeddings, sanitize_input, validate_session_id
-
-logger = logging.getLogger("aiops.enterprise_assistant")
+logger = logging.getLogger("aiops.rag_assistant")
 
 
-class AssistantState(TypedDict):
-    """企业级助手状态定义"""
-    # 输入信息
+class QueryType(Enum):
+    """查询类型枚举"""
+
+    FACTUAL = "factual"  # 事实性查询
+    TROUBLESHOOTING = "troubleshooting"  # 故障排查
+    TUTORIAL = "tutorial"  # 教程指导
+    CONCEPTUAL = "conceptual"  # 概念解释
+    GENERAL = "general"  # 通用查询
+
+
+@dataclass
+class RetrievalStrategy:
+    """检索策略配置"""
+
+    semantic_weight: float = 0.6
+    lexical_weight: float = 0.4
+    similarity_threshold: float = 0.5  # 提高阈值，过滤低质量结果
+    max_candidates: int = 20  # 候选文档数
+    final_top_k: int = 5  # 最终返回数
+    enable_rerank: bool = True  # 启用重排序
+    enable_query_expansion: bool = True  # 查询扩展
+
+
+class RAGState(TypedDict):
+    """优化的RAG工作流状态"""
+
+    # 输入
     question: str
     session_id: Optional[str]
-    max_context_docs: int
-    
-    # 处理过程
-    cleaned_question: str
-    intent_type: Optional[str]
-    context_docs: List[Dict[str, Any]]
-    chat_history: Annotated[List, add_messages]
-    
-    # 生成结果
+
+    # 处理阶段
+    query_type: QueryType
+    expanded_queries: List[str]  # 扩展查询
+    retrieved_docs: List[Document]
+    reranked_docs: List[Document]
+
+    # 输出
     answer: str
-    confidence_score: float
-    source_documents: List[Dict[str, Any]]
-    
+    confidence: float
+    sources: List[Dict[str, Any]]
+
     # 元数据
+    latency_breakdown: Dict[str, float]
     cache_hit: bool
-    processing_time: float
     error: Optional[str]
-    retry_count: int
-    
-    # 质量评估
-    quality_score: float
-    needs_regeneration: bool
-    
-    # 性能指标
-    retrieval_time: float
-    generation_time: float
-    total_time: float
 
 
-class QualityMetrics(BaseModel):
-    """质量评估指标"""
-    relevance_score: float = Field(default=0.0, ge=0.0, le=1.0)
-    coherence_score: float = Field(default=0.0, ge=0.0, le=1.0)
-    completeness_score: float = Field(default=0.0, ge=0.0, le=1.0)
-    confidence_score: float = Field(default=0.0, ge=0.0, le=1.0)
-    overall_score: float = Field(default=0.0, ge=0.0, le=1.0)
+# ============= 核心组件 =============
 
 
-class EnterpriseAssistant:
-    """企业级LangGraph智能助手"""
-    
+class QueryProcessor:
+    """查询处理器 - 负责查询分析、重写和扩展"""
+
     def __init__(self):
-        self.llm_service = None
-        self.vector_store = None
-        self.cache_manager = None
-        self.embeddings = None
-        self.graph = None
-        self.memory_saver = MemorySaver()
-        
-        # 性能配置
-        self.max_retries = 2
-        self.quality_threshold = 0.7
-        self.cache_threshold = ASSISTANT_RELEVANCE_CACHE_THRESHOLD
-        
-        # 状态管理
-        self._initialized = False
-        self._initialization_lock = asyncio.Lock()
-        
-        logger.info("企业级助手初始化开始")
-    
-    async def initialize(self) -> bool:
-        """初始化企业级助手"""
-        if self._initialized:
-            return True
-            
-        async with self._initialization_lock:
-            if self._initialized:  # 双重检查
-                return True
-                
-            try:
-                logger.info("开始初始化企业级助手组件...")
-                
-                # 初始化核心组件
-                await self._initialize_llm_service()
-                await self._initialize_cache_manager()
-                await self._initialize_vector_store()
-                
-                # 构建LangGraph工作流
-                self._build_graph()
-                
-                self._initialized = True
-                logger.info("企业级助手初始化完成")
-                return True
-                
-            except Exception as e:
-                logger.error(f"企业级助手初始化失败: {str(e)}")
-                return False
-    
-    async def _initialize_llm_service(self):
-        """初始化LLM服务"""
+        self.query_templates = {
+            QueryType.TROUBLESHOOTING: [
+                "{query} 故障原因",
+                "{query} 解决方案",
+                "{query} 排查步骤",
+            ],
+            QueryType.TUTORIAL: [
+                "{query} 操作步骤",
+                "{query} 配置方法",
+                "{query} 最佳实践",
+            ],
+            QueryType.CONCEPTUAL: ["{query} 概念", "{query} 原理", "{query} 定义"],
+        }
+
+    async def analyze_query(self, query: str) -> QueryType:
+        """分析查询类型"""
+        query_lower = query.lower()
+
+        # 基于关键词的快速分类
+        if any(
+            kw in query_lower
+            for kw in ["错误", "故障", "失败", "不能", "error", "fail"]
+        ):
+            return QueryType.TROUBLESHOOTING
+        elif any(
+            kw in query_lower for kw in ["如何", "怎么", "步骤", "教程", "how to"]
+        ):
+            return QueryType.TUTORIAL
+        elif any(kw in query_lower for kw in ["什么是", "概念", "原理", "what is"]):
+            return QueryType.CONCEPTUAL
+        elif any(kw in query_lower for kw in ["多少", "几个", "数量", "统计"]):
+            return QueryType.FACTUAL
+        else:
+            return QueryType.GENERAL
+
+    async def expand_query(self, query: str, query_type: QueryType) -> List[str]:
+        """查询扩展 - 生成多个相关查询"""
+        expanded = [query]  # 保留原始查询
+
+        # 根据查询类型添加扩展
+        templates = self.query_templates.get(query_type, [])
+        for template in templates[:2]:  # 限制扩展数量
+            expanded.append(template.format(query=query))
+
+        return expanded
+
+
+class DocumentRetriever:
+    """文档检索器 - 负责多路检索和融合"""
+
+    def __init__(self, vector_store, strategy: RetrievalStrategy):
+        self.vector_store = vector_store
+        self.strategy = strategy
+
+    async def retrieve(self, queries: List[str]) -> List[Document]:
+        """并行检索多个查询"""
+        tasks = []
+        for query in queries:
+            task = asyncio.create_task(self._retrieve_single(query))
+            tasks.append(task)
+
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # 合并和去重
+        all_docs = []
+        seen_contents = set()
+
+        for docs in results:
+            if isinstance(docs, Exception):
+                logger.warning(f"检索失败: {docs}")
+                continue
+
+            for doc in docs:
+                content_hash = hashlib.md5(doc.page_content.encode()).hexdigest()
+                if content_hash not in seen_contents:
+                    seen_contents.add(content_hash)
+                    all_docs.append(doc)
+
+        return all_docs[: self.strategy.max_candidates]
+
+    async def _retrieve_single(self, query: str) -> List[Document]:
+        """单个查询的检索"""
         try:
-            self.llm_service = LLMService()
-            logger.info("LLM服务初始化完成")
-        except Exception as e:
-            logger.error(f"LLM服务初始化失败: {str(e)}")
-            raise
-    
-    async def _initialize_cache_manager(self):
-        """初始化缓存管理器"""
-        try:
-            redis_config = {
-                "host": config.redis.host,
-                "port": config.redis.port,
-                "db": config.redis.db + 1,  # 使用不同的数据库
-                "password": config.redis.password,
-                "connection_timeout": config.redis.connection_timeout,
-                "socket_timeout": config.redis.socket_timeout,
-                "max_connections": config.redis.max_connections,
-                "decode_responses": config.redis.decode_responses,
-            }
-            
-            self.cache_manager = RedisCacheManager(
-                redis_config=redis_config,
-                cache_prefix="enterprise_assistant:",
-                default_ttl=ASSISTANT_CACHE_DEFAULT_TTL,
-                enable_compression=True,
-            )
-            logger.info("缓存管理器初始化完成")
-        except Exception as e:
-            logger.warning(f"缓存管理器初始化失败，将使用内存缓存: {str(e)}")
-            self.cache_manager = None
-    
-    async def _initialize_vector_store(self):
-        """初始化向量存储"""
-        try:
-            # 初始化嵌入模型
-            await self._initialize_embeddings()
-            
-            # 初始化Redis向量存储
-            redis_config = {
-                "host": config.redis.host,
-                "port": config.redis.port,
-                "db": config.redis.db,
-                "password": config.redis.password,
-                "connection_timeout": config.redis.connection_timeout,
-                "socket_timeout": config.redis.socket_timeout,
-                "max_connections": config.redis.max_connections,
-                "decode_responses": config.redis.decode_responses,
-            }
-            
-            # 获取嵌入维度
-            test_embedding = await asyncio.to_thread(
-                self.embeddings.embed_query, "测试"
-            )
-            vector_dim = len(test_embedding)
-            
-            self.vector_store = OptimizedRedisVectorStore(
-                redis_config=redis_config,
-                collection_name="enterprise_knowledge_base",
-                embedding_model=self.embeddings,
-                vector_dim=vector_dim,
-                local_storage_path="/tmp/enterprise_vector_db",
-                use_faiss=True,
-                faiss_index_type="Flat"
-            )
-            
-            logger.info("向量存储初始化完成")
-        except Exception as e:
-            logger.error(f"向量存储初始化失败: {str(e)}")
-            raise
-    
-    async def _initialize_embeddings(self):
-        """初始化嵌入模型"""
-        try:
-            provider = config.llm.provider.lower()
-            
-            if provider == "openai":
-                from langchain_openai import OpenAIEmbeddings
-                self.embeddings = OpenAIEmbeddings(
-                    api_key=config.llm.api_key,
-                    base_url=config.llm.base_url,
-                    model=getattr(config.rag, "openai_embedding_model", "text-embedding-ada-002")
-                )
-            elif provider == "ollama":
-                from langchain_ollama import OllamaEmbeddings
-                self.embeddings = OllamaEmbeddings(
-                    base_url=config.llm.ollama_base_url,
-                    model=getattr(config.rag, "ollama_embedding_model", "nomic-embed-text")
-                )
-            else:
-                self.embeddings = FallbackEmbeddings()
-                
-            logger.info(f"嵌入模型初始化完成: {provider}")
-        except Exception as e:
-            logger.error(f"嵌入模型初始化失败: {str(e)}")
-            self.embeddings = FallbackEmbeddings()
-    
-    def _build_graph(self):
-        """构建简化的LangGraph工作流 - 避免复杂循环"""
-        # 创建状态图
-        workflow = StateGraph(AssistantState)
-        
-        # 添加节点
-        workflow.add_node("validate_input", self._validate_input_node)
-        workflow.add_node("check_cache", self._check_cache_node)
-        workflow.add_node("recognize_intent", self._recognize_intent_node)
-        workflow.add_node("retrieve_knowledge", self._retrieve_knowledge_node)
-        workflow.add_node("enhance_context", self._enhance_context_node)
-        workflow.add_node("generate_answer", self._generate_answer_node)
-        workflow.add_node("post_process", self._post_process_node)
-        workflow.add_node("store_cache", self._store_cache_node)
-        workflow.add_node("handle_error", self._handle_error_node)
-        
-        # 设置入口点
-        workflow.set_entry_point("validate_input")
-        
-        # 简化的线性边 - 减少复杂的条件判断
-        workflow.add_edge("validate_input", "check_cache")
-        
-        # 缓存检查的条件边
-        workflow.add_conditional_edges(
-            "check_cache",
-            self._should_use_cache,
-            {
-                "cache_hit": END,
-                "cache_miss": "recognize_intent",
-                "error": "handle_error"
-            }
-        )
-        
-        # 简化意图识别 - 直接进入知识检索
-        workflow.add_edge("recognize_intent", "retrieve_knowledge")
-        workflow.add_edge("retrieve_knowledge", "enhance_context")
-        workflow.add_edge("enhance_context", "generate_answer")
-        
-        # 简化答案生成后的流程 - 直接进入后处理，避免复杂的重试逻辑
-        workflow.add_conditional_edges(
-            "generate_answer",
-            self._route_after_generation,
-            {
-                "success": "post_process",
-                "error": "handle_error"
-            }
-        )
-        
-        workflow.add_edge("post_process", "store_cache")
-        workflow.add_edge("store_cache", END)
-        workflow.add_edge("handle_error", END)
-        
-        # 编译图
-        self.graph = workflow.compile(checkpointer=self.memory_saver)
-        
-        logger.info("简化LangGraph工作流构建完成")
-    
-    # ========== 工作流节点实现 ==========
-    
-    async def _validate_input_node(self, state: AssistantState) -> Dict[str, Any]:
-        """输入验证节点"""
-        try:
-            question = state.get("question", "")
-            session_id = state.get("session_id")
-            max_context_docs = state.get("max_context_docs", ASSISTANT_DEFAULT_MAX_CONTEXT_DOCS)
-            
-            # 验证问题
-            if not question or not isinstance(question, str):
-                return {"error": "问题不能为空"}
-            
-            if len(question.strip()) == 0:
-                return {"error": "问题内容不能为空"}
-            
-            if len(question) > 1000:
-                return {"error": "问题长度不能超过1000字符"}
-            
-            # 验证会话ID
-            if session_id and not validate_session_id(session_id):
-                return {"error": "无效的会话ID"}
-            
-            # 验证上下文文档数量
-            if not (1 <= max_context_docs <= 10):
-                return {"error": "上下文文档数量必须在1-10之间"}
-            
-            # 清理输入
-            cleaned_question = sanitize_input(question)
-            
-            return {
-                "cleaned_question": cleaned_question,
-                "retry_count": 0,
-                "processing_time": time.time()
-            }
-            
-        except Exception as e:
-            logger.error(f"输入验证失败: {str(e)}")
-            return {"error": f"输入验证失败: {str(e)}"}
-    
-    async def _check_cache_node(self, state: AssistantState) -> Dict[str, Any]:
-        """缓存检查节点"""
-        try:
-            if not self.cache_manager:
-                return {"cache_hit": False}
-            
-            cleaned_question = state.get("cleaned_question", "")
-            session_id = state.get("session_id")
-            
-            # 生成缓存键
-            cache_key = self._generate_cache_key(cleaned_question, session_id)
-            
-            # 检查缓存
-            cached_result = await asyncio.to_thread(
-                self.cache_manager.get, cache_key
-            )
-            
-            if cached_result:
-                logger.info(f"缓存命中: {cleaned_question[:50]}...")
-                return {
-                    "cache_hit": True,
-                    "answer": cached_result.get("answer", ""),
-                    "confidence_score": cached_result.get("confidence_score", 0.9),
-                    "source_documents": cached_result.get("source_documents", []),
-                    "total_time": time.time() - state.get("processing_time", time.time())
-                }
-            
-            return {"cache_hit": False}
-            
-        except Exception as e:
-            logger.error(f"缓存检查失败: {str(e)}")
-            return {"cache_hit": False, "error": f"缓存检查失败: {str(e)}"}
-    
-    async def _recognize_intent_node(self, state: AssistantState) -> Dict[str, Any]:
-        """意图识别节点"""
-        try:
-            cleaned_question = state.get("cleaned_question", "")
-            
-            # 简单的基于关键词的意图识别
-            intent_type = self._classify_intent(cleaned_question)
-            
-            logger.debug(f"识别意图: {intent_type} for question: {cleaned_question[:50]}...")
-            
-            return {"intent_type": intent_type}
-            
-        except Exception as e:
-            logger.error(f"意图识别失败: {str(e)}")
-            return {"intent_type": "general", "error": f"意图识别失败: {str(e)}"}
-    
-    async def _retrieve_knowledge_node(self, state: AssistantState) -> Dict[str, Any]:
-        """知识检索节点"""
-        try:
-            start_time = time.time()
-            cleaned_question = state.get("cleaned_question", "")
-            max_context_docs = state.get("max_context_docs", ASSISTANT_DEFAULT_MAX_CONTEXT_DOCS)
-            intent_type = state.get("intent_type", "general")
-            
             if not self.vector_store:
-                logger.warning("向量存储不可用")
-                return {
-                    "context_docs": [],
-                    "retrieval_time": time.time() - start_time
-                }
+                logger.warning("向量存储未初始化")
+                return []
             
-            # 根据意图调整检索策略
-            search_query = self._enhance_query_by_intent(cleaned_question, intent_type)
-            
-            # 执行向量搜索
-            results = await asyncio.to_thread(
-                self.vector_store.hybrid_similarity_search,
-                query=search_query,
-                k=max_context_docs * 2,  # 检索更多候选
-                similarity_threshold=0.1
+            # 使用SearchConfig配置检索参数
+            from app.core.vector.redis_vector_store import SearchConfig
+            search_config = SearchConfig(
+                semantic_weight=self.strategy.semantic_weight,
+                lexical_weight=self.strategy.lexical_weight,
+                similarity_threshold=self.strategy.similarity_threshold,
+                use_cache=True
             )
             
-            # 转换为标准格式
-            context_docs = []
-            for doc, score in results[:max_context_docs]:
-                context_docs.append({
-                    "page_content": doc.page_content,
-                    "metadata": doc.metadata,
-                    "score": float(score)
-                })
-            
-            retrieval_time = time.time() - start_time
-            
-            logger.debug(f"检索到 {len(context_docs)} 个相关文档，耗时 {retrieval_time:.3f}s")
-            
-            return {
-                "context_docs": context_docs,
-                "retrieval_time": retrieval_time
-            }
-            
+            # 调用similarity_search方法
+            results = await self.vector_store.similarity_search(
+                query=query,
+                k=self.strategy.max_candidates,
+                config=search_config
+            )
+            return [doc for doc, _ in results]
         except Exception as e:
-            logger.error(f"知识检索失败: {str(e)}")
-            return {
-                "context_docs": [],
-                "retrieval_time": time.time() - start_time,
-                "error": f"知识检索失败: {str(e)}"
-            }
-    
-    async def _enhance_context_node(self, state: AssistantState) -> Dict[str, Any]:
-        """上下文增强节点"""
+            logger.error(f"检索失败: {e}")
+            return []
+
+
+class DocumentReranker:
+    """文档重排序器 - 提高检索精度"""
+
+    def __init__(self, llm_service=None):
+        self.llm_service = llm_service
+
+    async def rerank(
+        self, query: str, docs: List[Document], top_k: int = 5
+    ) -> List[Document]:
+        """重排序文档"""
+        if not docs:
+            return []
+
+        if not self.llm_service:
+            # 简单的基于长度和关键词的重排序
+            return self._simple_rerank(query, docs, top_k)
+
+        # 使用LLM进行语义重排序
         try:
-            context_docs = state.get("context_docs", [])
-            session_id = state.get("session_id")
-            
-            # 构建上下文
-            enhanced_context = self._build_enhanced_context(context_docs)
-            
-            # 获取会话历史（如果需要）
-            chat_history = []
-            if session_id and self.cache_manager:
-                history_key = f"session_history:{session_id}"
-                cached_history = await asyncio.to_thread(
-                    self.cache_manager.get, history_key
-                )
-                if cached_history:
-                    chat_history = cached_history.get("messages", [])[-6:]  # 最近3轮对话
-            
-            return {
-                "chat_history": chat_history,
-                "enhanced_context": enhanced_context
-            }
-            
+            scored_docs = []
+            for doc in docs[:10]:  # 限制LLM处理数量
+                score = await self._calculate_relevance_score(query, doc)
+                scored_docs.append((doc, score))
+
+            scored_docs.sort(key=lambda x: x[1], reverse=True)
+            return [doc for doc, _ in scored_docs[:top_k]]
         except Exception as e:
-            logger.error(f"上下文增强失败: {str(e)}")
-            return {"error": f"上下文增强失败: {str(e)}"}
-    
-    async def _generate_answer_node(self, state: AssistantState) -> Dict[str, Any]:
-        """简化的答案生成节点 - 避免过于复杂的逻辑"""
+            logger.error(f"LLM重排序失败: {e}")
+            return self._simple_rerank(query, docs, top_k)
+
+    def _simple_rerank(
+        self, query: str, docs: List[Document], top_k: int
+    ) -> List[Document]:
+        """简单的基于关键词的重排序"""
+        query_terms = set(query.lower().split())
+
+        scored_docs = []
+        for doc in docs:
+            doc_terms = set(doc.page_content.lower().split())
+            overlap = len(query_terms & doc_terms)
+            score = overlap / max(len(query_terms), 1)
+            scored_docs.append((doc, score))
+
+        scored_docs.sort(key=lambda x: x[1], reverse=True)
+        return [doc for doc, _ in scored_docs[:top_k]]
+
+    async def _calculate_relevance_score(self, query: str, doc: Document) -> float:
+        """使用LLM计算相关性分数"""
+        prompt = f"""
+        Query: {query}
+        Document: {doc.page_content[:500]}
+        
+        Rate relevance from 0 to 1:
+        """
+
         try:
-            start_time = time.time()
-            
-            cleaned_question = state.get("cleaned_question", "")
-            context_docs = state.get("context_docs", [])
-            chat_history = state.get("chat_history", [])
-            intent_type = state.get("intent_type", "general")
-            
-            if not self.llm_service:
-                return {"error": "LLM服务不可用"}
-            
-            # 构建提示词
-            prompt = self._build_prompt(cleaned_question, context_docs, chat_history, intent_type)
-            
-            # 调用LLM生成答案
-            messages = [{"role": "user", "content": prompt}]
             response = await self.llm_service.generate_response(
-                messages=messages,
-                temperature=0.7,
-                max_tokens=2000
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0,
+                max_tokens=10,
             )
-            
-            answer = response if isinstance(response, str) else response.get("content", "抱歉，暂时无法生成回答")
-            
-            # 计算置信度
-            confidence_score = self._calculate_confidence(context_docs, answer)
-            
-            generation_time = time.time() - start_time
-            
-            logger.debug(f"答案生成完成，耗时 {generation_time:.3f}s，置信度 {confidence_score:.3f}")
-            
-            # 简化返回，直接包含最终结果
-            return {
-                "answer": answer,
-                "confidence_score": confidence_score,
-                "generation_time": generation_time,
-                "quality_score": confidence_score,  # 简化：直接使用置信度作为质量分数
-                "source_documents": [
-                    {
-                        "content": doc.get("page_content", "")[:200] + "...",
-                        "source": doc.get("metadata", {}).get("source", "unknown"),
-                        "score": doc.get("score", 0.0)
-                    } for doc in context_docs
-                ]
-            }
-            
-        except Exception as e:
-            logger.error(f"答案生成失败: {str(e)}")
-            return {
-                "answer": f"抱歉，答案生成时出现错误: {str(e)}",
-                "confidence_score": 0.0,
-                "generation_time": time.time() - start_time,
-                "error": f"答案生成失败: {str(e)}"
-            }
-    
-    async def _assess_quality_node(self, state: AssistantState) -> Dict[str, Any]:
-        """质量评估节点"""
-        try:
-            answer = state.get("answer", "")
-            context_docs = state.get("context_docs", [])
-            confidence_score = state.get("confidence_score", 0.0)
-            retry_count = state.get("retry_count", 0)
-            
-            # 评估答案质量
-            quality_metrics = self._evaluate_answer_quality(answer, context_docs, confidence_score)
-            
-            quality_score = quality_metrics.overall_score
-            
-            # 检查是否需要重新生成（质量不达标且未超过重试次数）
-            needs_regeneration = (
-                quality_score < self.quality_threshold and 
-                retry_count < self.max_retries
-            )
-            
-            # 如果需要重新生成，增加重试计数
-            updated_retry_count = retry_count + 1 if needs_regeneration else retry_count
-            
-            logger.debug(f"质量评估: {quality_score:.3f}, 重试次数: {retry_count}/{self.max_retries}, 需要重新生成: {needs_regeneration}")
-            
-            return {
-                "quality_score": quality_score,
-                "needs_regeneration": needs_regeneration,
-                "retry_count": updated_retry_count
-            }
-            
-        except Exception as e:
-            logger.error(f"质量评估失败: {str(e)}")
-            return {
-                "quality_score": 0.5,  # 默认中等质量
-                "needs_regeneration": False,
-                "error": f"质量评估失败: {str(e)}"
-            }
-    
-    async def _post_process_node(self, state: AssistantState) -> Dict[str, Any]:
-        """简化的后处理节点"""
-        try:
-            answer = state.get("answer", "")
-            
-            # 格式化答案
-            formatted_answer = self._format_answer(answer)
-            
-            # 计算总耗时
-            total_time = time.time() - state.get("processing_time", time.time())
-            
-            # 确保source_documents存在
-            source_documents = state.get("source_documents", [])
-            
-            return {
-                "answer": formatted_answer,
-                "source_documents": source_documents,
-                "total_time": total_time
-            }
-            
-        except Exception as e:
-            logger.error(f"后处理失败: {str(e)}")
-            return {"error": f"后处理失败: {str(e)}"}
-    
-    async def _store_cache_node(self, state: AssistantState) -> Dict[str, Any]:
-        """缓存存储节点"""
-        try:
-            if not self.cache_manager:
-                return {}
-            
-            cleaned_question = state.get("cleaned_question", "")
-            session_id = state.get("session_id")
-            answer = state.get("answer", "")
-            confidence_score = state.get("confidence_score", 0.0)
-            source_documents = state.get("source_documents", [])
-            
-            # 只缓存高质量答案
-            if confidence_score >= self.cache_threshold:
-                cache_key = self._generate_cache_key(cleaned_question, session_id)
-                cache_data = {
-                    "answer": answer,
-                    "confidence_score": confidence_score,
-                    "source_documents": source_documents,
-                    "cached_at": datetime.now().isoformat()
-                }
-                
-                await asyncio.to_thread(
-                    self.cache_manager.set,
-                    cache_key, 
-                    cache_data,
-                    ttl=ASSISTANT_CACHE_TTL_SECONDS
-                )
-                
-                logger.debug(f"答案已缓存: {cleaned_question[:50]}...")
-            
-            # 更新会话历史
-            if session_id:
-                await self._update_session_history(session_id, cleaned_question, answer)
-            
-            return {}
-            
-        except Exception as e:
-            logger.error(f"缓存存储失败: {str(e)}")
-            return {"error": f"缓存存储失败: {str(e)}"}
-    
-    async def _handle_error_node(self, state: AssistantState) -> Dict[str, Any]:
-        """错误处理节点"""
-        try:
-            error = state.get("error", "未知错误")
-            
-            logger.error(f"工作流错误: {error}")
-            
-            # 返回友好的错误响应
-            return {
-                "answer": f"抱歉，处理您的问题时遇到了问题：{error}",
-                "confidence_score": 0.0,
-                "source_documents": [],
-                "error": error,
-                "total_time": time.time() - state.get("processing_time", time.time())
-            }
-            
-        except Exception as e:
-            logger.error(f"错误处理失败: {str(e)}")
-            return {
-                "answer": "抱歉，系统遇到了未知错误",
-                "error": str(e)
-            }
-    
-    # ========== 条件判断函数 ==========
-    
-    def _should_use_cache(self, state: AssistantState) -> Literal["cache_hit", "cache_miss", "error"]:
-        """判断是否使用缓存"""
-        if state.get("error"):
-            return "error"
-        elif state.get("cache_hit"):
-            return "cache_hit"
-        else:
-            return "cache_miss"
-    
-    def _route_after_generation(self, state: AssistantState) -> Literal["success", "error"]:
-        """答案生成后的简单路由 - 避免复杂循环"""
-        if state.get("error"):
-            return "error"
-        else:
-            return "success"
-    
-    # ========== 辅助方法 ==========
-    
-    def _classify_intent(self, question: str) -> str:
-        """简单的意图分类"""
-        question_lower = question.lower()
-        
-        # 故障排查相关关键词
-        troubleshooting_keywords = [
-            "错误", "异常", "故障", "问题", "失败", "无法", "不能", 
-            "报错", "crash", "error", "exception", "fault", "fail"
-        ]
-        
-        # 操作指导相关关键词
-        operation_keywords = [
-            "如何", "怎么", "怎样", "怎么样", "步骤", "方法", "教程",
-            "how", "step", "guide", "tutorial", "instruction"
-        ]
-        
-        # Kubernetes/运维相关关键词
-        k8s_keywords = [
-            "kubernetes", "k8s", "pod", "deployment", "service", "namespace",
-            "docker", "容器", "集群", "节点", "监控", "日志"
-        ]
-        
-        if any(keyword in question_lower for keyword in troubleshooting_keywords):
-            return "troubleshooting"
-        elif any(keyword in question_lower for keyword in operation_keywords):
-            return "operation_guide"
-        elif any(keyword in question_lower for keyword in k8s_keywords):
-            return "knowledge_qa"
-        else:
-            return "general"
-    
-    def _enhance_query_by_intent(self, question: str, intent_type: str) -> str:
-        """根据意图增强查询"""
-        if intent_type == "troubleshooting":
-            return f"故障排查 问题解决 {question}"
-        elif intent_type == "operation_guide":
-            return f"操作指南 步骤教程 {question}"
-        elif intent_type == "knowledge_qa":
-            return f"知识问答 技术文档 {question}"
-        else:
-            return question
-    
-    def _build_enhanced_context(self, context_docs: List[Dict[str, Any]]) -> str:
-        """构建增强的上下文"""
-        if not context_docs:
-            return ""
-        
-        context_parts = []
-        for i, doc in enumerate(context_docs):
-            content = doc.get("page_content", "")
-            source = doc.get("metadata", {}).get("source", f"文档{i+1}")
-            score = doc.get("score", 0.0)
-            
-            context_parts.append(f"[文档{i+1} - {source} (相关度: {score:.2f})]\n{content}")
-        
-        return "\n\n".join(context_parts)
-    
-    def _build_prompt(self, question: str, context_docs: List[Dict[str, Any]], 
-                     chat_history: List, intent_type: str) -> str:
-        """构建提示词"""
-        context = self._build_enhanced_context(context_docs)
-        
-        # 根据意图定制提示词
-        if intent_type == "troubleshooting":
-            prompt_prefix = "你是一个专业的运维故障排查专家。请基于提供的文档内容，帮助用户分析和解决问题。"
-        elif intent_type == "operation_guide":
-            prompt_prefix = "你是一个经验丰富的运维工程师。请基于提供的文档内容，为用户提供详细的操作指导。"
-        elif intent_type == "knowledge_qa":
-            prompt_prefix = "你是一个知识渊博的技术专家。请基于提供的文档内容，准确回答用户的技术问题。"
-        else:
-            prompt_prefix = "你是一个智能助手。请基于提供的文档内容，帮助用户解答问题。"
-        
-        # 构建历史对话上下文
-        history_context = ""
-        if chat_history:
-            history_parts = []
-            for msg in chat_history[-4:]:  # 最近2轮对话
-                if isinstance(msg, dict):
-                    role = msg.get("role", "")
-                    content = msg.get("content", "")
-                    history_parts.append(f"{role}: {content}")
-            if history_parts:
-                history_context = f"\n\n历史对话:\n{chr(10).join(history_parts)}"
-        
-        prompt = f"""{prompt_prefix}
 
-{history_context}
+            # 解析分数
+            import re
 
-参考文档:
+            match = re.search(r"(\d+\.?\d*)", response)
+            if match:
+                return min(float(match.group(1)), 1.0)
+        except:
+            pass
+
+        return 0.5  # 默认分数
+
+
+class AnswerGenerator:
+    """答案生成器 - 负责生成高质量答案"""
+
+    def __init__(self, llm_service):
+        self.llm_service = llm_service
+        self.prompt_templates = {
+            QueryType.TROUBLESHOOTING: """你是运维专家。基于文档解决问题。
+
+相关文档:
 {context}
 
-用户问题: {question}
+问题: {question}
 
-请基于以上文档内容回答用户问题。要求:
-1. 回答要准确、专业、有条理
-2. 如果文档中没有相关信息，请诚实说明
-3. 适当引用文档来源以增加可信度
-4. 保持回答的简洁性和实用性
+请提供:
+1. 问题原因分析
+2. 具体解决步骤
+3. 预防措施
 
-回答:"""
-        
-        return prompt
-    
-    def _calculate_confidence(self, context_docs: List[Dict[str, Any]], answer: str) -> float:
-        """计算置信度"""
-        if not context_docs or not answer:
-            return 0.0
-        
-        # 基于文档相关度计算置信度
-        avg_score = sum(doc.get("score", 0.0) for doc in context_docs) / len(context_docs)
-        
-        # 基于答案长度调整（太短或太长的答案置信度较低）
-        answer_length = len(answer)
-        length_factor = 1.0
-        if answer_length < 50:
-            length_factor = 0.8
-        elif answer_length > 2000:
-            length_factor = 0.9
-        
-        # 综合计算置信度
-        confidence = min(avg_score * 2 * length_factor, 1.0)
-        
-        return max(confidence, 0.1)  # 最低置信度为0.1
-    
-    def _evaluate_answer_quality(self, answer: str, context_docs: List[Dict[str, Any]], 
-                                confidence_score: float) -> QualityMetrics:
-        """评估答案质量"""
-        metrics = QualityMetrics()
-        
-        # 相关性评分（基于上下文文档）
-        if context_docs:
-            metrics.relevance_score = min(
-                sum(doc.get("score", 0.0) for doc in context_docs) / len(context_docs) * 2,
-                1.0
-            )
-        else:
-            metrics.relevance_score = 0.3  # 无上下文时的默认分数
-        
-        # 连贯性评分（基于答案结构）
-        if answer and len(answer.strip()) > 0:
-            # 简单检查：句子完整性、长度合理性
-            sentences = answer.split('。')
-            if len(sentences) >= 2 and len(answer) >= 30:
-                metrics.coherence_score = 0.8
-            elif len(answer) >= 10:
-                metrics.coherence_score = 0.6
-            else:
-                metrics.coherence_score = 0.3
-        else:
-            metrics.coherence_score = 0.0
-        
-        # 完整性评分（基于答案长度和结构）
-        if len(answer) >= 100:
-            metrics.completeness_score = 0.9
-        elif len(answer) >= 50:
-            metrics.completeness_score = 0.7
-        elif len(answer) >= 20:
-            metrics.completeness_score = 0.5
-        else:
-            metrics.completeness_score = 0.3
-        
-        # 置信度评分
-        metrics.confidence_score = confidence_score
-        
-        # 综合评分
-        metrics.overall_score = (
-            metrics.relevance_score * 0.3 +
-            metrics.coherence_score * 0.25 +
-            metrics.completeness_score * 0.25 +
-            metrics.confidence_score * 0.2
+答案:""",
+            QueryType.TUTORIAL: """你是技术导师。基于文档提供操作指导。
+
+相关文档:
+{context}
+
+问题: {question}
+
+请提供清晰的步骤说明，包括命令示例。
+
+答案:""",
+            QueryType.GENERAL: """你是智能助手。基于文档回答问题。
+
+相关文档:
+{context}
+
+问题: {question}
+
+请提供准确、专业的回答。
+
+答案:""",
+        }
+
+    async def generate(
+        self, question: str, docs: List[Document], query_type: QueryType
+    ) -> Dict[str, Any]:
+        """生成答案"""
+        if not docs:
+            return {
+                "answer": "抱歉，没有找到相关信息。请尝试换个问法或联系技术支持。",
+                "confidence": 0.0,
+            }
+
+        # 准备上下文
+        context = self._prepare_context(docs)
+
+        # 选择提示模板
+        template = self.prompt_templates.get(
+            query_type, self.prompt_templates[QueryType.GENERAL]
         )
-        
-        return metrics
-    
-    def _format_answer(self, answer: str) -> str:
-        """格式化答案"""
-        if not answer:
-            return "抱歉，暂时无法提供回答。"
-        
-        # 简单的格式化处理
-        formatted = answer.strip()
-        
-        # 确保答案以句号结尾
-        if formatted and not formatted.endswith(('。', '.', '!', '?', '！', '？')):
-            formatted += '。'
-        
-        return formatted
-    
-    def _generate_cache_key(self, question: str, session_id: Optional[str]) -> str:
-        """生成缓存键"""
-        # 使用问题内容和会话ID生成唯一键
-        content = f"{question}:{session_id or 'anonymous'}"
-        return hashlib.md5(content.encode('utf-8')).hexdigest()
-    
-    async def _update_session_history(self, session_id: str, question: str, answer: str):
-        """更新会话历史"""
-        if not self.cache_manager:
-            return
-        
+        prompt = template.format(context=context, question=question)
+
         try:
-            history_key = f"session_history:{session_id}"
-            
-            # 获取现有历史
-            existing_history = await asyncio.to_thread(
-                self.cache_manager.get, history_key
-            ) or {"messages": []}
-            
-            # 添加新的问答对
-            messages = existing_history.get("messages", [])
-            messages.extend([
-                {"role": "user", "content": question},
-                {"role": "assistant", "content": answer[:500]}  # 限制长度
-            ])
-            
-            # 保持历史记录数量
-            if len(messages) > 20:  # 最多保留10轮对话
-                messages = messages[-20:]
-            
-            # 更新缓存
-            await asyncio.to_thread(
-                self.cache_manager.set,
-                history_key,
-                {"messages": messages, "updated_at": datetime.now().isoformat()},
-                ttl=3600  # 1小时过期
+            # 生成答案
+            response = await self.llm_service.generate_response(
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.3,  # 降低温度提高准确性
+                max_tokens=1500,
             )
-            
+
+            return {"answer": response, "confidence": self._calculate_confidence(docs)}
         except Exception as e:
-            logger.error(f"更新会话历史失败: {str(e)}")
-    
-    # ========== 公共接口 ==========
-    
-    async def get_answer(self, question: str, session_id: Optional[str] = None, 
-                        max_context_docs: int = ASSISTANT_DEFAULT_MAX_CONTEXT_DOCS) -> Dict[str, Any]:
-        """获取问题答案 - 主要接口"""
-        if not self._initialized:
-            if not await self.initialize():
-                return {
-                    "answer": "智能助手暂时不可用，请稍后重试",
-                    "error": "初始化失败",
-                    "success": False
-                }
+            logger.error(f"答案生成失败: {e}")
+            return {"answer": f"生成答案时出错: {str(e)}", "confidence": 0.0}
+
+    def _prepare_context(self, docs: List[Document], max_length: int = 3000) -> str:
+        """准备上下文"""
+        context_parts = []
+        total_length = 0
+
+        for i, doc in enumerate(docs):
+            content = doc.page_content
+            source = doc.metadata.get("source", f"文档{i+1}")
+
+            # 截断过长内容
+            if total_length + len(content) > max_length:
+                remaining = max_length - total_length
+                if remaining > 100:
+                    content = content[:remaining] + "..."
+                else:
+                    break
+
+            context_parts.append(f"[{source}]\n{content}")
+            total_length += len(content)
+
+        return "\n\n".join(context_parts)
+
+    def _calculate_confidence(self, docs: List[Document]) -> float:
+        """计算答案置信度"""
+        if not docs:
+            return 0.0
+
+        # 基于文档数量和质量
+        doc_score = min(len(docs) / 5, 1.0) * 0.5
+
+        # 基于文档相关性（假设有分数）
+        avg_relevance = 0.5  # 默认值
+        if hasattr(docs[0], "metadata") and "score" in docs[0].metadata:
+            scores = [d.metadata.get("score", 0.5) for d in docs[:5]]
+            avg_relevance = sum(scores) / len(scores)
+
+        return doc_score + avg_relevance * 0.5
+
+
+# ============= 优化的LangGraph工作流 =============
+
+
+class OptimizedRAGAssistant:
+    """优化的RAG助手主类"""
+
+    def __init__(self, vector_store, llm_service, cache_manager=None):
+        self.vector_store = vector_store
+        self.llm_service = llm_service
+        self.cache_manager = cache_manager
+
+        # 初始化组件
+        self.query_processor = QueryProcessor()
+        self.retriever = DocumentRetriever(vector_store, RetrievalStrategy())
+        self.reranker = DocumentReranker(llm_service)
+        self.generator = AnswerGenerator(llm_service)
+
+        # 初始化checkpointer
+        self.checkpointer = MemorySaver()
         
+        # 构建工作流
+        self.graph = self._build_graph()
+
+    def _build_graph(self) -> StateGraph:
+        """构建简化的线性工作流"""
+        workflow = StateGraph(RAGState)
+
+        # 定义节点
+        workflow.add_node("check_cache", self._check_cache)
+        workflow.add_node("process_query", self._process_query)
+        workflow.add_node("retrieve_docs", self._retrieve_docs)
+        workflow.add_node("rerank_docs", self._rerank_docs)
+        workflow.add_node("generate_answer", self._generate_answer)
+        workflow.add_node("store_cache", self._store_cache)
+
+        # 定义边 - 简单线性流
+        workflow.set_entry_point("check_cache")
+
+        workflow.add_conditional_edges(
+            "check_cache",
+            lambda x: "cached" if x.get("cache_hit") else "process",
+            {"cached": END, "process": "process_query"},
+        )
+
+        workflow.add_edge("process_query", "retrieve_docs")
+        workflow.add_edge("retrieve_docs", "rerank_docs")
+        workflow.add_edge("rerank_docs", "generate_answer")
+        workflow.add_edge("generate_answer", "store_cache")
+        workflow.add_edge("store_cache", END)
+
+        return workflow.compile(checkpointer=self.checkpointer)
+
+    async def _check_cache(self, state: RAGState) -> Dict[str, Any]:
+        """缓存检查节点"""
+        start = time.time()
+
+        if not self.cache_manager:
+            return {"cache_hit": False}
+
+        cache_key = self._get_cache_key(state["question"])
+        cached = await asyncio.to_thread(self.cache_manager.get, cache_key)
+
+        if cached:
+            logger.info(f"缓存命中: {state['question'][:50]}...")
+            return {
+                "cache_hit": True,
+                "answer": cached["answer"],
+                "confidence": cached["confidence"],
+                "sources": cached["sources"],
+                "latency_breakdown": {"cache_check": time.time() - start},
+            }
+
+        return {
+            "cache_hit": False,
+            "latency_breakdown": {"cache_check": time.time() - start},
+        }
+
+    async def _process_query(self, state: RAGState) -> Dict[str, Any]:
+        """查询处理节点"""
+        start = time.time()
+
+        # 分析查询类型
+        query_type = await self.query_processor.analyze_query(state["question"])
+
+        # 查询扩展
+        expanded = await self.query_processor.expand_query(
+            state["question"], query_type
+        )
+
+        latency = state.get("latency_breakdown", {})
+        latency["query_process"] = time.time() - start
+
+        return {
+            "query_type": query_type,
+            "expanded_queries": expanded,
+            "latency_breakdown": latency,
+        }
+
+    async def _retrieve_docs(self, state: RAGState) -> Dict[str, Any]:
+        """文档检索节点"""
+        start = time.time()
+
+        # 并行检索扩展查询
+        docs = await self.retriever.retrieve(state["expanded_queries"])
+
+        latency = state["latency_breakdown"]
+        latency["retrieval"] = time.time() - start
+
+        logger.info(f"检索到 {len(docs)} 个候选文档")
+
+        return {"retrieved_docs": docs, "latency_breakdown": latency}
+
+    async def _rerank_docs(self, state: RAGState) -> Dict[str, Any]:
+        """文档重排序节点"""
+        start = time.time()
+
+        # 重排序提高精度
+        reranked = await self.reranker.rerank(
+            state["question"], state["retrieved_docs"], top_k=5
+        )
+
+        latency = state["latency_breakdown"]
+        latency["rerank"] = time.time() - start
+
+        logger.info(f"重排序后保留 {len(reranked)} 个文档")
+
+        return {"reranked_docs": reranked, "latency_breakdown": latency}
+
+    async def _generate_answer(self, state: RAGState) -> Dict[str, Any]:
+        """答案生成节点"""
+        start = time.time()
+
+        # 生成答案
+        result = await self.generator.generate(
+            state["question"], state["reranked_docs"], state["query_type"]
+        )
+
+        # 提取源文档
+        sources = [
+            {
+                "content": doc.page_content[:200] + "...",
+                "source": doc.metadata.get("source", "unknown"),
+            }
+            for doc in state["reranked_docs"][:3]
+        ]
+
+        latency = state["latency_breakdown"]
+        latency["generation"] = time.time() - start
+        latency["total"] = sum(latency.values())
+
+        return {
+            "answer": result["answer"],
+            "confidence": result["confidence"],
+            "sources": sources,
+            "latency_breakdown": latency,
+        }
+
+    async def _store_cache(self, state: RAGState) -> Dict[str, Any]:
+        """缓存存储节点"""
+        if not self.cache_manager or state.get("confidence", 0) < 0.6:
+            return {}
+
+        cache_key = self._get_cache_key(state["question"])
+        cache_data = {
+            "answer": state["answer"],
+            "confidence": state["confidence"],
+            "sources": state["sources"],
+            "cached_at": datetime.now().isoformat(),
+        }
+
+        await asyncio.to_thread(
+            self.cache_manager.set, cache_key, cache_data, ttl=3600  # 1小时缓存
+        )
+
+        return {}
+
+    def _get_cache_key(self, question: str) -> str:
+        """生成缓存键"""
+        return hashlib.md5(question.encode()).hexdigest()
+
+    async def get_answer(
+        self, question: str, session_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """获取答案 - 主接口"""
         try:
-            # 构建初始状态
+            # 初始状态
             initial_state = {
                 "question": question,
                 "session_id": session_id,
-                "max_context_docs": max_context_docs,
-                "processing_time": time.time()
+                "cache_hit": False,
             }
-            
-            # 运行LangGraph工作流，设置递归限制
-            config = {
-                "thread_id": session_id or "anonymous",
-                "recursion_limit": 50  # 增加递归限制
-            }
+
+            # 运行工作流
+            config = {"thread_id": session_id or "default"}
             result = await self.graph.ainvoke(initial_state, config=config)
-            
+
             # 构建响应
             response = {
-                "answer": result.get("answer", "抱歉，暂时无法提供回答"),
-                "confidence_score": result.get("confidence_score", 0.0),
-                "source_documents": result.get("source_documents", []),
-                "processing_time": result.get("total_time", 0.0),
+                "answer": result.get("answer", ""),
+                "confidence_score": result.get("confidence", 0.0),
+                "source_documents": result.get("sources", []),
                 "cache_hit": result.get("cache_hit", False),
-                "success": not bool(result.get("error")),
-                "timestamp": datetime.now().isoformat()
+                "processing_time": result.get("latency_breakdown", {}).get("total", 0),
+                "success": True,
             }
-            
-            if result.get("error"):
-                response["error"] = result["error"]
-            
-            logger.info(f"问答完成: {question[:50]}... -> {len(response['answer'])}字符")
-            
+
+            # 日志性能指标
+            if "latency_breakdown" in result:
+                logger.info(f"性能分析: {result['latency_breakdown']}")
+
             return response
-            
+
         except Exception as e:
-            logger.error(f"获取答案失败: {str(e)}")
+            logger.error(f"处理失败: {e}")
             return {
-                "answer": f"抱歉，处理问题时出现错误: {str(e)}",
-                "error": str(e),
+                "answer": f"处理出错: {str(e)}",
+                "confidence_score": 0.0,
+                "source_documents": [],
                 "success": False,
-                "timestamp": datetime.now().isoformat()
+                "error": str(e),
             }
-    
+
     async def health_check(self) -> Dict[str, Any]:
         """健康检查"""
         return {
-            "status": "healthy" if self._initialized else "initializing",
-            "initialized": self._initialized,
+            "status": "healthy",
             "components": {
-                "llm_service": bool(self.llm_service),
                 "vector_store": bool(self.vector_store),
-                "cache_manager": bool(self.cache_manager),
-                "graph": bool(self.graph)
+                "llm_service": bool(self.llm_service),
+                "cache": bool(self.cache_manager),
+                "graph": bool(self.graph),
             },
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
         }
-    
+
     async def refresh_knowledge_base(self) -> Dict[str, Any]:
         """刷新知识库"""
         try:
-            # 重新初始化向量存储
-            await self._initialize_vector_store()
-            
-            # 清空相关缓存
+            # 清空缓存
             if self.cache_manager:
-                await asyncio.to_thread(
-                    self.cache_manager.clear_pattern, "enterprise_assistant:*"
-                )
-            
+                await asyncio.to_thread(self.cache_manager.clear_pattern, "*")
+
             return {
                 "success": True,
                 "message": "知识库刷新完成",
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now().isoformat(),
             }
-            
         except Exception as e:
-            logger.error(f"刷新知识库失败: {str(e)}")
-            return {
-                "success": False,
-                "error": str(e),
-                "timestamp": datetime.now().isoformat()
-            }
-    
+            return {"success": False, "error": str(e)}
+
     async def get_session_info(self, session_id: str) -> Dict[str, Any]:
         """获取会话信息"""
-        if not self.cache_manager:
-            return {
-                "session_id": session_id,
-                "status": "cache_unavailable",
-                "message": "缓存服务不可用"
-            }
+        # 简化实现
+        return {
+            "session_id": session_id,
+            "status": "active",
+            "created_at": datetime.now().isoformat(),
+        }
+
+
+# ============= 工厂函数 =============
+
+_assistant_instance = None
+_lock = asyncio.Lock()
+
+
+async def get_enterprise_assistant() -> OptimizedRAGAssistant:
+    """获取全局助手实例"""
+    global _assistant_instance
+
+    if _assistant_instance is None:
+        async with _lock:
+            if _assistant_instance is None:
+                try:
+                    # 初始化依赖
+                    from app.services.llm import LLMService
+                    from app.core.cache.redis_cache_manager import RedisCacheManager
+                    from app.config.settings import config
+
+                    logger.info("正在初始化企业级智能助手...")
+
+                    # 创建LLM服务
+                    logger.debug("创建LLM服务...")
+                    llm_service = LLMService()
+
+                    # 创建缓存管理器
+                    logger.debug("创建Redis缓存管理器...")
+                    cache_config = {
+                        "host": config.redis.host,
+                        "port": config.redis.port,
+                        "db": config.redis.db + 1,
+                        "password": config.redis.password,
+                        "decode_responses": True,
+                    }
+                    cache_manager = RedisCacheManager(
+                        redis_config=cache_config, cache_prefix="rag:", default_ttl=3600
+                    )
+
+                    # 初始化向量存储
+                    logger.debug("初始化向量存储...")
+                    from app.core.vector.redis_vector_store import EnhancedRedisVectorStore
+                    
+                    # 根据配置创建嵌入模型
+                    embedding_model = await _create_embedding_model()
+                    
+                    # 创建向量存储配置
+                    vector_config = {
+                        "host": config.redis.host,
+                        "port": config.redis.port,
+                        "db": config.redis.db + 2,  # 使用独立的数据库
+                        "password": config.redis.password,
+                        "decode_responses": False,
+                    }
+                    
+                    # 获取向量维度
+                    vector_dim = _get_embedding_dimension(embedding_model)
+                    
+                    # 初始化向量存储
+                    vector_store = EnhancedRedisVectorStore(
+                        redis_config=vector_config,
+                        collection_name="aiops_knowledge",
+                        embedding_model=embedding_model,
+                        vector_dim=vector_dim,
+                        index_type="HNSW"
+                    )
+                    
+                    # 加载知识库
+                    await _load_knowledge_base(vector_store)
+
+                    logger.debug("创建RAG助手实例...")
+                    _assistant_instance = OptimizedRAGAssistant(
+                        vector_store=vector_store,
+                        llm_service=llm_service,
+                        cache_manager=cache_manager,
+                    )
+
+                    logger.info("企业级RAG助手初始化完成")
+                    
+                except Exception as e:
+                    logger.error(f"企业级RAG助手初始化失败: {str(e)}")
+                    # 确保失败时实例为None，以便重试
+                    _assistant_instance = None
+                    raise
+
+    return _assistant_instance
+
+
+async def _create_embedding_model():
+    """根据配置创建嵌入模型"""
+    try:
+        from app.config.settings import config
         
-        try:
-            history_key = f"session_history:{session_id}"
-            session_data = await asyncio.to_thread(
-                self.cache_manager.get, history_key
-            )
+        # 获取有效的嵌入模型名称
+        embedding_model_name = config.rag.effective_embedding_model
+        provider = config.llm.provider.lower()
+        
+        logger.info(f"正在初始化嵌入模型: {embedding_model_name} (provider: {provider})")
+        
+        if provider == "openai":
+            # 使用 OpenAI 嵌入模型
+            try:
+                from langchain_openai import OpenAIEmbeddings
+                return OpenAIEmbeddings(
+                    model=embedding_model_name,
+                    openai_api_key=config.llm.effective_api_key,
+                    openai_api_base=config.llm.effective_base_url
+                )
+            except ImportError:
+                logger.warning("OpenAI embeddings 不可用，尝试使用通用实现")
+                # 尝试使用通用的 OpenAI 客户端
+                return _create_openai_embeddings(embedding_model_name)
+        
+        elif provider == "ollama":
+            # 使用 Ollama 嵌入模型
+            try:
+                from langchain_community.embeddings import OllamaEmbeddings
+                return OllamaEmbeddings(
+                    model=embedding_model_name,
+                    base_url=config.llm.ollama_base_url.replace("/v1", "")
+                )
+            except ImportError:
+                logger.warning("Ollama embeddings 不可用，尝试使用自定义实现")
+                return _create_ollama_embeddings(embedding_model_name)
+        
+        else:
+            logger.warning(f"不支持的 provider: {provider}，使用备用嵌入模型")
             
-            if session_data:
-                return {
-                    "session_id": session_id,
-                    "status": "active",
-                    "message_count": len(session_data.get("messages", [])),
-                    "last_updated": session_data.get("updated_at"),
-                    "messages": session_data.get("messages", [])[-10:]  # 最近5轮对话
-                }
-            else:
-                return {
-                    "session_id": session_id,
-                    "status": "not_found",
-                    "message": "会话未找到或已过期"
-                }
-                
-        except Exception as e:
-            logger.error(f"获取会话信息失败: {str(e)}")
-            return {
-                "session_id": session_id,
-                "status": "error",
-                "error": str(e)
-            }
-
-
-# ========== 全局实例管理 ==========
-
-_enterprise_assistant_instance = None
-_instance_lock = asyncio.Lock()
-
-
-async def get_enterprise_assistant() -> EnterpriseAssistant:
-    """获取企业级助手全局实例"""
-    global _enterprise_assistant_instance
+    except Exception as e:
+        logger.error(f"创建嵌入模型失败: {e}")
     
-    if _enterprise_assistant_instance is None:
-        async with _instance_lock:
-            if _enterprise_assistant_instance is None:
-                _enterprise_assistant_instance = EnterpriseAssistant()
-                await _enterprise_assistant_instance.initialize()
+    # 备用方案：使用 FallbackEmbeddings
+    logger.warning("使用备用嵌入模型")
+    from app.core.agents.fallback_models import FallbackEmbeddings
+    return FallbackEmbeddings()
+
+
+def _create_openai_embeddings(model_name: str):
+    """创建自定义 OpenAI 嵌入模型"""
+    from langchain_core.embeddings import Embeddings
+    from openai import OpenAI
+    from app.config.settings import config
     
-    return _enterprise_assistant_instance
+    class CustomOpenAIEmbeddings(Embeddings):
+        def __init__(self, model: str):
+            self.client = OpenAI(
+                api_key=config.llm.effective_api_key,
+                base_url=config.llm.effective_base_url
+            )
+            self.model = model
+        
+        def embed_documents(self, texts):
+            try:
+                response = self.client.embeddings.create(
+                    model=self.model,
+                    input=texts
+                )
+                return [data.embedding for data in response.data]
+            except Exception as e:
+                logger.error(f"OpenAI embeddings 调用失败: {e}")
+                # 使用备用方案
+                from app.core.agents.fallback_models import FallbackEmbeddings
+                fallback = FallbackEmbeddings()
+                return fallback.embed_documents(texts)
+        
+        def embed_query(self, text):
+            try:
+                response = self.client.embeddings.create(
+                    model=self.model,
+                    input=[text]
+                )
+                return response.data[0].embedding
+            except Exception as e:
+                logger.error(f"OpenAI embeddings 查询失败: {e}")
+                # 使用备用方案
+                from app.core.agents.fallback_models import FallbackEmbeddings
+                fallback = FallbackEmbeddings()
+                return fallback.embed_query(text)
+    
+    return CustomOpenAIEmbeddings(model_name)
 
 
-def reset_enterprise_assistant():
-    """重置企业级助手实例（用于测试或重新初始化）"""
-    global _enterprise_assistant_instance
-    _enterprise_assistant_instance = None
+def _create_ollama_embeddings(model_name: str):
+    """创建自定义 Ollama 嵌入模型"""
+    from langchain_core.embeddings import Embeddings
+    import ollama
+    import os
+    from app.config.settings import config
+    
+    class CustomOllamaEmbeddings(Embeddings):
+        def __init__(self, model: str):
+            self.model = model
+            # 设置 Ollama 主机
+            os.environ["OLLAMA_HOST"] = config.llm.ollama_base_url.replace("/v1", "")
+        
+        def embed_documents(self, texts):
+            try:
+                embeddings = []
+                for text in texts:
+                    response = ollama.embeddings(model=self.model, prompt=text)
+                    embeddings.append(response['embedding'])
+                return embeddings
+            except Exception as e:
+                logger.error(f"Ollama embeddings 调用失败: {e}")
+                # 使用备用方案
+                from app.core.agents.fallback_models import FallbackEmbeddings
+                fallback = FallbackEmbeddings()
+                return fallback.embed_documents(texts)
+        
+        def embed_query(self, text):
+            try:
+                response = ollama.embeddings(model=self.model, prompt=text)
+                return response['embedding']
+            except Exception as e:
+                logger.error(f"Ollama embeddings 查询失败: {e}")
+                # 使用备用方案
+                from app.core.agents.fallback_models import FallbackEmbeddings
+                fallback = FallbackEmbeddings()
+                return fallback.embed_query(text)
+    
+    return CustomOllamaEmbeddings(model_name)
+
+
+def _get_embedding_dimension(embedding_model):
+    """获取嵌入模型的维度"""
+    try:
+        # 尝试通过测试嵌入获取维度
+        test_embedding = embedding_model.embed_query("test")
+        return len(test_embedding)
+    except Exception as e:
+        logger.warning(f"无法获取嵌入维度: {e}")
+        
+        # 根据模型名称猜测维度
+        from app.config.settings import config
+        model_name = config.rag.effective_embedding_model.lower()
+        
+        if "bge-m3" in model_name:
+            return 1024
+        elif "nomic-embed" in model_name:
+            return 768
+        elif "text-embedding" in model_name:
+            return 1536  # OpenAI text-embedding-ada-002
+        else:
+            # 默认维度
+            return 384
+
+
+async def _load_knowledge_base(vector_store) -> None:
+    """加载知识库到向量存储"""
+    import os
+    
+    try:
+        knowledge_base_path = "data/knowledge_base"
+        if not os.path.exists(knowledge_base_path):
+            logger.warning("知识库目录不存在，跳过加载")
+            return
+        
+        documents = []
+        supported_extensions = ['.md', '.txt']
+        
+        # 扫描知识库文件
+        for root, dirs, files in os.walk(knowledge_base_path):
+            for file in files:
+                if any(file.endswith(ext) for ext in supported_extensions):
+                    file_path = os.path.join(root, file)
+                    try:
+                        with open(file_path, 'r', encoding='utf-8') as f:
+                            content = f.read()
+                            if content.strip():
+                                # 创建文档对象
+                                doc = Document(
+                                    page_content=content,
+                                    metadata={
+                                        "source": file,
+                                        "path": file_path,
+                                        "type": "knowledge_base"
+                                    }
+                                )
+                                documents.append(doc)
+                    except Exception as e:
+                        logger.warning(f"读取文件失败 {file_path}: {e}")
+        
+        if documents:
+            logger.info(f"开始加载 {len(documents)} 个知识库文档...")
+            # 批量添加文档到向量存储
+            doc_ids = await vector_store.add_documents(documents)
+            logger.info(f"知识库加载完成，共添加 {len(doc_ids)} 个文档")
+        else:
+            logger.warning("未找到有效的知识库文档")
+            
+    except Exception as e:
+        logger.error(f"知识库加载失败: {e}")
+        # 不抛出异常，允许系统继续运行
+
+
+def reset_assistant():
+    """重置助手实例"""
+    global _assistant_instance
+    _assistant_instance = None

@@ -18,12 +18,12 @@ from pydantic import BaseModel, Field
 from app.api.decorators import api_response, log_api_call
 from app.common.constants import ServiceConstants, AppConstants, ApiEndpoints
 from app.common.response import ResponseWrapper
-from app.services.assistant_service import AssistantService
+from app.services.assistant_service import OptimizedAssistantService
 
 logger = logging.getLogger("aiops.api.assistant")
 
 router = APIRouter(tags=["assistant"])
-assistant_service = AssistantService()
+assistant_service = OptimizedAssistantService()
 
 class AssistantQueryRequest(BaseModel):
     question: str = Field(..., description="用户问题", min_length=1)
