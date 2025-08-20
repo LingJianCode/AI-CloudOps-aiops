@@ -9,13 +9,13 @@ License: Apache 2.0
 Description: RCA根因分析模块初始化
 """
 
-from .rca_engine import RCAEngine
-from .correlation_analyzer import CorrelationAnalyzer
-from .collectors import MetricsCollector, EventsCollector, LogsCollector
+from .rca_engine import RCAAnalysisEngine
+from .metrics_collector import MetricsCollector
+from .events_collector import EventsCollector
+from .logs_collector import LogsCollector
 
 __all__ = [
-    "RCAEngine",
-    "CorrelationAnalyzer", 
+    "RCAAnalysisEngine",
     "MetricsCollector",
     "EventsCollector",
     "LogsCollector",
