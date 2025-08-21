@@ -20,6 +20,7 @@ from ..core.rca.logs_collector import LogsCollector
 from ..core.rca.metrics_collector import MetricsCollector
 from ..core.rca.rca_engine import RCAAnalysisEngine
 from .base import BaseService, HealthCheckMixin
+from .prometheus import PrometheusService
 
 logger = logging.getLogger("aiops.services.rca")
 
@@ -441,3 +442,26 @@ class RCAService(BaseService, HealthCheckMixin):
                 "error": str(e),
                 "timestamp": datetime.now(timezone.utc),
             }
+
+    async def get_all_available_metrics(self) -> List[str]:
+        """获取所有可用的Prometheus指标列表"""
+        try:
+            if self._metrics_collector and self._metrics_collector.prometheus:
+                return await self._metrics_collector.prometheus.get_available_metrics()
+            else:
+                # 如果没有初始化，创建临时prometheus服务
+                prometheus_service = PrometheusService()
+                return await prometheus_service.get_available_metrics()
+        except Exception as e:
+            self.logger.error(f"获取可用指标失败: {str(e)}")
+            # 返回默认的常见指标列表作为回退
+            return [
+                "up",
+                "node_cpu_seconds_total",
+                "node_memory_MemAvailable_bytes",
+                "node_load1",
+                "kubernetes_pod_cpu_usage_seconds_total",
+                "kubernetes_pod_memory_usage_bytes",
+                "container_cpu_usage_seconds_total",
+                "container_memory_usage_bytes"
+            ]
