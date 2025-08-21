@@ -11,11 +11,10 @@ Description: 健康检查API接口
 
 import logging
 from typing import Any, Dict
-
 from fastapi import APIRouter, HTTPException
-
 from app.api.decorators import api_response, log_api_call
 from app.common.response import ResponseWrapper
+from app.models import HealthResponse
 from app.services.health_service import HealthService
 
 logger = logging.getLogger("aiops.api.health")
@@ -30,7 +29,19 @@ health_service = HealthService()
 async def health_check() -> Dict[str, Any]:
     await health_service.initialize()
     health_data = await health_service.get_overall_health()
-    return ResponseWrapper.success(data=health_data, message="success")
+
+    # 使用统一的响应模型
+    from datetime import datetime
+
+    response = HealthResponse(
+        status=health_data.get("status", "healthy"),
+        components=health_data.get("components", {}),
+        timestamp=datetime.now().isoformat(),
+        version=health_data.get("version"),
+        uptime=health_data.get("uptime"),
+    )
+
+    return ResponseWrapper.success(data=response.dict(), message="success")
 
 
 @router.get("/health/components", summary="组件健康检查")
@@ -38,7 +49,19 @@ async def health_check() -> Dict[str, Any]:
 async def components_health() -> Dict[str, Any]:
     await health_service.initialize()
     components_data = await health_service.get_components_health()
-    return ResponseWrapper.success(data=components_data, message="success")
+
+    # 使用统一的响应模型
+    from datetime import datetime
+
+    response = HealthResponse(
+        status=components_data.get("status", "healthy"),
+        components=components_data.get("components", {}),
+        timestamp=datetime.now().isoformat(),
+        version=components_data.get("version"),
+        uptime=components_data.get("uptime"),
+    )
+
+    return ResponseWrapper.success(data=response.dict(), message="success")
 
 
 @router.get("/health/metrics", summary="系统指标检查")

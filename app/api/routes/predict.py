@@ -11,14 +11,16 @@ cdDescription: 预测服务API接口
 
 import logging
 from typing import Any, Dict, Optional
-
 from fastapi import APIRouter, HTTPException, Query
-
 from app.api.decorators import api_response, log_api_call
 from app.common.constants import ServiceConstants
 from app.common.response import ResponseWrapper
-from app.models.request_models import PredictionRequest
-from app.models.response_models import PredictionResponse
+from app.models import (
+    PredictionRequest,
+    PredictionResponse,
+    PredictTrendRequest,
+    PredictTrendResponse,
+)
 from app.services.prediction_service import PredictionService
 
 logger = logging.getLogger("aiops.api.predict")
@@ -58,11 +60,25 @@ async def predict_trend(
 ) -> Dict[str, Any]:
     await prediction_service.initialize()
 
+    # 创建请求对象
+    request = PredictTrendRequest(service_name=service_name, hours=hours)
+
     trend_result = await prediction_service.predict_trend(
-        service_name=service_name, hours=hours
+        service_name=request.service_name, hours=request.hours
     )
 
-    return ResponseWrapper.success(data=trend_result, message="success")
+    # 使用统一的响应模型
+    from datetime import datetime
+
+    response = PredictTrendResponse(
+        service_name=request.service_name,
+        prediction_hours=request.hours,
+        trend_data=trend_result.get("trend_data", []),
+        insights=trend_result.get("insights", []),
+        timestamp=datetime.now().isoformat(),
+    )
+
+    return ResponseWrapper.success(data=response.dict(), message="success")
 
 
 @router.get("/predict/health", summary="预测服务健康检查")

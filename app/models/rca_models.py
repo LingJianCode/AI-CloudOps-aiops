@@ -13,7 +13,6 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
-
 from pydantic import BaseModel, Field
 
 
@@ -277,3 +276,30 @@ class RCAErrorSummaryRequest(BaseModel):
 
     namespace: str = Field(..., description="Kubernetes命名空间")
     hours: float = Field(1.0, ge=0.1, le=24, description="分析时间范围（小时）")
+
+
+# 响应模型
+class RCAAnalysisResponse(BaseModel):
+    """根因分析响应模型"""
+
+    namespace: str
+    analysis_id: str
+    timestamp: str
+    time_window_hours: float
+    root_causes: List[Dict[str, Any]] = []
+    anomalies: Dict[str, Any] = {}
+    correlations: List[Dict[str, Any]] = []
+    recommendations: List[str] = []
+    confidence_score: float = 0.0
+    status: str = "completed"
+
+
+class RCAHealthResponse(BaseModel):
+    """RCA健康检查响应模型"""
+
+    status: str
+    prometheus_connected: bool
+    kubernetes_connected: bool
+    redis_connected: bool
+    last_check_time: str
+    version: Optional[str] = None

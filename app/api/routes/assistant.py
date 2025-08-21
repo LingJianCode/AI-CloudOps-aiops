@@ -10,14 +10,12 @@ Description: 智能助手API接口
 """
 
 import logging
-from typing import Any, Dict, Optional
-
+from typing import Any, Dict
 from fastapi import APIRouter
-from pydantic import BaseModel, Field
-
 from app.api.decorators import api_response, log_api_call
 from app.common.constants import ApiEndpoints, AppConstants, ServiceConstants
 from app.common.response import ResponseWrapper
+from app.models import AssistantRequest, AssistantResponse, SessionInfoResponse
 from app.services.assistant_service import OptimizedAssistantService
 
 logger = logging.getLogger("aiops.api.assistant")
@@ -26,28 +24,10 @@ router = APIRouter(tags=["assistant"])
 assistant_service = OptimizedAssistantService()
 
 
-class AssistantQueryRequest(BaseModel):
-    question: str = Field(..., description="用户问题", min_length=1)
-    mode: int = Field(
-        default=1, description="助手模式：1=RAG模式，2=MCP模式", ge=1, le=2
-    )
-    session_id: Optional[str] = Field(None, description="会话ID")
-    max_context_docs: int = Field(
-        ServiceConstants.ASSISTANT_DEFAULT_CONTEXT_DOCS,
-        description="最大上下文文档数",
-        ge=1,
-        le=ServiceConstants.ASSISTANT_MAX_CONTEXT_DOCS,
-    )
-
-
-class SessionRequest(BaseModel):
-    session_id: str = Field(..., description="会话ID")
-
-
 @router.post("/query", summary="智能助手查询")
 @api_response("智能助手查询")
 @log_api_call(log_request=True)
-async def assistant_query(request: AssistantQueryRequest) -> Dict[str, Any]:
+async def assistant_query(request: AssistantRequest) -> Dict[str, Any]:
     await assistant_service.initialize()
 
     answer_result = await assistant_service.get_answer(
@@ -57,7 +37,17 @@ async def assistant_query(request: AssistantQueryRequest) -> Dict[str, Any]:
         max_context_docs=request.max_context_docs,
     )
 
-    return ResponseWrapper.success(data=answer_result, message="success")
+    # 使用统一的响应模型
+    response = AssistantResponse(
+        answer=answer_result.get("answer", ""),
+        source_documents=answer_result.get("source_documents"),
+        relevance_score=answer_result.get("relevance_score"),
+        recall_rate=answer_result.get("recall_rate"),
+        follow_up_questions=answer_result.get("follow_up_questions"),
+        session_id=answer_result.get("session_id"),
+    )
+
+    return ResponseWrapper.success(data=response.dict(), message="success")
 
 
 @router.get("/session/{session_id}", summary="获取会话信息")
@@ -67,7 +57,17 @@ async def get_session_info(session_id: str) -> Dict[str, Any]:
 
     session_info = await assistant_service.get_session_info(session_id)
 
-    return ResponseWrapper.success(data=session_info, message="success")
+    # 使用统一的响应模型
+    response = SessionInfoResponse(
+        session_id=session_id,
+        created_time=session_info.get("created_time", ""),
+        last_activity=session_info.get("last_activity", ""),
+        message_count=session_info.get("message_count", 0),
+        mode=session_info.get("mode", 1),
+        status=session_info.get("status", "active"),
+    )
+
+    return ResponseWrapper.success(data=response.dict(), message="success")
 
 
 @router.post("/refresh", summary="刷新知识库")

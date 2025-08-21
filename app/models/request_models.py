@@ -11,9 +11,7 @@ Description: 请求模型定义
 
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
-
 from pydantic import BaseModel, Field, validator
-
 from app.config.settings import config
 
 
@@ -140,3 +138,26 @@ class AssistantRequest(BaseModel):
     session_id: Optional[str] = Field(
         default=None, description="会话ID，为空则创建新会话"
     )
+
+
+class SessionRequest(BaseModel):
+    """会话请求模型"""
+
+    session_id: str = Field(..., description="会话ID")
+
+
+class DiagnoseRequest(BaseModel):
+    """Kubernetes问题诊断请求模型"""
+
+    deployment: Optional[str] = Field(None, description="Kubernetes Deployment名称")
+    namespace: str = Field("default", description="Kubernetes命名空间")
+    include_logs: bool = Field(True, description="是否包含日志分析")
+    include_pods: bool = Field(True, description="是否包含Pod信息")
+    include_events: bool = Field(True, description="是否包含事件信息")
+
+
+class PredictTrendRequest(BaseModel):
+    """负载趋势预测请求模型"""
+
+    service_name: Optional[str] = Field(None, description="服务名称")
+    hours: int = Field(24, description="预测小时数", ge=1, le=168)

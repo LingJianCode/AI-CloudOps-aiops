@@ -10,15 +10,17 @@ Description: 自动修复API接口
 """
 
 import logging
-from typing import Any, Dict, Optional
-
+from typing import Any, Dict
 from fastapi import APIRouter, BackgroundTasks
-from pydantic import BaseModel, Field
-
 from app.api.decorators import api_response, log_api_call
 from app.common.constants import ApiEndpoints, AppConstants, ServiceConstants
 from app.common.response import ResponseWrapper
-from app.models.response_models import AutoFixResponse
+from app.models import (
+    AutoFixRequest,
+    AutoFixResponse,
+    DiagnoseRequest,
+    DiagnoseResponse,
+)
 from app.services.autofix_service import AutoFixService
 from app.services.notification import NotificationService
 
@@ -27,38 +29,6 @@ logger = logging.getLogger("aiops.api.autofix")
 router = APIRouter(tags=["autofix"])
 autofix_service = AutoFixService()
 notification_service = NotificationService()
-
-
-class AutoFixRequestModel(BaseModel):
-    deployment: str = Field(..., description="Kubernetes Deployment名称")
-    namespace: str = Field("default", description="Kubernetes命名空间")
-    event: str = Field(..., description="问题描述或事件信息")
-    auto_apply: bool = Field(False, description="是否自动应用修复")
-    dry_run: bool = Field(False, description="是否为演练模式")
-    force_fix: bool = Field(False, description="是否强制修复")
-    severity: str = Field(
-        "medium", description="问题严重级别", pattern="^(low|medium|high|critical)$"
-    )
-    timeout: int = Field(
-        ServiceConstants.AUTOFIX_DEFAULT_TIMEOUT,
-        description="修复超时时间(秒)",
-        ge=60,
-        le=1800,
-    )
-
-
-class DiagnoseRequestModel(BaseModel):
-    deployment: Optional[str] = Field(None, description="Kubernetes Deployment名称")
-    namespace: str = Field("default", description="Kubernetes命名空间")
-    include_logs: bool = Field(True, description="是否包含日志分析")
-    include_pods: bool = Field(True, description="是否包含Pod信息")
-    include_events: bool = Field(True, description="是否包含事件信息")
-
-
-class AutoFixResponseModel(BaseModel):
-    code: int
-    message: str
-    data: Dict[str, Any]
 
 
 async def send_fix_notification(
@@ -84,18 +54,18 @@ async def send_fix_notification(
 @api_response("Kubernetes自动修复")
 @log_api_call(log_request=True)
 async def autofix_k8s(
-    request: AutoFixRequestModel, background_tasks: BackgroundTasks
+    request: AutoFixRequest, background_tasks: BackgroundTasks
 ) -> Dict[str, Any]:
     await autofix_service.initialize()
 
     fix_result = await autofix_service.fix_kubernetes_deployment(
         deployment=request.deployment,
         namespace=request.namespace,
-        force_fix=request.force_fix,
-        dry_run=request.dry_run,
+        force=request.force,
+        auto_restart=request.auto_restart,
     )
 
-    if request.auto_apply and fix_result.get("success", False):
+    if request.auto_restart and fix_result.get("success", False):
         try:
             background_tasks.add_task(
                 send_fix_notification,
@@ -123,7 +93,7 @@ async def autofix_k8s(
 @router.post("/autofix/diagnose", summary="Kubernetes问题诊断")
 @api_response("Kubernetes问题诊断")
 @log_api_call(log_request=True)
-async def diagnose_k8s(request: DiagnoseRequestModel) -> Dict[str, Any]:
+async def diagnose_k8s(request: DiagnoseRequest) -> Dict[str, Any]:
     await autofix_service.initialize()
 
     diagnosis_result = await autofix_service.diagnose_kubernetes_issues(
@@ -134,7 +104,22 @@ async def diagnose_k8s(request: DiagnoseRequestModel) -> Dict[str, Any]:
         include_events=request.include_events,
     )
 
-    return ResponseWrapper.success(data=diagnosis_result, message="success")
+    # 使用统一的响应模型
+    from datetime import datetime
+
+    response = DiagnoseResponse(
+        deployment=request.deployment,
+        namespace=request.namespace,
+        status=diagnosis_result.get("status", "completed"),
+        issues_found=diagnosis_result.get("issues_found", []),
+        recommendations=diagnosis_result.get("recommendations", []),
+        pods_status=diagnosis_result.get("pods_status"),
+        logs_summary=diagnosis_result.get("logs_summary"),
+        events_summary=diagnosis_result.get("events_summary"),
+        timestamp=datetime.now().isoformat(),
+    )
+
+    return ResponseWrapper.success(data=response.dict(), message="success")
 
 
 @router.get("/autofix/health", summary="自动修复服务健康检查")

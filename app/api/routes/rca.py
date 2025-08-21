@@ -11,13 +11,16 @@ Description: 根因分析API接口
 
 import logging
 from typing import Any, Dict
-
 from fastapi import APIRouter, BackgroundTasks, Query
-
 from app.api.decorators import api_response, log_api_call
 from app.common.constants import AppConstants, ServiceConstants
 from app.common.response import ResponseWrapper
-from app.models.rca_models import RCAAnalyzeRequest
+from app.models import ListResponse
+from app.models.rca_models import (
+    RCAAnalyzeRequest,
+    RCAAnalysisResponse,
+    RCAHealthResponse,
+)
 from app.services.rca_service import RCAService
 
 logger = logging.getLogger("aiops.api.rca")
@@ -44,7 +47,24 @@ async def analyze_root_cause(
     # 后台任务：缓存分析结果
     background_tasks.add_task(rca_service.cache_analysis_result, analysis_result)
 
-    return ResponseWrapper.success(data=analysis_result, message="success")
+    # 使用统一的响应模型
+    from datetime import datetime
+    import uuid
+
+    response = RCAAnalysisResponse(
+        namespace=request.namespace,
+        analysis_id=str(uuid.uuid4()),
+        timestamp=datetime.now().isoformat(),
+        time_window_hours=request.time_window_hours,
+        root_causes=analysis_result.get("root_causes", []),
+        anomalies=analysis_result.get("anomalies", {}),
+        correlations=analysis_result.get("correlations", []),
+        recommendations=analysis_result.get("recommendations", []),
+        confidence_score=analysis_result.get("confidence_score", 0.0),
+        status=analysis_result.get("status", "completed"),
+    )
+
+    return ResponseWrapper.success(data=response.dict(), message="success")
 
 
 @router.get("/metrics", summary="获取所有可用的Prometheus指标")
@@ -52,27 +72,24 @@ async def analyze_root_cause(
 async def get_all_prometheus_metrics() -> Dict[str, Any]:
     """获取所有可用的Prometheus指标列表"""
     from datetime import datetime
-    
+
     await rca_service.initialize()
 
     try:
         # 获取所有可用的指标
         available_metrics = await rca_service.get_all_available_metrics()
-        
+
+        # 使用统一的列表响应格式
+        metrics_response = ListResponse[str](
+            items=available_metrics, total=len(available_metrics)
+        )
         return ResponseWrapper.success(
-            data={
-                "items": available_metrics,
-                "total": len(available_metrics),
-            }, 
-            message="success"
+            data=metrics_response.dict(),
+            message="success",
         )
     except Exception as e:
         logger.error(f"获取Prometheus指标失败: {str(e)}")
         return ResponseWrapper.error(message=f"获取指标失败: {str(e)}")
-
-
-
-
 
 
 @router.get("/health", summary="健康检查")
@@ -83,7 +100,19 @@ async def health_check() -> Dict[str, Any]:
 
     health_status = await rca_service.get_health_status()
 
-    return ResponseWrapper.success(data=health_status, message="success")
+    # 使用统一的响应模型
+    from datetime import datetime
+
+    response = RCAHealthResponse(
+        status=health_status.get("status", "healthy"),
+        prometheus_connected=health_status.get("prometheus_connected", False),
+        kubernetes_connected=health_status.get("kubernetes_connected", False),
+        redis_connected=health_status.get("redis_connected", False),
+        last_check_time=datetime.now().isoformat(),
+        version=health_status.get("version"),
+    )
+
+    return ResponseWrapper.success(data=response.dict(), message="success")
 
 
 @router.get("/quick-diagnosis", summary="快速诊断")
@@ -127,9 +156,6 @@ async def get_error_summary(
     )
 
     return ResponseWrapper.success(data=summary_result, message="success")
-
-
-
 
 
 @router.get("/info", summary="RCA服务信息")

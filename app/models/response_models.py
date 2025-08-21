@@ -10,7 +10,6 @@ Description: 响应模型定义
 """
 
 from typing import Any, Dict, Generic, List, Optional, TypeVar
-
 from pydantic import BaseModel
 
 T = TypeVar("T")
@@ -192,3 +191,45 @@ class AssistantResponse(BaseModel):
     recall_rate: Optional[float] = None  # 文档召回率
     follow_up_questions: Optional[List[str]] = None
     session_id: Optional[str] = None
+
+
+class SessionInfoResponse(BaseModel):
+    """会话信息响应模型"""
+
+    session_id: str
+    created_time: str
+    last_activity: str
+    message_count: int
+    mode: int
+    status: str
+
+
+class ListResponse(BaseModel, Generic[T]):
+    """统一的列表响应格式"""
+
+    items: List[T]
+    total: int
+
+
+class DiagnoseResponse(BaseModel):
+    """诊断响应模型"""
+
+    deployment: Optional[str] = None
+    namespace: str
+    status: str
+    issues_found: List[str] = []
+    recommendations: List[str] = []
+    pods_status: Optional[Dict[str, Any]] = None
+    logs_summary: Optional[Dict[str, Any]] = None
+    events_summary: Optional[Dict[str, Any]] = None
+    timestamp: str
+
+
+class PredictTrendResponse(BaseModel):
+    """趋势预测响应模型"""
+
+    service_name: Optional[str] = None
+    prediction_hours: int
+    trend_data: List[Dict[str, Any]]
+    insights: List[str] = []
+    timestamp: str
