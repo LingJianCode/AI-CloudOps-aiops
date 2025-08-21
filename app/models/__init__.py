@@ -14,8 +14,6 @@ from .request_models import (
     AssistantRequest,
     AutoFixRequest,
     DiagnoseRequest,
-    PredictionRequest,
-    PredictTrendRequest,
     RCARequest,
     SessionRequest,
 )
@@ -25,34 +23,62 @@ from .response_models import (
     DiagnoseResponse,
     HealthResponse,
     ListResponse,
-    PredictionResponse,
-    PredictTrendResponse,
     RCAResponse,
     SessionInfoResponse,
+)
+from .predict_models import (
+    # 枚举类型
+    PredictionType,
+    PredictionGranularity,
+    ScalingAction,
+    # 基础数据模型
+    ResourceConstraints,
+    PredictionDataPoint,
+    ResourceUtilization,
+    ScalingRecommendation,
+    CostAnalysis,
+    AnomalyPrediction,
+    ModelInfo,
+    # 请求响应模型
+    PredictionRequest,
+    PredictionResponse,
+    PredictionServiceHealthResponse,
 )
 
 __all__ = [
     # 请求模型
     "RCARequest",
     "AutoFixRequest",
-    "PredictionRequest",
     "AssistantRequest",
     "SessionRequest",
     "DiagnoseRequest",
-    "PredictTrendRequest",
     # 响应模型
     "RCAResponse",
     "AutoFixResponse",
-    "PredictionResponse",
     "HealthResponse",
     "AssistantResponse",
     "SessionInfoResponse",
     "DiagnoseResponse",
-    "PredictTrendResponse",
     "ListResponse",
     # 数据模型
     "MetricData",
     "AnomalyResult",
     "CorrelationResult",
     "AgentState",
+    # 预测相关枚举
+    "PredictionType",
+    "PredictionGranularity",
+    "ScalingAction",
+    # 预测基础模型
+    "ResourceConstraints",
+    "PredictionDataPoint",
+    "ResourceUtilization",
+    "ScalingRecommendation",
+    "CostAnalysis",
+    "AnomalyPrediction",
+    "ModelInfo",
+    # 预测请求响应模型
+    "PredictionRequest",
+    "PredictionResponse",
+    "PredictionServiceHealthResponse",
 ]
