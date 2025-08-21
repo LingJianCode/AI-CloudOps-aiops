@@ -1,7 +1,7 @@
 #!/bin/bash
 # -*- coding: utf-8 -*-
 
-# AI-CloudOps-aiops MCP测试脚本
+# CloudOps Platform MCP测试脚本
 # Author: Bamboo
 # Description: MCP功能验收测试脚本
 

@@ -6,10 +6,9 @@ AI-CloudOps-aiops
 Author: Bamboo
 Email: bamboocloudops@gmail.com
 License: Apache 2.0
-Description: 大语言模型服务 - 提供LLM服务接口，支持多种LLM提供商
+Description: 大语言模型服务
 """
 
-# ==================== 核心依赖导入 ====================
 import asyncio
 import json
 import logging
@@ -17,15 +16,12 @@ import os
 import re
 from typing import Any, Dict, List, Optional, Union
 
-import ollama  # Ollama本地模型客户端
+import ollama
+from openai import OpenAI
 
-# ==================== LLM客户端库导入 ====================
-from openai import OpenAI  # OpenAI官方客户端
-
-# ==================== 内部组件导入 ====================
-from app.config.settings import config  # 系统配置
-from app.common.constants import ServiceConstants  # 服务相关常量
-from app.utils.error_handlers import (  # 错误处理工具
+from app.common.constants import ServiceConstants
+from app.config.settings import config
+from app.utils.error_handlers import (
     ErrorHandler,
     ExternalServiceError,
     ServiceError,
@@ -38,36 +34,7 @@ logger = logging.getLogger("aiops.llm")
 
 
 class LLMService:
-    """
-    LLM服务管理类 - AI-CloudOps系统的大语言模型统一服务接口
-
-    该类提供了一个统一的接口来管理和调用多种大语言模型提供商。它实现了
-    智能的提供商选择和回退机制，确保在任何情况下都能提供可靠的AI服务。
-
-    核心特性：
-    1. 多提供商支持 - 无缝集成OpenAI和Ollama
-    2. 自动故障转移 - 主要提供商失效时自动切换
-    3. 参数验证 - 确保所有输入参数的有效性
-    4. 错误处理 - 全面的异常处理和恢复机制
-    5. 性能优化 - 连接池和缓存机制
-    6. 监控集成 - 服务状态监控和健康检查
-
-    架构设计：
-    - 主要提供商：用户配置的首选LLM提供商
-    - 备用提供商：当主要提供商不可用时的备选方案
-    - 统一接口：对外提供一致的API调用方式
-    - 智能路由：根据请求特性选择最合适的提供商
-
-    Attributes:
-        provider (str): 主要LLM提供商名称
-        backup_provider (str): 备用LLM提供商名称
-        model (str): 当前使用的模型名称
-        temperature (float): 生成温度参数
-        max_tokens (int): 最大令牌数限制
-        client: 主要提供商的客户端实例
-        backup_client: 备用提供商的客户端实例
-        error_handler: 错误处理器实例
-    """
+    """LLM服务管理类，支持OpenAI和Ollama提供商，具备自动故障转移功能"""
 
     def __init__(self):
         """
@@ -79,32 +46,38 @@ class LLMService:
         # 初始化错误处理器和基本配置
         self._init_error_handler()
         self._init_basic_config()
-        
+
         # 初始化主要和备用提供商
         self._init_providers()
-        
+
     def _init_error_handler(self) -> None:
         """初始化错误处理器"""
         self.error_handler = ErrorHandler(logger)
-        
+
     def _init_basic_config(self) -> None:
         """初始化基本配置参数"""
         # 解析和清理提供商配置，移除可能的注释和空格
         self.provider = (
-            config.llm.provider.split("#")[0].strip() if config.llm.provider else "openai"
+            config.llm.provider.split("#")[0].strip()
+            if config.llm.provider
+            else "openai"
         )
         self.model = config.llm.effective_model
         self.temperature = self._validate_temperature(config.llm.temperature)
         self.max_tokens = config.llm.max_tokens
-        
+
     def _init_providers(self) -> None:
         """初始化主要和备用提供商"""
         # 设置备用提供商，确保高可用性
-        self.backup_provider = "ollama" if self.provider.lower() == "openai" else "openai"
-        self.backup_model = (
-            config.llm.ollama_model if self.backup_provider == "ollama" else config.llm.model
+        self.backup_provider = (
+            "ollama" if self.provider.lower() == "openai" else "openai"
         )
-        
+        self.backup_model = (
+            config.llm.ollama_model
+            if self.backup_provider == "ollama"
+            else config.llm.model
+        )
+
         # 根据配置的主要提供商类型进行不同的初始化流程
         if self.provider.lower() == "openai":
             self._init_openai_provider()
@@ -112,7 +85,7 @@ class LLMService:
             self._init_ollama_provider()
         else:
             raise ValidationError(f"不支持的LLM提供商: {self.provider}")
-            
+
     def _init_openai_provider(self) -> None:
         """初始化OpenAI提供商"""
         # OpenAI提供商初始化流程
@@ -120,24 +93,24 @@ class LLMService:
             api_key=config.llm.effective_api_key, base_url=config.llm.effective_base_url
         )
         logger.info(f"LLM服务(OpenAI)初始化完成: {self.model}")
-        
+
         # 预初始化备用Ollama客户端
         self._init_backup_ollama()
-        
+
     def _init_ollama_provider(self) -> None:
         """初始化Ollama提供商"""
         # Ollama提供商初始化流程
         self.client = None  # Ollama使用独立的API调用，不需要客户端实例
-        
+
         # 使用环境变量设置Ollama主机地址
         os.environ["OLLAMA_HOST"] = config.llm.ollama_base_url.replace("/v1", "")
         logger.info(
             f"LLM服务(Ollama)初始化完成: {self.model}, OLLAMA_HOST={os.environ.get('OLLAMA_HOST')}"
         )
-        
+
         # 预初始化备用OpenAI客户端
         self._init_backup_openai()
-        
+
     def _init_backup_ollama(self) -> None:
         """初始化备用Ollama客户端"""
         try:
@@ -148,7 +121,7 @@ class LLMService:
             )
         except Exception as e:
             logger.warning(f"备用Ollama初始化失败: {str(e)}")
-            
+
     def _init_backup_openai(self) -> None:
         """初始化备用OpenAI客户端"""
         try:
@@ -183,11 +156,15 @@ class LLMService:
         - 0.8-1.0: 富有创造性的输出，适合文学创作等
         """
         # 检查温度值是否在允许的范围内
-        if not (ServiceConstants.LLM_TEMPERATURE_MIN <= temperature <= ServiceConstants.LLM_TEMPERATURE_MAX):
+        if not (
+            ServiceConstants.LLM_TEMPERATURE_MIN
+            <= temperature
+            <= ServiceConstants.LLM_TEMPERATURE_MAX
+        ):
             logger.warning(
                 f"温度参数 {temperature} 超出范围 [{ServiceConstants.LLM_TEMPERATURE_MIN}, ServiceConstants.LLM_TEMPERATURE_MAX]，使用默认值"
             )
-            return 0.7  # 返回平衡的默认温度值
+            return ServiceConstants.LLM_DEFAULT_TEMPERATURE  # 返回平衡的默认温度值
         return temperature
 
     def _validate_generate_params(
@@ -311,10 +288,16 @@ class LLMService:
             raise e
         except Exception as e:
             # 记录错误并抛出服务错误
-            error_msg, details = self.error_handler.log_and_return_error(e, "LLM响应生成失败")
+            error_msg, details = self.error_handler.log_and_return_error(
+                e, "LLM响应生成失败"
+            )
             raise ServiceError(error_msg, "llm_service", "generate_response")
 
-    @retry_on_exception(max_retries=ServiceConstants.LLM_MAX_RETRIES, delay=1.0, exceptions=(ExternalServiceError,))
+    @retry_on_exception(
+        max_retries=ServiceConstants.LLM_MAX_RETRIES,
+        delay=1.0,
+        exceptions=(ExternalServiceError,),
+    )
     async def _execute_generation_with_fallback(
         self,
         messages: List[Dict[str, str]],
@@ -358,7 +341,10 @@ class LLMService:
             elif self.provider.lower() == "ollama":
                 # 调用Ollama API
                 response = await self._call_ollama_api(
-                    messages=messages, temperature=temperature, max_tokens=max_tokens, stream=stream
+                    messages=messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    stream=stream,
                 )
             else:
                 raise ValidationError(f"不支持的提供商: {self.provider}")
@@ -378,8 +364,8 @@ class LLMService:
                     return await self._use_fallback_chat_model(messages)
                 except Exception as fallback_e:
                     raise ExternalServiceError(
-                        f"所有LLM服务都彻底失败: {str(e)} | 降级({str(fallback_e)})", 
-                        self.provider
+                        f"所有LLM服务都彻底失败: {str(e)} | 降级({str(fallback_e)})",
+                        self.provider,
                     )
 
             # 切换到备用提供商
@@ -419,31 +405,32 @@ class LLMService:
     async def _use_fallback_chat_model(self, messages: List[Dict[str, str]]) -> str:
         """使用最终的备用聊天模型"""
         try:
+            from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+
             from app.core.agents.fallback_models import FallbackChatModel
-            from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
-            
+
             # 转换消息格式为LangChain格式
             langchain_messages = []
             for msg in messages:
                 role = msg.get("role", "user")
                 content = msg.get("content", "")
-                
+
                 if role == "system":
                     langchain_messages.append(SystemMessage(content=content))
                 elif role == "assistant":
                     langchain_messages.append(AIMessage(content=content))
                 else:  # user或其他角色默认为human
                     langchain_messages.append(HumanMessage(content=content))
-            
+
             # 创建并使用备用聊天模型
             fallback_model = FallbackChatModel()
             result = fallback_model._generate(langchain_messages)
-            
+
             if result.generations and len(result.generations) > 0:
                 return result.generations[0].message.content
             else:
                 return "抱歉，当前服务不可用，请稍后重试。"
-                
+
         except Exception as e:
             logger.error(f"备用聊天模型也失败: {e}")
             # 返回基础错误消息
@@ -476,12 +463,14 @@ class LLMService:
                 else self.client
             )
             if not client:
-                client = OpenAI(api_key=config.llm.api_key, base_url=config.llm.base_url)
+                client = OpenAI(
+                    api_key=config.llm.api_key, base_url=config.llm.base_url
+                )
 
             # 使用 asyncio.to_thread 在线程池中执行同步调用
             def _sync_call():
                 return client.chat.completions.create(**kwargs)
-            
+
             response = await asyncio.to_thread(_sync_call)
 
             if stream:
@@ -518,7 +507,9 @@ class LLMService:
             logger.debug(f"使用Ollama host: {os.environ.get('OLLAMA_HOST')}")
 
             # 将消息转换为Ollama格式
-            formatted_messages = [{"role": m["role"], "content": m["content"]} for m in messages]
+            formatted_messages = [
+                {"role": m["role"], "content": m["content"]} for m in messages
+            ]
             options = {"temperature": temperature, "num_predict": max_tokens}
 
             if stream:
@@ -557,7 +548,10 @@ class LLMService:
             raise e
 
     async def analyze_k8s_problem(
-        self, deployment_yaml: str, error_event: str, additional_context: Optional[str] = None
+        self,
+        deployment_yaml: str,
+        error_event: str,
+        additional_context: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
         """分析Kubernetes问题并提供修复建议"""
         system_prompt = """
@@ -610,7 +604,9 @@ class LLMService:
             if response:
                 try:
                     # 提取JSON响应
-                    return await self._extract_json_from_k8s_analysis(response, messages)
+                    return await self._extract_json_from_k8s_analysis(
+                        response, messages
+                    )
                 except Exception as json_error:
                     logger.error(f"解析K8s分析JSON失败: {str(json_error)}")
                     # 尝试再次调用，但不指定JSON响应格式
@@ -682,7 +678,9 @@ class LLMService:
             ]
 
             fixed_response = await self.generate_response(
-                messages=fix_messages, temperature=0.1, response_format={"type": "json_object"}
+                messages=fix_messages,
+                temperature=0.1,
+                response_format={"type": "json_object"},
             )
 
             if fixed_response:
@@ -921,14 +919,16 @@ class LLMService:
             )
             if not client:
                 # 如果没有现有客户端，创建新的临时客户端进行测试
-                client = OpenAI(api_key=config.llm.api_key, base_url=config.llm.base_url)
+                client = OpenAI(
+                    api_key=config.llm.api_key, base_url=config.llm.base_url
+                )
 
             # 使用 asyncio.to_thread 在线程池中执行同步调用
             def _sync_health_check():
                 return client.chat.completions.create(
                     model=config.llm.model,
                     messages=[{"role": "user", "content": "测试"}],
-                    max_tokens=5,  # 最小令牌数，仅用于连接验证
+                    max_tokens=ServiceConstants.LLM_HEALTH_CHECK_TOKENS,  # 最小令牌数，仅用于连接验证
                 )
 
             response = await asyncio.to_thread(_sync_health_check)
@@ -984,15 +984,17 @@ class LLMService:
 
             # 首先尝试获取模型列表来验证服务连接性和模型可用性
             try:
+
                 def _sync_list_check():
                     return ollama.list()
 
                 response = await asyncio.to_thread(_sync_list_check)
-                
+
                 if response and "models" in response:
                     # 检查所需的模型是否在可用模型列表中
                     model_available = any(
-                        model["name"] == config.llm.ollama_model for model in response["models"]
+                        model["name"] == config.llm.ollama_model
+                        for model in response["models"]
                     )
                     if not model_available:
                         logger.warning(f"Ollama模型 {config.llm.ollama_model} 不可用")
@@ -1009,8 +1011,8 @@ class LLMService:
                 # 如果模型列表检查失败，尝试直接发送聊天请求作为备选验证方法
                 def _sync_chat_check():
                     return ollama.chat(
-                        model=config.llm.ollama_model, 
-                        messages=[{"role": "user", "content": "测试"}]
+                        model=config.llm.ollama_model,
+                        messages=[{"role": "user", "content": "测试"}],
                     )
 
                 response = await asyncio.to_thread(_sync_chat_check)

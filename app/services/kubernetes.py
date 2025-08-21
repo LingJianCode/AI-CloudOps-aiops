@@ -6,7 +6,7 @@ AI-CloudOps-aiops
 Author: Bamboo
 Email: bamboocloudops@gmail.com
 License: Apache 2.0
-Description: Kubernetes服务模块 - 提供Kubernetes集群管理、Pod操作和自动化修复功能
+Description: Kubernetes集群管理服务
 """
 
 import json
@@ -15,7 +15,6 @@ import os
 import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
-
 
 from kubernetes import client
 from kubernetes import config as k8s_config
@@ -129,7 +128,9 @@ class KubernetesService:
 
         try:
             namespace = namespace or config.k8s.namespace
-            deployment = self.apps_v1.read_namespaced_deployment(name=name, namespace=namespace)
+            deployment = self.apps_v1.read_namespaced_deployment(
+                name=name, namespace=namespace
+            )
 
             deployment_dict = deployment.to_dict()
             # 清理敏感信息
@@ -160,7 +161,9 @@ class KubernetesService:
 
             logger.info(f"更新Deployment: {name}, patch: {json.dumps(patch, indent=2)}")
 
-            self.apps_v1.patch_namespaced_deployment(name=name, namespace=namespace, body=patch)
+            self.apps_v1.patch_namespaced_deployment(
+                name=name, namespace=namespace, body=patch
+            )
 
             logger.info(f"成功更新Deployment {name}")
             return True
@@ -172,7 +175,9 @@ class KubernetesService:
             logger.error(f"更新Deployment异常: {str(e)}")
             return False
 
-    async def get_pods(self, namespace: str = None, label_selector: str = None) -> List[Dict]:
+    async def get_pods(
+        self, namespace: str = None, label_selector: str = None
+    ) -> List[Dict]:
         """获取Pod列表"""
         if not self._ensure_initialized():
             raise RuntimeError("Kubernetes未初始化，无法获取Pod列表")
@@ -216,7 +221,6 @@ class KubernetesService:
                 namespace=namespace, field_selector=field_selector, limit=limit
             )
 
-
             event_list = []
             for event in events.items:
                 event_dict = event.to_dict()
@@ -251,7 +255,9 @@ class KubernetesService:
                     "template": {
                         "metadata": {
                             "annotations": {
-                                "kubectl.kubernetes.io/restartedAt": datetime.now(timezone.utc).isoformat()
+                                "kubectl.kubernetes.io/restartedAt": datetime.now(
+                                    timezone.utc
+                                ).isoformat()
                             }
                         }
                     }
@@ -268,7 +274,9 @@ class KubernetesService:
             logger.error(f"重启Deployment失败: {str(e)}")
             return False
 
-    async def scale_deployment(self, name: str, replicas: int, namespace: str = None) -> bool:
+    async def scale_deployment(
+        self, name: str, replicas: int, namespace: str = None
+    ) -> bool:
         """扩缩容Deployment"""
         if not self._ensure_initialized():
             raise RuntimeError("Kubernetes未初始化，无法扩缩容Deployment")
@@ -307,7 +315,7 @@ class KubernetesService:
             logger.error(f"Kubernetes健康检查失败: {str(e)}")
             self.initialized = False
             return False
-    
+
     async def health_check(self) -> bool:
         """异步健康检查方法 - 为RCA模块提供兼容接口"""
         return self.is_healthy()
@@ -336,7 +344,9 @@ class KubernetesService:
                 "updated_replicas": status.get("updated_replicas", 0),
                 "conditions": status.get("conditions", []),
                 "strategy": spec.get("strategy", {}),
-                "creation_timestamp": deployment.get("metadata", {}).get("creation_timestamp"),
+                "creation_timestamp": deployment.get("metadata", {}).get(
+                    "creation_timestamp"
+                ),
             }
 
         except Exception as e:
@@ -346,33 +356,30 @@ class KubernetesService:
     async def get_pod(self, namespace: str, pod_name: str) -> Optional[Dict]:
         """
         获取单个Pod的详细信息
-        
+
         Args:
             namespace: Kubernetes命名空间
             pod_name: Pod名称
-            
+
         Returns:
             Optional[Dict]: Pod信息字典，如果不存在则返回None
         """
         if not self._ensure_initialized():
             raise RuntimeError("Kubernetes未初始化，无法获取Pod信息")
-            
+
         try:
-            pod = self.core_v1.read_namespaced_pod(
-                name=pod_name,
-                namespace=namespace
-            )
-            
+            pod = self.core_v1.read_namespaced_pod(name=pod_name, namespace=namespace)
+
             pod_dict = pod.to_dict()
             # 清理不必要的字段
             if "metadata" in pod_dict:
                 metadata = pod_dict["metadata"]
                 for key in ["managed_fields", "resource_version", "uid"]:
                     metadata.pop(key, None)
-                    
+
             logger.debug(f"成功获取Pod {pod_name} 信息")
             return pod_dict
-            
+
         except ApiException as e:
             if e.status == 404:
                 logger.warning(f"Pod {pod_name} 不存在于命名空间 {namespace}")
@@ -384,17 +391,17 @@ class KubernetesService:
             return None
 
     async def get_pod_logs(
-        self, 
-        namespace: str, 
-        pod_name: str, 
+        self,
+        namespace: str,
+        pod_name: str,
         container_name: str = None,
         since_time: datetime = None,
         tail_lines: int = None,
-        follow: bool = False
+        follow: bool = False,
     ) -> Optional[str]:
         """
         获取Pod容器的日志
-        
+
         Args:
             namespace: Kubernetes命名空间
             pod_name: Pod名称
@@ -402,13 +409,13 @@ class KubernetesService:
             since_time: 开始时间，获取此时间之后的日志
             tail_lines: 获取最后N行日志
             follow: 是否持续跟踪日志
-            
+
         Returns:
             Optional[str]: 日志内容，如果获取失败则返回None
         """
         if not self._ensure_initialized():
             raise RuntimeError("Kubernetes未初始化，无法获取Pod日志")
-            
+
         try:
             # 构建日志查询参数
             kwargs = {
@@ -417,26 +424,30 @@ class KubernetesService:
                 "follow": follow,
                 "timestamps": True,
             }
-            
+
             if container_name:
                 kwargs["container"] = container_name
-                
+
             if since_time:
                 # 确保两个时间都有时区信息
                 current_time = datetime.now(timezone.utc)
                 if since_time.tzinfo is None:
                     since_time = since_time.replace(tzinfo=timezone.utc)
-                kwargs["since_seconds"] = int((current_time - since_time).total_seconds())
-                
+                kwargs["since_seconds"] = int(
+                    (current_time - since_time).total_seconds()
+                )
+
             if tail_lines:
                 kwargs["tail_lines"] = tail_lines
-                
+
             # 获取日志
             logs = self.core_v1.read_namespaced_pod_log(**kwargs)
-            
-            logger.debug(f"成功获取Pod {pod_name} 容器 {container_name or 'default'} 的日志")
+
+            logger.debug(
+                f"成功获取Pod {pod_name} 容器 {container_name or 'default'} 的日志"
+            )
             return logs
-            
+
         except ApiException as e:
             if e.status == 404:
                 logger.warning(f"Pod {pod_name} 或容器 {container_name} 不存在")

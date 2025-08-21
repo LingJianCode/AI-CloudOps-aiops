@@ -6,7 +6,7 @@ AI-CloudOps-aiops
 Author: Bamboo
 Email: bamboocloudops@gmail.com
 License: Apache 2.0
-Description: API模块初始化文件，提供路由注册和中间件配置功能
+Description: 模块初始化文件
 """
 
 from .middleware import register_middleware

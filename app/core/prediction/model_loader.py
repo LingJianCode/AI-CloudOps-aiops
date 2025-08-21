@@ -6,13 +6,12 @@ AI-CloudOps-aiops
 Author: Bamboo
 Email: bamboocloudops@gmail.com
 License: Apache 2.0
-Description: 模型加载器 - 处理预测模型的加载、验证和管理
+Description: 机器学习模型加载器
 """
 
 import logging
 import os
-from datetime import datetime, timedelta
-from typing import Optional, Tuple
+from datetime import datetime
 
 import joblib
 import numpy as np
@@ -68,7 +67,9 @@ class ModelLoader:
     def _load_model_metadata(self):
         """加载模型元数据"""
         try:
-            metadata_path = config.prediction.model_path.replace(".pkl", "_metadata.json")
+            metadata_path = config.prediction.model_path.replace(
+                ".pkl", "_metadata.json"
+            )
             metadata_path = os.path.abspath(metadata_path)
 
             if os.path.exists(metadata_path):
@@ -171,7 +172,9 @@ class ModelLoader:
     def save_model_metadata(self, metadata: dict):
         """保存模型元数据"""
         try:
-            metadata_path = config.prediction.model_path.replace(".pkl", "_metadata.json")
+            metadata_path = config.prediction.model_path.replace(
+                ".pkl", "_metadata.json"
+            )
             import json
 
             with open(metadata_path, "w") as f:

@@ -6,11 +6,11 @@ AI-CloudOps-aiops
 Author: Bamboo
 Email: bamboocloudops@gmail.com
 License: Apache 2.0
-Description: 通知代理 - 发送运维告警和消息通知
+Description: 通知代理
 """
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from langchain_core.tools import tool
 
@@ -32,9 +32,12 @@ class NotifierAgent:
     ) -> str:
         """Send human assistance request"""
         try:
-            urgency_emoji = {"low": "🔵", "medium": "🟡", "high": "🔴", "critical": "🚨"}.get(
-                urgency.lower(), "🟡"
-            )
+            urgency_emoji = {
+                "low": "🔵",
+                "medium": "🟡",
+                "high": "🔴",
+                "critical": "🚨",
+            }.get(urgency.lower(), "🟡")
 
             message = f"""
 {urgency_emoji} **需要人工协助处理问题**
@@ -73,7 +76,10 @@ class NotifierAgent:
             return f"❌ 发送人工帮助请求异常: {str(e)}"
 
     async def send_incident_alert(
-        self, incident_summary: str, affected_services: List[str], severity: str = "medium"
+        self,
+        incident_summary: str,
+        affected_services: List[str],
+        severity: str = "medium",
     ) -> str:
         """Send incident alert"""
         try:
@@ -84,7 +90,9 @@ class NotifierAgent:
                 "critical": {"emoji": "🚨", "color": "red"},
             }
 
-            config_info = severity_config.get(severity.lower(), severity_config["medium"])
+            config_info = severity_config.get(
+                severity.lower(), severity_config["medium"]
+            )
 
             services_list = "\n".join([f"- {service}" for service in affected_services])
 
@@ -169,7 +177,9 @@ class NotifierAgent:
     async def send_system_health_report(self, health_data: Dict[str, Any]) -> str:
         """Send system health report"""
         try:
-            healthy_components = [k for k, v in health_data.get("components", {}).items() if v]
+            healthy_components = [
+                k for k, v in health_data.get("components", {}).items() if v
+            ]
             unhealthy_components = [
                 k for k, v in health_data.get("components", {}).items() if not v
             ]

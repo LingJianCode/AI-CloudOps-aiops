@@ -2,7 +2,7 @@
 
 ## 简介
 
-本项目为AI-CloudOps-aiops增加了MCP（Model-Context-Protocol）工具调用能力，与现有RAG功能完全隔离，支持RAG ⇄ MCP模式切换。
+本项目为CloudOps Platform增加了MCP（Model-Context-Protocol）工具调用能力，与现有RAG功能完全隔离，支持RAG ⇄ MCP模式切换。
 
 ## 功能特性
 

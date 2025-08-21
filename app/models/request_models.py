@@ -6,7 +6,7 @@ AI-CloudOps-aiops
 Author: Bamboo
 Email: bamboocloudops@gmail.com
 License: Apache 2.0
-Description: API请求模型 - 定义用于验证和解析传入API请求的Pydantic模型，包含适当的验证规则
+Description: 请求模型定义
 """
 
 from datetime import datetime, timedelta, timezone
@@ -52,10 +52,14 @@ class RCARequest(BaseModel):
             now = datetime.now(tz)
             if self.time_range_minutes:
                 self.end_time = now
-                self.start_time = self.end_time - timedelta(minutes=self.time_range_minutes)
+                self.start_time = self.end_time - timedelta(
+                    minutes=self.time_range_minutes
+                )
             else:
                 self.end_time = now
-                self.start_time = self.end_time - timedelta(minutes=config.rca.default_time_range)
+                self.start_time = self.end_time - timedelta(
+                    minutes=config.rca.default_time_range
+                )
 
         # 如果没有提供指标，使用默认指标
         if not self.metrics:
@@ -123,8 +127,16 @@ class AssistantRequest(BaseModel):
     """
 
     question: str = Field(..., min_length=1, description="用户提问")
-    mode: int = Field(default=1, description="助手模式：1=RAG模式，2=MCP模式", ge=1, le=2)
-    chat_history: Optional[List[Dict[str, str]]] = Field(default=None, description="对话历史记录")
+    mode: int = Field(
+        default=1, description="助手模式：1=RAG模式，2=MCP模式", ge=1, le=2
+    )
+    chat_history: Optional[List[Dict[str, str]]] = Field(
+        default=None, description="对话历史记录"
+    )
     use_web_search: bool = Field(default=False, description="是否使用网络搜索增强回答")
-    max_context_docs: int = Field(default=4, ge=1, le=10, description="最大上下文文档数量")
-    session_id: Optional[str] = Field(default=None, description="会话ID，为空则创建新会话")
+    max_context_docs: int = Field(
+        default=4, ge=1, le=10, description="最大上下文文档数量"
+    )
+    session_id: Optional[str] = Field(
+        default=None, description="会话ID，为空则创建新会话"
+    )

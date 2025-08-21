@@ -6,12 +6,12 @@ AI-CloudOps-aiops
 Author: Bamboo
 Email: bamboocloudops@gmail.com
 License: Apache 2.0
-Description: 验证器模块 - 提供输入数据验证、格式检查和安全性验证的工具函数
+Description: 数据验证工具
 """
 
 import re
 from datetime import datetime
-from typing import List, Optional
+from typing import List
 
 
 def validate_time_range(

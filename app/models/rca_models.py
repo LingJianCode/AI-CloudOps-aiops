@@ -6,13 +6,14 @@ AI-CloudOps-aiops
 Author: Bamboo
 Email: bamboocloudops@gmail.com
 License: Apache 2.0
-Description: RCA根因分析数据模型定义
+Description: 根因分析模型定义
 """
 
+from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
-from dataclasses import dataclass, field
+
 from pydantic import BaseModel, Field
 
 
@@ -223,8 +224,8 @@ class RCAAnalyzeRequest(BaseModel):
                 "metrics": [
                     "container_cpu_usage_seconds_total",
                     "container_memory_working_set_bytes",
-                    "kube_pod_container_status_restarts_total"
-                ]
+                    "kube_pod_container_status_restarts_total",
+                ],
             }
         }
 

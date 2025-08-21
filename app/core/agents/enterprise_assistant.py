@@ -6,7 +6,7 @@ AI-CloudOps-aiops
 Author: Bamboo
 Email: bamboocloudops@gmail.com
 License: Apache 2.0
-Description: 基于LangGraph的企业级智能助手
+Description: 企业级智能助手
 """
 
 import asyncio
@@ -19,9 +19,8 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, TypedDict
 
 from langchain_core.documents import Document
-from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
-
+from langgraph.graph import END, StateGraph
 
 logger = logging.getLogger("aiops.rag_assistant")
 
@@ -71,9 +70,6 @@ class RAGState(TypedDict):
     latency_breakdown: Dict[str, float]
     cache_hit: bool
     error: Optional[str]
-
-
-# ============= 核心组件 =============
 
 
 class QueryProcessor:
@@ -166,21 +162,20 @@ class DocumentRetriever:
             if not self.vector_store:
                 logger.warning("向量存储未初始化")
                 return []
-            
+
             # 使用SearchConfig配置检索参数
             from app.core.vector.redis_vector_store import SearchConfig
+
             search_config = SearchConfig(
                 semantic_weight=self.strategy.semantic_weight,
                 lexical_weight=self.strategy.lexical_weight,
                 similarity_threshold=self.strategy.similarity_threshold,
-                use_cache=True
+                use_cache=True,
             )
-            
+
             # 调用similarity_search方法
             results = await self.vector_store.similarity_search(
-                query=query,
-                k=self.strategy.max_candidates,
-                config=search_config
+                query=query, k=self.strategy.max_candidates, config=search_config
             )
             return [doc for doc, _ in results]
         except Exception as e:
@@ -335,15 +330,19 @@ class AnswerGenerator:
             logger.error(f"答案生成失败: {e}")
             # 使用备用响应生成器
             try:
-                from app.core.agents.fallback_models import generate_fallback_answer, ResponseContext, SessionData
-                
+                from app.core.agents.fallback_models import (
+                    ResponseContext,
+                    SessionData,
+                    generate_fallback_answer,
+                )
+
                 # 创建响应上下文
                 context = ResponseContext(
                     user_input=question,
                     session=None,  # 可以后续添加会话支持
-                    additional_context={"docs": docs} if docs else None
+                    additional_context={"docs": docs} if docs else None,
                 )
-                
+
                 fallback_answer = generate_fallback_answer(context)
                 return {"answer": fallback_answer, "confidence": 0.3}  # 降低置信度
             except Exception as fallback_e:
@@ -389,9 +388,6 @@ class AnswerGenerator:
         return doc_score + avg_relevance * 0.5
 
 
-# ============= 优化的LangGraph工作流 =============
-
-
 class OptimizedRAGAssistant:
     """优化的RAG助手主类"""
 
@@ -408,11 +404,12 @@ class OptimizedRAGAssistant:
 
         # 初始化会话管理器
         from app.core.agents.fallback_models import SessionManager
+
         self.session_manager = SessionManager()
 
         # 初始化checkpointer
         self.checkpointer = MemorySaver()
-        
+
         # 构建工作流
         self.graph = self._build_graph()
 
@@ -621,25 +618,28 @@ class OptimizedRAGAssistant:
 
         except Exception as e:
             logger.error(f"处理失败: {e}")
-            
+
             # 使用备用响应生成
             try:
-                from app.core.agents.fallback_models import generate_fallback_answer, ResponseContext
-                
+                from app.core.agents.fallback_models import (
+                    ResponseContext,
+                    generate_fallback_answer,
+                )
+
                 # 获取会话信息
                 session = None
                 if session_id:
                     session = self.session_manager.get_session(session_id)
-                
+
                 # 创建响应上下文
                 context = ResponseContext(
                     user_input=question,
                     session=session,
-                    additional_context={"error": str(e)}
+                    additional_context={"error": str(e)},
                 )
-                
+
                 fallback_answer = generate_fallback_answer(context)
-                
+
                 return {
                     "answer": fallback_answer,
                     "confidence_score": 0.2,  # 低置信度
@@ -665,11 +665,15 @@ class OptimizedRAGAssistant:
         # 检查备用实现的可用性
         fallback_available = False
         try:
-            from app.core.agents.fallback_models import FallbackChatModel, FallbackEmbeddings
+            from app.core.agents.fallback_models import (
+                FallbackChatModel,
+                FallbackEmbeddings,
+            )
+
             fallback_available = True
         except Exception:
             pass
-            
+
         return {
             "status": "healthy",
             "components": {
@@ -708,8 +712,6 @@ class OptimizedRAGAssistant:
         }
 
 
-# ============= 工厂函数 =============
-
 _assistant_instance = None
 _lock = asyncio.Lock()
 
@@ -723,9 +725,9 @@ async def get_enterprise_assistant() -> OptimizedRAGAssistant:
             if _assistant_instance is None:
                 try:
                     # 初始化依赖
-                    from app.services.llm import LLMService
-                    from app.core.cache.redis_cache_manager import RedisCacheManager
                     from app.config.settings import config
+                    from app.core.cache.redis_cache_manager import RedisCacheManager
+                    from app.services.llm import LLMService
 
                     logger.info("正在初始化企业级智能助手...")
 
@@ -748,11 +750,13 @@ async def get_enterprise_assistant() -> OptimizedRAGAssistant:
 
                     # 初始化向量存储
                     logger.debug("初始化向量存储...")
-                    from app.core.vector.redis_vector_store import EnhancedRedisVectorStore
-                    
+                    from app.core.vector.redis_vector_store import (
+                        EnhancedRedisVectorStore,
+                    )
+
                     # 根据配置创建嵌入模型
                     embedding_model = await _create_embedding_model()
-                    
+
                     # 创建向量存储配置
                     vector_config = {
                         "host": config.redis.host,
@@ -761,19 +765,19 @@ async def get_enterprise_assistant() -> OptimizedRAGAssistant:
                         "password": config.redis.password,
                         "decode_responses": False,
                     }
-                    
+
                     # 获取向量维度
                     vector_dim = _get_embedding_dimension(embedding_model)
-                    
+
                     # 初始化向量存储
                     vector_store = EnhancedRedisVectorStore(
                         redis_config=vector_config,
                         collection_name="aiops_knowledge",
                         embedding_model=embedding_model,
                         vector_dim=vector_dim,
-                        index_type="HNSW"
+                        index_type="HNSW",
                     )
-                    
+
                     # 加载知识库
                     await _load_knowledge_base(vector_store)
 
@@ -785,7 +789,7 @@ async def get_enterprise_assistant() -> OptimizedRAGAssistant:
                     )
 
                     logger.info("企业级RAG助手初始化完成")
-                    
+
                 except Exception as e:
                     logger.error(f"企业级RAG助手初始化失败: {str(e)}")
                     # 确保失败时实例为None，以便重试
@@ -799,28 +803,34 @@ async def _create_embedding_model():
     """根据配置创建嵌入模型"""
     try:
         from app.config.settings import config
-        
+
         # 获取有效的嵌入模型名称
         embedding_model_name = config.rag.effective_embedding_model
         provider = config.llm.provider.lower()
         api_key = config.llm.effective_api_key
-        
-        logger.info(f"正在初始化嵌入模型: {embedding_model_name} (provider: {provider})")
-        
+
+        logger.info(
+            f"正在初始化嵌入模型: {embedding_model_name} (provider: {provider})"
+        )
+
         # 检查API密钥有效性
-        if provider == "openai" and (not api_key or api_key in ["sk-xxx", "", "your-api-key"]):
+        if provider == "openai" and (
+            not api_key or api_key in ["sk-xxx", "", "your-api-key"]
+        ):
             logger.warning("检测到无效的 OpenAI API 密钥，使用备用嵌入模型")
             from app.core.agents.fallback_models import FallbackEmbeddings
+
             return FallbackEmbeddings()
-        
+
         if provider == "openai":
             # 使用 OpenAI 嵌入模型
             try:
                 from langchain_openai import OpenAIEmbeddings
+
                 embedding_model = OpenAIEmbeddings(
                     model=embedding_model_name,
                     openai_api_key=config.llm.effective_api_key,
-                    openai_api_base=config.llm.effective_base_url
+                    openai_api_base=config.llm.effective_base_url,
                 )
                 logger.info("OpenAI嵌入模型创建成功")
                 return embedding_model
@@ -835,14 +845,15 @@ async def _create_embedding_model():
                     return _create_openai_embeddings(embedding_model_name)
                 except Exception as e2:
                     logger.error(f"自定义OpenAI嵌入模型也创建失败: {e2}")
-        
+
         elif provider == "ollama":
             # 使用 Ollama 嵌入模型
             try:
                 from langchain_community.embeddings import OllamaEmbeddings
+
                 embedding_model = OllamaEmbeddings(
                     model=embedding_model_name,
-                    base_url=config.llm.ollama_base_url.replace("/v1", "")
+                    base_url=config.llm.ollama_base_url.replace("/v1", ""),
                 )
                 logger.info("Ollama嵌入模型创建成功")
                 return embedding_model
@@ -855,129 +866,132 @@ async def _create_embedding_model():
                     return _create_ollama_embeddings(embedding_model_name)
                 except Exception as e2:
                     logger.error(f"自定义Ollama嵌入模型也创建失败: {e2}")
-        
+
         else:
             logger.warning(f"不支持的 provider: {provider}")
-            
+
     except Exception as e:
         logger.error(f"创建嵌入模型时发生异常: {e}")
-    
+
     # 最终备用方案：使用 FallbackEmbeddings
     logger.warning("所有嵌入模型创建失败，使用备用嵌入模型")
     from app.core.agents.fallback_models import FallbackEmbeddings
+
     return FallbackEmbeddings()
 
 
 def _create_openai_embeddings(model_name: str):
     """创建自定义 OpenAI 嵌入模型"""
     from langchain_core.embeddings import Embeddings
+
     from app.config.settings import config
-    
+
     # 提前检查API密钥
     api_key = config.llm.effective_api_key
     if not api_key or api_key in ["sk-xxx", "", "your-api-key"]:
         logger.warning("API密钥无效，直接使用备用嵌入模型")
         from app.core.agents.fallback_models import FallbackEmbeddings
+
         return FallbackEmbeddings()
-    
+
     class CustomOpenAIEmbeddings(Embeddings):
         def __init__(self, model: str):
             self.model = model
             self.fallback_used = False
-            
+
             try:
                 from openai import OpenAI
+
                 self.client = OpenAI(
                     api_key=config.llm.effective_api_key,
                     base_url=config.llm.effective_base_url,
-                    timeout=config.llm.request_timeout  # 设置超时避免长时间等待
+                    timeout=config.llm.request_timeout,  # 设置超时避免长时间等待
                 )
                 logger.debug(f"OpenAI客户端初始化成功，模型: {model}")
             except Exception as e:
                 logger.error(f"OpenAI客户端初始化失败: {e}")
                 self.client = None
                 self.fallback_used = True
-        
+
         def embed_documents(self, texts):
             if self.fallback_used or not self.client:
                 return self._use_fallback().embed_documents(texts)
-                
+
             try:
-                response = self.client.embeddings.create(
-                    model=self.model,
-                    input=texts
-                )
+                response = self.client.embeddings.create(model=self.model, input=texts)
                 return [data.embedding for data in response.data]
             except Exception as e:
                 logger.error(f"OpenAI embeddings 调用失败: {e}")
                 self.fallback_used = True
                 return self._use_fallback().embed_documents(texts)
-        
+
         def embed_query(self, text):
             if self.fallback_used or not self.client:
                 return self._use_fallback().embed_query(text)
-                
+
             try:
-                response = self.client.embeddings.create(
-                    model=self.model,
-                    input=[text]
-                )
+                response = self.client.embeddings.create(model=self.model, input=[text])
                 return response.data[0].embedding
             except Exception as e:
                 logger.error(f"OpenAI embeddings 查询失败: {e}")
                 self.fallback_used = True
                 return self._use_fallback().embed_query(text)
-        
+
         def _use_fallback(self):
             """使用备用嵌入模型"""
-            if not hasattr(self, '_fallback'):
+            if not hasattr(self, "_fallback"):
                 from app.core.agents.fallback_models import FallbackEmbeddings
+
                 self._fallback = FallbackEmbeddings()
                 if not self.fallback_used:
                     logger.warning("切换到备用嵌入模型")
             return self._fallback
-    
+
     return CustomOpenAIEmbeddings(model_name)
 
 
 def _create_ollama_embeddings(model_name: str):
     """创建自定义 Ollama 嵌入模型"""
-    from langchain_core.embeddings import Embeddings
-    import ollama
     import os
+
+    import ollama
+    from langchain_core.embeddings import Embeddings
+
     from app.config.settings import config
-    
+
     class CustomOllamaEmbeddings(Embeddings):
         def __init__(self, model: str):
             self.model = model
             # 设置 Ollama 主机
             os.environ["OLLAMA_HOST"] = config.llm.ollama_base_url.replace("/v1", "")
-        
+
         def embed_documents(self, texts):
             try:
                 embeddings = []
                 for text in texts:
                     response = ollama.embeddings(model=self.model, prompt=text)
-                    embeddings.append(response['embedding'])
+                    embeddings.append(response["embedding"])
                 return embeddings
             except Exception as e:
                 logger.error(f"Ollama embeddings 调用失败: {e}")
                 # 使用备用方案
                 from app.core.agents.fallback_models import FallbackEmbeddings
+
                 fallback = FallbackEmbeddings()
                 return fallback.embed_documents(texts)
-        
+
         def embed_query(self, text):
             try:
                 response = ollama.embeddings(model=self.model, prompt=text)
-                return response['embedding']
+                return response["embedding"]
             except Exception as e:
                 logger.error(f"Ollama embeddings 查询失败: {e}")
                 # 使用备用方案
                 from app.core.agents.fallback_models import FallbackEmbeddings
+
                 fallback = FallbackEmbeddings()
                 return fallback.embed_query(text)
-    
+
     return CustomOllamaEmbeddings(model_name)
 
 
@@ -992,11 +1006,12 @@ def _get_embedding_dimension(embedding_model):
         return dimension
     except Exception as e:
         logger.warning(f"无法获取嵌入维度: {e}")
-        
+
         # 根据模型名称猜测维度
         from app.config.settings import config
+
         model_name = config.rag.effective_embedding_model.lower()
-        
+
         # 更准确的维度映射
         dimension_map = {
             "bge-m3": 1024,
@@ -1008,23 +1023,29 @@ def _get_embedding_dimension(embedding_model):
             "text-embedding-3-large": 3072,
             "text-embedding-3-small": 1536,
         }
-        
+
         # 尝试找到匹配的模型
         for model_key, dimension in dimension_map.items():
             if model_key in model_name:
                 logger.info(f"根据模型名称 '{model_name}' 推断维度: {dimension}")
                 return dimension
-        
+
         # 如果是 FallbackEmbeddings，返回其默认维度
         try:
-            from app.core.agents.fallback_models import FallbackEmbeddings, DEFAULT_EMBEDDING_DIMENSION
+            from app.core.agents.fallback_models import (
+                DEFAULT_EMBEDDING_DIMENSION,
+                FallbackEmbeddings,
+            )
+
             if isinstance(embedding_model, FallbackEmbeddings):
-                dimension = getattr(embedding_model, 'dimension', DEFAULT_EMBEDDING_DIMENSION)
+                dimension = getattr(
+                    embedding_model, "dimension", DEFAULT_EMBEDDING_DIMENSION
+                )
                 logger.info(f"使用备用嵌入模型，维度: {dimension}")
                 return dimension
         except Exception as e:
             logger.warning(f"检查备用嵌入模型时出错: {e}")
-            
+
         # 默认维度
         default_dimension = 1024
         logger.warning(f"无法确定嵌入维度，使用默认值: {default_dimension}")
@@ -1034,23 +1055,23 @@ def _get_embedding_dimension(embedding_model):
 async def _load_knowledge_base(vector_store) -> None:
     """加载知识库到向量存储"""
     import os
-    
+
     try:
         knowledge_base_path = "data/knowledge_base"
         if not os.path.exists(knowledge_base_path):
             logger.warning("知识库目录不存在，跳过加载")
             return
-        
+
         documents = []
-        supported_extensions = ['.md', '.txt']
-        
+        supported_extensions = [".md", ".txt"]
+
         # 扫描知识库文件
         for root, dirs, files in os.walk(knowledge_base_path):
             for file in files:
                 if any(file.endswith(ext) for ext in supported_extensions):
                     file_path = os.path.join(root, file)
                     try:
-                        with open(file_path, 'r', encoding='utf-8') as f:
+                        with open(file_path, "r", encoding="utf-8") as f:
                             content = f.read()
                             if content.strip():
                                 # 创建文档对象
@@ -1059,13 +1080,13 @@ async def _load_knowledge_base(vector_store) -> None:
                                     metadata={
                                         "source": file,
                                         "path": file_path,
-                                        "type": "knowledge_base"
-                                    }
+                                        "type": "knowledge_base",
+                                    },
                                 )
                                 documents.append(doc)
                     except Exception as e:
                         logger.warning(f"读取文件失败 {file_path}: {e}")
-        
+
         if documents:
             logger.info(f"开始加载 {len(documents)} 个知识库文档...")
             # 批量添加文档到向量存储
@@ -1073,7 +1094,7 @@ async def _load_knowledge_base(vector_store) -> None:
             logger.info(f"知识库加载完成，共添加 {len(doc_ids)} 个文档")
         else:
             logger.warning("未找到有效的知识库文档")
-            
+
     except Exception as e:
         logger.error(f"知识库加载失败: {e}")
         # 不抛出异常，允许系统继续运行

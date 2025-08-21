@@ -6,9 +6,8 @@ AI-CloudOps-aiops
 Author: Bamboo
 Email: bamboocloudops@gmail.com
 License: Apache 2.0
-Description: 统一错误处理工具 - 提供标准化的错误处理、日志记录和响应格式化功能
+Description: 错误处理工具
 """
-
 
 import asyncio
 import logging
@@ -31,7 +30,10 @@ class AICloudOpsError(Exception):
     """
 
     def __init__(
-        self, message: str, error_code: str = "UNKNOWN", details: Optional[Dict[str, Any]] = None
+        self,
+        message: str,
+        error_code: str = "UNKNOWN",
+        details: Optional[Dict[str, Any]] = None,
     ):
         self.message = message
         self.error_code = error_code
@@ -50,7 +52,9 @@ class ValidationError(AICloudOpsError):
         value: 无效的字段值
     """
 
-    def __init__(self, message: str, field: Optional[str] = None, value: Optional[Any] = None):
+    def __init__(
+        self, message: str, field: Optional[str] = None, value: Optional[Any] = None
+    ):
         details = {}
         if field:
             details["field"] = field
@@ -147,7 +151,9 @@ class ErrorHandler:
 
         # 如果是自定义异常，添加额外信息
         if isinstance(error, AICloudOpsError):
-            error_details.update({"error_code": error.error_code, "details": error.details})
+            error_details.update(
+                {"error_code": error.error_code, "details": error.details}
+            )
 
         # 记录日志
         log_message = f"[{error_id}] {context}: {str(error)}"
@@ -173,7 +179,9 @@ class ErrorHandler:
         Returns:
             Tuple[Dict[str, Any], int]: 错误响应和HTTP状态码
         """
-        message, details = self.log_and_return_error(error, f"Validation error: {context}", False)
+        message, details = self.log_and_return_error(
+            error, f"Validation error: {context}", False
+        )
 
         return {
             "code": HttpStatusCodes.BAD_REQUEST,
@@ -261,7 +269,9 @@ def error_handler(
             except Exception as e:
                 if return_exceptions:
                     return default_return_value
-                error_msg, details = handler.log_and_return_error(e, f"Function {func.__name__}")
+                error_msg, details = handler.log_and_return_error(
+                    e, f"Function {func.__name__}"
+                )
                 raise ServiceError(error_msg, func.__name__)
 
         @wraps(func)
@@ -272,7 +282,9 @@ def error_handler(
             except Exception as e:
                 if return_exceptions:
                     return default_return_value
-                error_msg, details = handler.log_and_return_error(e, f"Function {func.__name__}")
+                error_msg, details = handler.log_and_return_error(
+                    e, f"Function {func.__name__}"
+                )
                 raise ServiceError(error_msg, func.__name__)
 
         return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
@@ -376,7 +388,8 @@ def validate_required_fields(data: Dict[str, Any], required_fields: List[str]) -
 
     if missing_fields:
         raise ValidationError(
-            f"缺少必填字段: {', '.join(missing_fields)}", field=", ".join(missing_fields)
+            f"缺少必填字段: {', '.join(missing_fields)}",
+            field=", ".join(missing_fields),
         )
 
 
@@ -432,17 +445,23 @@ def validate_field_range(
     value = data[field]
     if not isinstance(value, (int, float)):
         raise ValidationError(
-            f"字段 {field} 应为数值类型，当前为 {type(value).__name__}", field=field, value=value
+            f"字段 {field} 应为数值类型，当前为 {type(value).__name__}",
+            field=field,
+            value=value,
         )
 
     if min_value is not None and value < min_value:
         raise ValidationError(
-            f"字段 {field} 值应大于等于 {min_value}，当前为 {value}", field=field, value=value
+            f"字段 {field} 值应大于等于 {min_value}，当前为 {value}",
+            field=field,
+            value=value,
         )
 
     if max_value is not None and value > max_value:
         raise ValidationError(
-            f"字段 {field} 值应小于等于 {max_value}，当前为 {value}", field=field, value=value
+            f"字段 {field} 值应小于等于 {max_value}，当前为 {value}",
+            field=field,
+            value=value,
         )
 
 
@@ -511,7 +530,9 @@ class ContextualLogger:
         self.logger.critical(self._format_message(message), **kwargs)
 
 
-def create_contextual_logger(logger: logging.Logger, **context: Any) -> ContextualLogger:
+def create_contextual_logger(
+    logger: logging.Logger, **context: Any
+) -> ContextualLogger:
     """
     创建上下文感知日志记录器
 

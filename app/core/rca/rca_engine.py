@@ -6,32 +6,33 @@ AI-CloudOps-aiops
 Author: Bamboo
 Email: bamboocloudops@gmail.com
 License: Apache 2.0
-Description: 核心根因分析引擎 - 整合三种数据源进行智能分析
+Description: 根因分析引擎
 """
 
 import asyncio
 import json
 import logging
+from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
-from dataclasses import dataclass
-from collections import defaultdict
+
 import numpy as np
 
+from app.config.settings import CONFIG, config
 from app.models.rca_models import (
-    MetricData,
+    CorrelationResult,
     EventData,
     LogData,
-    SeverityLevel,
-    RootCauseAnalysis,
-    CorrelationResult,
+    MetricData,
     RootCause,
+    RootCauseAnalysis,
+    SeverityLevel,
 )
-from .metrics_collector import MetricsCollector
+from app.services.llm import LLMService
+
 from .events_collector import EventsCollector
 from .logs_collector import LogsCollector
-from app.services.llm import LLMService
-from app.config.settings import config, CONFIG
+from .metrics_collector import MetricsCollector
 
 
 class RCAAnalysisEngine:
@@ -60,7 +61,12 @@ class RCAAnalysisEngine:
         "CRASH_LOOP": {
             "metrics": ["kube_pod_container_status_restarts_total"],
             "events": ["CrashLoopBackOff", "BackOff", "Failed"],
-            "logs": ["panic", "fatal error", "segmentation fault", "restarting failed container"],
+            "logs": [
+                "panic",
+                "fatal error",
+                "segmentation fault",
+                "restarting failed container",
+            ],
             "confidence_weight": 0.95,
         },
         "NETWORK_ISSUE": {
@@ -80,7 +86,12 @@ class RCAAnalysisEngine:
         },
         "RESOURCE_QUOTA": {
             "metrics": ["kube_resourcequota"],
-            "events": ["FailedScheduling", "InsufficientCPU", "InsufficientMemory", "FailedCreate"],
+            "events": [
+                "FailedScheduling",
+                "InsufficientCPU",
+                "InsufficientMemory",
+                "FailedCreate",
+            ],
             "logs": ["exceeded quota", "insufficient resources", "forbidden", "quota"],
             "confidence_weight": 0.9,
         },
@@ -95,21 +106,21 @@ class RCAAnalysisEngine:
     def __init__(self, config_dict: Optional[Dict[str, Any]] = None):
         self.config = config_dict or {}
         self.logger = logging.getLogger("aiops.rca.engine")
-        
+
         # 从配置文件读取RCA配置
         self.rca_config = config.rca
         self.anomaly_threshold = self.rca_config.anomaly_threshold
         self.correlation_threshold = self.rca_config.correlation_threshold
         # 从原始配置字典获取新增配置项
         rca_config_dict = CONFIG.get("rca", {})
-        self.max_retries = rca_config_dict.get('max_retries', 3)
-        self.timeout = rca_config_dict.get('timeout', 30)
+        self.max_retries = rca_config_dict.get("max_retries", 3)
+        self.timeout = rca_config_dict.get("timeout", 30)
 
         # 初始化收集器
         self.metrics_collector = MetricsCollector(config_dict)
         self.events_collector = EventsCollector(config_dict)
         self.logs_collector = LogsCollector(config_dict)
-        
+
         # 初始化LLM服务
         try:
             self.llm_service = LLMService()
@@ -296,7 +307,11 @@ class RCAAnalysisEngine:
             ),
             self.events_collector.collect(namespace, start_time, end_time),
             self.logs_collector.collect(
-                namespace, start_time, end_time, error_only=True, max_lines=self.logs_collector.error_lines
+                namespace,
+                start_time,
+                end_time,
+                error_only=True,
+                max_lines=self.logs_collector.error_lines,
             ),
         ]
 
@@ -418,7 +433,9 @@ class RCAAnalysisEngine:
                         {
                             "timestamp": log.timestamp.isoformat(),
                             "pod": log.pod_name,
-                            "trace": log.stack_trace[:self.logs_collector.max_message_length],  # 截断堆栈
+                            "trace": log.stack_trace[
+                                : self.logs_collector.max_message_length
+                            ],  # 截断堆栈
                         }
                     )
 
@@ -643,30 +660,38 @@ class RCAAnalysisEngine:
 
         return timeline[:50]  # 返回最多50个事件
 
-    async def _generate_recommendations(self, root_causes: List[RootCause]) -> List[str]:
+    async def _generate_recommendations(
+        self, root_causes: List[RootCause]
+    ) -> List[str]:
         """生成综合建议 - 使用LLM生成智能建议"""
         if not self.llm_service:
             # 如果LLM服务不可用，返回基础建议
             if not root_causes:
-                return ["启用更详细的日志记录", "增加监控覆盖范围", "检查最近的配置变更"]
+                return [
+                    "启用更详细的日志记录",
+                    "增加监控覆盖范围",
+                    "检查最近的配置变更",
+                ]
             else:
                 recommendations = []
                 for cause in root_causes:
                     recommendations.extend(cause.recommendations)
                 return list(set(recommendations))[:5]
-        
+
         try:
             # 准备根因数据
             root_causes_data = []
             for cause in root_causes:
-                root_causes_data.append({
-                    "type": cause.cause_type,
-                    "description": cause.description,
-                    "confidence": cause.confidence,
-                    "affected_components": cause.affected_components,
-                    "evidence": cause.evidence
-                })
-            
+                root_causes_data.append(
+                    {
+                        "type": cause.cause_type,
+                        "description": cause.description,
+                        "confidence": cause.confidence,
+                        "affected_components": cause.affected_components,
+                        "evidence": cause.evidence,
+                    }
+                )
+
             # 构造LLM请求
             system_prompt = """你是一个Kubernetes和云运维专家。基于根因分析结果，生成5个简洁实用的解决建议。
 要求：
@@ -680,25 +705,27 @@ class RCAAnalysisEngine:
                 user_prompt = f"根据以下根因分析结果生成解决建议：\n{json.dumps(root_causes_data, ensure_ascii=False, indent=2)}"
             else:
                 user_prompt = "当前没有发现明确的根因，请生成通用的系统运维和监控建议"
-            
+
             # 调用LLM生成建议
             response = await self.llm_service.generate_response(
                 messages=[{"role": "user", "content": user_prompt}],
                 system_prompt=system_prompt,
                 temperature=0.7,
-                max_tokens=300  # 控制响应长度
+                max_tokens=300,  # 控制响应长度
             )
-            
+
             if response:
                 # 解析LLM响应为建议列表
-                recommendations = self._parse_recommendations_from_llm_response(response)
+                recommendations = self._parse_recommendations_from_llm_response(
+                    response
+                )
                 if recommendations:
                     self.logger.info(f"LLM生成了 {len(recommendations)} 个建议")
                     return recommendations[:5]
-                
+
         except Exception as e:
             self.logger.error(f"LLM生成建议失败: {str(e)}")
-        
+
         # 备用方案：返回基础建议
         if not root_causes:
             return ["启用更详细的日志记录", "增加监控覆盖范围", "检查最近的配置变更"]
@@ -712,25 +739,26 @@ class RCAAnalysisEngine:
         """解析LLM响应为建议列表"""
         try:
             # 尝试按行分割
-            lines = response.strip().split('\n')
+            lines = response.strip().split("\n")
             recommendations = []
-            
+
             for line in lines:
                 # 清理行内容
                 clean_line = line.strip()
                 if not clean_line:
                     continue
-                    
+
                 # 移除编号、破折号、星号等前缀
                 import re
-                clean_line = re.sub(r'^[\d\.\-\*\•\s]+', '', clean_line)
+
+                clean_line = re.sub(r"^[\d\.\-\*\•\s]+", "", clean_line)
                 clean_line = clean_line.strip()
-                
+
                 if clean_line and len(clean_line) > 5:  # 确保建议有实际内容
                     recommendations.append(clean_line)
-                    
+
             return recommendations[:5]  # 最多返回5个建议
-            
+
         except Exception as e:
             self.logger.warning(f"解析LLM建议响应失败: {str(e)}")
             # 尝试直接使用响应文本
@@ -1008,14 +1036,14 @@ class RCAAnalysisEngine:
                 ),
                 "events_available": data_completeness["events"]["available"],
                 "logs_available": data_completeness["logs"]["available"],
-            }
+            },
         }
-        
+
         # 如果LLM服务不可用，返回基础报告
         if not self.llm_service:
             base_report["llm_summary"] = "LLM服务不可用，使用基础分析报告"
             return base_report
-        
+
         try:
             # 准备分析数据摘要
             analysis_summary = {
@@ -1027,12 +1055,13 @@ class RCAAnalysisEngine:
                         "type": rc.cause_type,
                         "description": rc.description,
                         "confidence": rc.confidence,
-                        "affected_components": rc.affected_components
-                    } for rc in root_causes
+                        "affected_components": rc.affected_components,
+                    }
+                    for rc in root_causes
                 ],
-                "data_completeness": data_completeness
+                "data_completeness": data_completeness,
             }
-            
+
             # 构造LLM请求
             system_prompt = """你是一个专业的云运维分析师。基于根因分析结果，生成一份简洁的分析总结。
 要求：
@@ -1046,23 +1075,23 @@ class RCAAnalysisEngine:
 {json.dumps(analysis_summary, ensure_ascii=False, indent=2)}
 
 请生成一份专业的根因分析总结。"""
-            
+
             # 调用LLM生成报告
             llm_summary = await self.llm_service.generate_response(
                 messages=[{"role": "user", "content": user_prompt}],
                 system_prompt=system_prompt,
                 temperature=0.3,
-                max_tokens=300  # 控制报告长度，避免过长
+                max_tokens=300,  # 控制报告长度，避免过长
             )
-            
+
             if llm_summary:
                 base_report["llm_summary"] = llm_summary.strip()
                 self.logger.info("LLM生成分析报告成功")
             else:
                 base_report["llm_summary"] = "AI分析暂时不可用，请查看基础分析数据"
-                
+
         except Exception as e:
             self.logger.error(f"LLM生成分析报告失败: {str(e)}")
             base_report["llm_summary"] = f"AI分析生成失败: {str(e)[:100]}"
-        
+
         return base_report

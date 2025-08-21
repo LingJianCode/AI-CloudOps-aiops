@@ -6,11 +6,10 @@ AI-CloudOps-aiops
 Author: Bamboo
 Email: bamboocloudops@gmail.com
 License: Apache 2.0
-Description: API响应模型 - 定义所有API端点的标准化响应结构，确保一致的格式和类型
+Description: 响应模型定义
 """
 
-from datetime import datetime
-from typing import Any, Dict, Generic, List, Optional, TypeVar, Union
+from typing import Any, Dict, Generic, List, Optional, TypeVar
 
 from pydantic import BaseModel
 

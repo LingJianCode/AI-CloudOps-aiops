@@ -6,7 +6,7 @@ AI-CloudOps-aiops
 Author: Bamboo
 Email: bamboocloudops@gmail.com
 License: Apache 2.0
-Description: 主应用模块 - 提供FastAPI应用的创建和初始化功能
+Description: 主应用程序入口
 """
 
 import logging
@@ -23,9 +23,9 @@ if current_dir not in sys.path:
 
 from app.api.middleware import register_middleware
 from app.api.routes import register_routes
+from app.common.constants import AppConstants
 from app.config.logging import setup_logging
 from app.config.settings import config
-from app.common.constants import AppConstants
 from app.services.startup import StartupService
 
 # 全局启动服务实例
@@ -45,13 +45,13 @@ async def lifespan(app: FastAPI):
     logger.info(f"调试模式: {config.debug}")
     logger.info(f"日志级别: {config.log_level}")
     logger.info("=" * 50)
-    
+
     # 初始化启动服务
     await startup_service.initialize()
-    
+
     # 启动预热机制
     warmup_results = await startup_service.warmup_services()
-    
+
     # 记录启动信息
     startup_time = startup_service.get_uptime()
     logger.info(f"{AppConstants.APP_NAME} 启动完成，耗时: {startup_time:.2f}秒")
@@ -62,12 +62,12 @@ async def lifespan(app: FastAPI):
     logger.info(f"  - POST {AppConstants.API_VERSION_V1}/rca           - 根因分析")
     logger.info(f"  - POST {AppConstants.API_VERSION_V1}/autofix       - 自动修复")
     logger.info(f"  - POST {AppConstants.API_VERSION_V1}/assistant/query - 智能小助手")
-    
+
     if not warmup_results["success"]:
         logger.warning("部分服务预热失败，系统仍可正常使用")
-    
+
     yield
-    
+
     # 关闭时执行
     total_time = startup_service.get_uptime()
     logger.info(f"{AppConstants.APP_NAME} 运行总时长: {total_time:.2f}秒")
@@ -89,7 +89,7 @@ def create_app() -> FastAPI:
         docs_url="/docs",
         redoc_url="/redoc",
         openapi_url="/openapi.json",
-        lifespan=lifespan
+        lifespan=lifespan,
     )
 
     # 设置日志系统（用临时app对象）
@@ -124,7 +124,7 @@ app = create_app()
 if __name__ == "__main__":
     """直接运行时的主入口"""
     import uvicorn
-    
+
     logger = logging.getLogger("aiops")
 
     try:
@@ -135,7 +135,9 @@ if __name__ == "__main__":
             port=config.port,
             reload=config.debug,
             reload_dirs=["app", "config"] if config.debug else None,  # 指定监控的目录
-            reload_excludes=["logs", "data", "__pycache__", "*.pyc"] if config.debug else None,  # 排除不需要监控的目录
+            reload_excludes=(
+                ["logs", "data", "__pycache__", "*.pyc"] if config.debug else None
+            ),  # 排除不需要监控的目录
             log_level="info" if not config.debug else "debug",
             access_log=True,
             reload_delay=0.25 if config.debug else None,  # 减少重载延迟

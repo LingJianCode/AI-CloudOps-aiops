@@ -2,11 +2,11 @@
 # -*- coding: utf-8 -*-
 
 """
-AI-CloudOps-aiops MCP服务器核心实现
+AI-CloudOps-aiops
 Author: Bamboo
 Email: bamboocloudops@gmail.com
 License: Apache 2.0
-Description: MCP协议服务器核心实现
+Description: MCP服务器
 """
 
 import logging
@@ -68,9 +68,9 @@ class MCPServer:
         """获取工具列表"""
         return [
             {
-                'name': tool.name,
-                'description': tool.description,
-                'parameters': tool.parameters
+                "name": tool.name,
+                "description": tool.description,
+                "parameters": tool.parameters,
             }
             for tool in self.tools.values()
         ]

@@ -6,7 +6,7 @@ AI-CloudOps-aiops
 Author: Bamboo
 Email: bamboocloudops@gmail.com
 License: Apache 2.0
-Description: 数据模型模块初始化文件，定义API请求响应和内部数据结构
+Description: 模块初始化文件
 """
 
 from .data_models import AgentState, AnomalyResult, CorrelationResult, MetricData

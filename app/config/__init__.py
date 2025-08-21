@@ -6,7 +6,7 @@ AI-CloudOps-aiops
 Author: Bamboo
 Email: bamboocloudops@gmail.com
 License: Apache 2.0
-Description: 配置模块初始化文件，提供配置设置和日志配置的访问接口
+Description: 模块初始化文件
 """
 
 from .logging import setup_logging

@@ -6,17 +6,16 @@ AI-CloudOps-aiops
 Author: Bamboo
 Email: bamboocloudops@gmail.com
 License: Apache 2.0
-Description: Kubernetes集群问题诊断和自动修复代理
+Description: Kubernetes自动修复代理
 """
 
 import json
 import logging
 import os
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import yaml
-from langchain_core.tools import tool
 
 from app.config.settings import config
 from app.services.kubernetes import KubernetesService
@@ -36,7 +35,7 @@ class K8sFixerAgent:
         self.max_retries = 3
         self.retry_delay = 2
         logger.info("K8s Fixer Agent initialized")
-        
+
         # 延迟进行LLM健康检查，避免阻塞初始化
         self._llm_checked = False
 
@@ -53,7 +52,9 @@ class K8sFixerAgent:
                     # 检查OpenAI连接
                     headers = {"Authorization": f"Bearer {config.llm.api_key}"}
                     response = requests.get(
-                        f"{config.llm.base_url.rstrip('/')}/models", headers=headers, timeout=3
+                        f"{config.llm.base_url.rstrip('/')}/models",
+                        headers=headers,
+                        timeout=3,
                     )
                     primary_healthy = response.status_code < 400
                     logger.info(
@@ -67,7 +68,9 @@ class K8sFixerAgent:
                     ollama_host = config.llm.ollama_base_url.replace("/v1", "")
                     response = requests.get(f"{ollama_host}/api/tags", timeout=3)
                     backup_healthy = response.status_code == 200
-                    logger.info(f"备用Ollama模型服务状态: {'可用' if backup_healthy else '不可用'}")
+                    logger.info(
+                        f"备用Ollama模型服务状态: {'可用' if backup_healthy else '不可用'}"
+                    )
                 except Exception as e:
                     logger.warning(f"无法连接到Ollama API: {str(e)}")
             else:
@@ -86,10 +89,14 @@ class K8sFixerAgent:
                 try:
                     headers = {"Authorization": f"Bearer {config.llm.api_key}"}
                     response = requests.get(
-                        f"{config.llm.base_url.rstrip('/')}/models", headers=headers, timeout=3
+                        f"{config.llm.base_url.rstrip('/')}/models",
+                        headers=headers,
+                        timeout=3,
                     )
                     backup_healthy = response.status_code < 400
-                    logger.info(f"备用OpenAI模型服务状态: {'可用' if backup_healthy else '不可用'}")
+                    logger.info(
+                        f"备用OpenAI模型服务状态: {'可用' if backup_healthy else '不可用'}"
+                    )
                 except Exception as e:
                     logger.warning(f"无法连接到OpenAI API: {str(e)}")
 
@@ -170,8 +177,14 @@ class K8sFixerAgent:
                                     {
                                         "name": "nginx",
                                         "resources": {
-                                            "requests": {"memory": "128Mi", "cpu": "200m"},
-                                            "limits": {"memory": "256Mi", "cpu": "300m"},
+                                            "requests": {
+                                                "memory": "128Mi",
+                                                "cpu": "200m",
+                                            },
+                                            "limits": {
+                                                "memory": "256Mi",
+                                                "cpu": "300m",
+                                            },
                                         },
                                         "readinessProbe": {
                                             "httpGet": {"path": "/", "port": 80},
@@ -206,13 +219,16 @@ class K8sFixerAgent:
                 return "无法连接到Kubernetes集群，请检查配置"
 
             # 获取当前Deployment配置
-            deployment = await self.k8s_service.get_deployment(deployment_name, namespace)
+            deployment = await self.k8s_service.get_deployment(
+                deployment_name, namespace
+            )
             if not deployment:
                 return f"无法获取Deployment {deployment_name} 的配置信息"
 
             # 获取相关事件
             events = await self.k8s_service.get_events(
-                namespace=namespace, field_selector=f"involvedObject.name={deployment_name}"
+                namespace=namespace,
+                field_selector=f"involvedObject.name={deployment_name}",
             )
 
             # 获取Pod状态
@@ -309,7 +325,9 @@ class K8sFixerAgent:
                         logger.info(
                             f"尝试使用LLM分析K8s问题 (尝试 {retry_count+1}/{max_retries+1})"
                         )
-                        logger.info(f"当前使用模型: {config.llm.provider}:{self.llm_service.model}")
+                        logger.info(
+                            f"当前使用模型: {config.llm.provider}:{self.llm_service.model}"
+                        )
 
                         analysis = await self.llm_service.analyze_k8s_problem(
                             yaml.dump(deployment, default_flow_style=False),
@@ -318,7 +336,9 @@ class K8sFixerAgent:
                         )
 
                         if analysis:
-                            logger.info(f"成功使用LLM分析问题: {analysis.get('analysis', 'N/A')}")
+                            logger.info(
+                                f"成功使用LLM分析问题: {analysis.get('analysis', 'N/A')}"
+                            )
                             logger.info(
                                 f"使用的模型: {config.llm.provider}:{self.llm_service.model}"
                             )
@@ -366,7 +386,10 @@ class K8sFixerAgent:
 
                 if not analysis:
                     # 如果LLM分析失败，但有明确的错误描述，尝试使用直接修复方案
-                    if "健康检查" in error_description or "readinessProbe" in error_description:
+                    if (
+                        "健康检查" in error_description
+                        or "readinessProbe" in error_description
+                    ):
                         logger.info("基于错误描述进行修复，跳过LLM分析")
                         fix_result = await self._identify_and_fix_common_issues(
                             deployment, context, force_fix=True
@@ -377,8 +400,11 @@ class K8sFixerAgent:
                         try:
                             logger.warning("LLM分析失败，最后尝试备用模型进行问题分析")
                             # 构建最简单的分析请求
-                            simple_analysis = await self.llm_service.analyze_k8s_problem(
-                                yaml.dump(deployment, default_flow_style=False), error_description
+                            simple_analysis = (
+                                await self.llm_service.analyze_k8s_problem(
+                                    yaml.dump(deployment, default_flow_style=False),
+                                    error_description,
+                                )
                             )
 
                             if simple_analysis:
@@ -394,7 +420,9 @@ class K8sFixerAgent:
                 logger.info(f"问题分析完成: {analysis.get('analysis', 'N/A')}")
 
                 # 执行修复操作
-                fix_result = await self._execute_fix(deployment_name, namespace, analysis)
+                fix_result = await self._execute_fix(
+                    deployment_name, namespace, analysis
+                )
 
                 # 验证修复结果
                 verification_result = await self._verify_fix(deployment_name, namespace)
@@ -465,7 +493,10 @@ class K8sFixerAgent:
         return working_path is not None
 
     async def _identify_and_fix_common_issues(
-        self, deployment: Dict[str, Any], context: Dict[str, Any], force_fix: bool = False
+        self,
+        deployment: Dict[str, Any],
+        context: Dict[str, Any],
+        force_fix: bool = False,
     ) -> Dict[str, Any]:
         """识别并修复常见的Kubernetes问题"""
         try:
@@ -527,8 +558,12 @@ class K8sFixerAgent:
                                     container_patch["resources"] = {}
                                 if "requests" not in container_patch["resources"]:
                                     container_patch["resources"]["requests"] = {}
-                                container_patch["resources"]["requests"]["memory"] = "128Mi"
-                                fixes_applied.append(f"将内存请求从{memory_request}降低到128Mi")
+                                container_patch["resources"]["requests"][
+                                    "memory"
+                                ] = "128Mi"
+                                fixes_applied.append(
+                                    f"将内存请求从{memory_request}降低到128Mi"
+                                )
                                 need_to_patch = True
 
                     if "requests" in resources and "cpu" in resources["requests"]:
@@ -542,7 +577,9 @@ class K8sFixerAgent:
                                 if "requests" not in container_patch["resources"]:
                                     container_patch["resources"]["requests"] = {}
                                 container_patch["resources"]["requests"]["cpu"] = "200m"
-                                fixes_applied.append(f"将CPU请求从{cpu_request}降低到200m")
+                                fixes_applied.append(
+                                    f"将CPU请求从{cpu_request}降低到200m"
+                                )
                                 need_to_patch = True
 
                 # 检查ReadinessProbe
@@ -559,7 +596,9 @@ class K8sFixerAgent:
                             if "httpGet" not in container_patch["readinessProbe"]:
                                 container_patch["readinessProbe"]["httpGet"] = {}
                             container_patch["readinessProbe"]["httpGet"]["path"] = "/"
-                            fixes_applied.append("将Nginx ReadinessProbe的HTTP路径修改为'/'")
+                            fixes_applied.append(
+                                "将Nginx ReadinessProbe的HTTP路径修改为'/'"
+                            )
                             need_to_patch = True
 
                     # 检查探针频率
@@ -614,7 +653,10 @@ class K8sFixerAgent:
             # 检查CrashLoopBackOff问题
             if "CrashLoopBackOff" in pod_issues:
                 # 情况1：有livenessProbe但没有readinessProbe
-                if "livenessProbe" in main_container and "readinessProbe" not in main_container:
+                if (
+                    "livenessProbe" in main_container
+                    and "readinessProbe" not in main_container
+                ):
                     # 可能是缺少readinessProbe导致的问题，添加默认的readinessProbe
                     issues_found.append("缺少ReadinessProbe")
                     container_patch["readinessProbe"] = {
@@ -672,7 +714,9 @@ class K8sFixerAgent:
                         need_to_patch = True
 
                     if liveness_issues:
-                        issues_found.append(f"LivenessProbe配置问题: {', '.join(liveness_issues)}")
+                        issues_found.append(
+                            f"LivenessProbe配置问题: {', '.join(liveness_issues)}"
+                        )
                         logger.info(f"检测到LivenessProbe问题: {liveness_issues}")
 
                 # 情况3：强制修复模式下的通用处理
@@ -733,7 +777,9 @@ class K8sFixerAgent:
                         if "httpGet" not in container_patch["readinessProbe"]:
                             container_patch["readinessProbe"]["httpGet"] = {}
                         container_patch["readinessProbe"]["httpGet"]["path"] = "/"
-                        fixes_applied.append("将Nginx ReadinessProbe的HTTP路径修改为'/'")
+                        fixes_applied.append(
+                            "将Nginx ReadinessProbe的HTTP路径修改为'/'"
+                        )
                         need_to_patch = True
 
             # 检查LivenessProbe
@@ -771,7 +817,9 @@ class K8sFixerAgent:
                 if "httpGet" in probe:
                     path = probe.get("httpGet", {}).get("path")
                     if (
-                        path == "/nonexistent" or path == "/health" or path == "/healthz"
+                        path == "/nonexistent"
+                        or path == "/health"
+                        or path == "/healthz"
                     ) and is_nginx:
                         # Nginx默认页面是/，其他路径需要额外配置
                         issues_found.append("Nginx LivenessProbe的HTTP路径不正确")
@@ -826,7 +874,9 @@ class K8sFixerAgent:
                             if "requests" not in container_patch["resources"]:
                                 container_patch["resources"]["requests"] = {}
                             container_patch["resources"]["requests"]["memory"] = "128Mi"
-                            fixes_applied.append(f"将内存请求从{memory_request}降低到128Mi")
+                            fixes_applied.append(
+                                f"将内存请求从{memory_request}降低到128Mi"
+                            )
                             need_to_patch = True
 
                 # 检查CPU请求
@@ -877,7 +927,10 @@ class K8sFixerAgent:
                         "message": f"检测到以下问题但未应用自动修复：{', '.join(issues_found)}\n请参考Kubernetes文档或联系管理员手动修复。",
                     }
                 else:
-                    return {"fixed": False, "message": f"未发现 {deployment_name} 的常见问题"}
+                    return {
+                        "fixed": False,
+                        "message": f"未发现 {deployment_name} 的常见问题",
+                    }
 
         except Exception as e:
             logger.error(f"识别和修复常见问题失败: {str(e)}")
@@ -903,30 +956,38 @@ class K8sFixerAgent:
                 resources_patch = {
                     "spec": {"template": {"spec": {"containers": [{"resources": {}}]}}}
                 }
-                resources = resources_patch["spec"]["template"]["spec"]["containers"][0][
-                    "resources"
-                ]
+                resources = resources_patch["spec"]["template"]["spec"]["containers"][
+                    0
+                ]["resources"]
 
                 # 解析资源建议
                 if "requests" in analysis:
                     resources["requests"] = {}
                     if "cpu" in analysis["requests"]:
                         resources["requests"]["cpu"] = analysis["requests"]["cpu"]
-                        actions_taken.append(f"设置CPU请求: {analysis['requests']['cpu']}")
+                        actions_taken.append(
+                            f"设置CPU请求: {analysis['requests']['cpu']}"
+                        )
 
                     if "memory" in analysis["requests"]:
                         resources["requests"]["memory"] = analysis["requests"]["memory"]
-                        actions_taken.append(f"设置内存请求: {analysis['requests']['memory']}")
+                        actions_taken.append(
+                            f"设置内存请求: {analysis['requests']['memory']}"
+                        )
 
                 if "limits" in analysis:
                     resources["limits"] = {}
                     if "cpu" in analysis["limits"]:
                         resources["limits"]["cpu"] = analysis["limits"]["cpu"]
-                        actions_taken.append(f"设置CPU限制: {analysis['limits']['cpu']}")
+                        actions_taken.append(
+                            f"设置CPU限制: {analysis['limits']['cpu']}"
+                        )
 
                     if "memory" in analysis["limits"]:
                         resources["limits"]["memory"] = analysis["limits"]["memory"]
-                        actions_taken.append(f"设置内存限制: {analysis['limits']['memory']}")
+                        actions_taken.append(
+                            f"设置内存限制: {analysis['limits']['memory']}"
+                        )
 
                 # 应用补丁
                 success = await self.k8s_service.patch_deployment(
@@ -952,19 +1013,27 @@ class K8sFixerAgent:
                     probe_type = "livenessProbe"
 
                 # 准备健康检查补丁
-                probe_patch = {"spec": {"template": {"spec": {"containers": [{probe_type: {}}]}}}}
-                probe = probe_patch["spec"]["template"]["spec"]["containers"][0][probe_type]
+                probe_patch = {
+                    "spec": {"template": {"spec": {"containers": [{probe_type: {}}]}}}
+                }
+                probe = probe_patch["spec"]["template"]["spec"]["containers"][0][
+                    probe_type
+                ]
 
                 # 解析健康检查建议
                 if "httpGet" in analysis:
                     probe["httpGet"] = {}
                     if "path" in analysis["httpGet"]:
                         probe["httpGet"]["path"] = analysis["httpGet"]["path"]
-                        actions_taken.append(f"修改HTTP检查路径: {analysis['httpGet']['path']}")
+                        actions_taken.append(
+                            f"修改HTTP检查路径: {analysis['httpGet']['path']}"
+                        )
 
                     if "port" in analysis["httpGet"]:
                         probe["httpGet"]["port"] = int(analysis["httpGet"]["port"])
-                        actions_taken.append(f"修改HTTP检查端口: {analysis['httpGet']['port']}")
+                        actions_taken.append(
+                            f"修改HTTP检查端口: {analysis['httpGet']['port']}"
+                        )
 
                 if "periodSeconds" in analysis:
                     probe["periodSeconds"] = int(analysis["periodSeconds"])
@@ -972,7 +1041,9 @@ class K8sFixerAgent:
 
                 if "failureThreshold" in analysis:
                     probe["failureThreshold"] = int(analysis["failureThreshold"])
-                    actions_taken.append(f"修改失败阈值: {analysis['failureThreshold']}")
+                    actions_taken.append(
+                        f"修改失败阈值: {analysis['failureThreshold']}"
+                    )
 
                 # 应用补丁
                 success = await self.k8s_service.patch_deployment(
@@ -989,7 +1060,9 @@ class K8sFixerAgent:
                 logger.info("执行重启操作")
 
                 # 执行重启
-                success = await self.k8s_service.restart_deployment(deployment_name, namespace)
+                success = await self.k8s_service.restart_deployment(
+                    deployment_name, namespace
+                )
 
                 if success:
                     logger.info(f"成功重启部署: {deployment_name}")
@@ -1068,7 +1141,9 @@ class K8sFixerAgent:
             retries = 3
             for attempt in range(retries):
                 # 获取最新部署状态
-                deployment = await self.k8s_service.get_deployment(deployment_name, namespace)
+                deployment = await self.k8s_service.get_deployment(
+                    deployment_name, namespace
+                )
                 if not deployment:
                     logger.warning(
                         f"验证修复时无法获取部署: {deployment_name} (尝试 {attempt+1}/{retries})"
@@ -1112,7 +1187,9 @@ class K8sFixerAgent:
                 # 检查是否有足够的Pod已就绪
                 if total_pods == 0:
                     if attempt < retries - 1:
-                        logger.info(f"未找到相关Pod，等待后重试 (尝试 {attempt+1}/{retries})")
+                        logger.info(
+                            f"未找到相关Pod，等待后重试 (尝试 {attempt+1}/{retries})"
+                        )
                         await asyncio.sleep(2)
                         continue
                     return "未找到相关Pod"
@@ -1122,7 +1199,9 @@ class K8sFixerAgent:
 
                 # 如果所有Pod都已就绪，验证成功
                 if ready_pods == total_pods:
-                    logger.info(f"验证成功: 所有Pod ({ready_pods}/{total_pods}) 均已就绪")
+                    logger.info(
+                        f"验证成功: 所有Pod ({ready_pods}/{total_pods}) 均已就绪"
+                    )
                     return f"修复成功: 所有Pod ({ready_pods}/{total_pods}) 均已就绪"
 
                 # 如果大部分Pod已就绪，算部分成功
@@ -1246,14 +1325,18 @@ class K8sFixerAgent:
                         pods_status += f"- {pod['name']}: 状态={pod['phase']}, 重启次数={pod['restart_count']}\n"
 
                     if len(problematic_pods) > 5:
-                        pods_status += f"...以及其他 {len(problematic_pods) - 5} 个问题Pod"
+                        pods_status += (
+                            f"...以及其他 {len(problematic_pods) - 5} 个问题Pod"
+                        )
             except Exception as e:
                 logger.error(f"获取Pod状态失败: {str(e)}")
 
             # 3. 获取Deployment状态
             deployments_status = "无法获取部署状态"
             try:
-                deployments = self.k8s_service.apps_v1.list_namespaced_deployment(namespace)
+                deployments = self.k8s_service.apps_v1.list_namespaced_deployment(
+                    namespace
+                )
                 total_deployments = len(deployments.items)
                 healthy_deployments = 0
                 problematic_deployments = []
@@ -1273,7 +1356,9 @@ class K8sFixerAgent:
                             }
                         )
 
-                deployments_status = f"部署: {healthy_deployments}/{total_deployments} 健康"
+                deployments_status = (
+                    f"部署: {healthy_deployments}/{total_deployments} 健康"
+                )
                 if problematic_deployments:
                     deployments_status += "\n问题部署列表:\n"
                     for d in problematic_deployments:
@@ -1286,7 +1371,9 @@ class K8sFixerAgent:
             # 4. 获取最近事件
             events_info = "无法获取事件信息"
             try:
-                events = await self.k8s_service.get_events(namespace=namespace, limit=10)
+                events = await self.k8s_service.get_events(
+                    namespace=namespace, limit=10
+                )
 
                 if events:
                     warning_events = []
@@ -1295,17 +1382,19 @@ class K8sFixerAgent:
                             warning_events.append(
                                 {
                                     "reason": event.get("reason", ""),
-                                    "message": event.get("message", "")[:100],  # 截取前100个字符
-                                    "object": event.get("involved_object", {}).get("name", ""),
+                                    "message": event.get("message", "")[
+                                        :100
+                                    ],  # 截取前100个字符
+                                    "object": event.get("involved_object", {}).get(
+                                        "name", ""
+                                    ),
                                 }
                             )
 
                     if warning_events:
                         events_info = "最近警告事件:\n"
                         for event in warning_events[:5]:  # 只显示前5个
-                            events_info += (
-                                f"- {event['object']}: {event['reason']} - {event['message']}\n"
-                            )
+                            events_info += f"- {event['object']}: {event['reason']} - {event['message']}\n"
                     else:
                         events_info = "没有发现警告事件"
                 else:
@@ -1333,7 +1422,9 @@ class K8sFixerAgent:
             logger.error(f"诊断集群健康失败: {str(e)}")
             return f"诊断集群健康失败: {str(e)}"
 
-    def _generate_diagnosis_recommendations(self, problematic_pods, problematic_deployments) -> str:
+    def _generate_diagnosis_recommendations(
+        self, problematic_pods, problematic_deployments
+    ) -> str:
         """生成诊断建议"""
         if not problematic_pods and not problematic_deployments:
             return "集群状态良好，无需采取措施。"
@@ -1412,7 +1503,9 @@ class K8sFixerAgent:
                 context["error"] = "没有指定部署名称，无法进行修复"
                 return replace(state, context=context)
 
-            logger.info(f"K8sFixer开始修复: {deployment}/{namespace}, 问题描述: {problem[:50]}...")
+            logger.info(
+                f"K8sFixer开始修复: {deployment}/{namespace}, 问题描述: {problem[:50]}..."
+            )
 
             # 记录LLM提供商状态，便于问题诊断
             is_llm_healthy = self.llm_service.is_healthy()
@@ -1423,7 +1516,9 @@ class K8sFixerAgent:
 
             # 执行修复
             try:
-                fix_result = await self.analyze_and_fix_deployment(deployment, namespace, problem)
+                fix_result = await self.analyze_and_fix_deployment(
+                    deployment, namespace, problem
+                )
             except Exception as fix_e:
                 logger.error(f"修复过程发生错误: {str(fix_e)}")
                 fix_result = f"修复过程发生错误: {str(fix_e)}"
@@ -1433,13 +1528,16 @@ class K8sFixerAgent:
             context["success"] = (
                 True
                 if any(
-                    term in str(fix_result).lower() for term in ["自动修复完成", "成功", "已修复"]
+                    term in str(fix_result).lower()
+                    for term in ["自动修复完成", "成功", "已修复"]
                 )
                 else False
             )
 
             # 添加操作记录
-            if "actions_taken" not in context or not isinstance(context["actions_taken"], list):
+            if "actions_taken" not in context or not isinstance(
+                context["actions_taken"], list
+            ):
                 context["actions_taken"] = []
             context["actions_taken"].append(f"K8sFixer修复: {deployment}/{namespace}")
 

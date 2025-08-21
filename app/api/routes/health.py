@@ -6,11 +6,11 @@ AI-CloudOps-aiops
 Author: Bamboo
 Email: bamboocloudops@gmail.com
 License: Apache 2.0
-Description: 系统健康检查FastAPI模块 - 提供系统级健康监控和状态检查功能
+Description: 健康检查API接口
 """
 
 import logging
-from typing import Dict, Any
+from typing import Any, Dict
 
 from fastapi import APIRouter, HTTPException
 
@@ -30,10 +30,7 @@ health_service = HealthService()
 async def health_check() -> Dict[str, Any]:
     await health_service.initialize()
     health_data = await health_service.get_overall_health()
-    return ResponseWrapper.success(
-        data=health_data,
-        message="success"
-    )
+    return ResponseWrapper.success(data=health_data, message="success")
 
 
 @router.get("/health/components", summary="组件健康检查")
@@ -41,10 +38,7 @@ async def health_check() -> Dict[str, Any]:
 async def components_health() -> Dict[str, Any]:
     await health_service.initialize()
     components_data = await health_service.get_components_health()
-    return ResponseWrapper.success(
-        data=components_data,
-        message="success"
-    )
+    return ResponseWrapper.success(data=components_data, message="success")
 
 
 @router.get("/health/metrics", summary="系统指标检查")
@@ -52,10 +46,7 @@ async def components_health() -> Dict[str, Any]:
 async def metrics_health() -> Dict[str, Any]:
     await health_service.initialize()
     metrics_data = await health_service.get_system_metrics()
-    return ResponseWrapper.success(
-        data=metrics_data,
-        message="success"
-    )
+    return ResponseWrapper.success(data=metrics_data, message="success")
 
 
 @router.get("/health/ready", summary="就绪状态检查")
@@ -63,18 +54,11 @@ async def metrics_health() -> Dict[str, Any]:
 async def readiness_check() -> Dict[str, Any]:
     await health_service.initialize()
     ready_status = await health_service.check_readiness()
-    
 
     if not ready_status.get("ready", False):
-        raise HTTPException(
-            status_code=503,
-            detail="服务未就绪"
-        )
-    
-    return ResponseWrapper.success(
-        data=ready_status,
-        message="success"
-    )
+        raise HTTPException(status_code=503, detail="服务未就绪")
+
+    return ResponseWrapper.success(data=ready_status, message="success")
 
 
 @router.get("/health/live", summary="存活状态检查")
@@ -82,10 +66,7 @@ async def readiness_check() -> Dict[str, Any]:
 async def liveness_check() -> Dict[str, Any]:
     await health_service.initialize()
     live_status = await health_service.check_liveness()
-    return ResponseWrapper.success(
-        data=live_status,
-        message="success"
-    )
+    return ResponseWrapper.success(data=live_status, message="success")
 
 
 @router.get("/health/startup", summary="启动状态检查")
@@ -93,18 +74,11 @@ async def liveness_check() -> Dict[str, Any]:
 async def startup_check() -> Dict[str, Any]:
     await health_service.initialize()
     startup_status = await health_service.check_startup()
-    
 
     if not startup_status.get("started", False):
-        raise HTTPException(
-            status_code=503,
-            detail="服务启动未完成"
-        )
-    
-    return ResponseWrapper.success(
-        data=startup_status,
-        message="success"
-    )
+        raise HTTPException(status_code=503, detail="服务启动未完成")
+
+    return ResponseWrapper.success(data=startup_status, message="success")
 
 
 @router.get("/health/dependencies", summary="依赖服务检查")
@@ -112,10 +86,7 @@ async def startup_check() -> Dict[str, Any]:
 async def dependencies_check() -> Dict[str, Any]:
     await health_service.initialize()
     deps_status = await health_service.check_dependencies()
-    return ResponseWrapper.success(
-        data=deps_status,
-        message="success"
-    )
+    return ResponseWrapper.success(data=deps_status, message="success")
 
 
 @router.get("/health/detail", summary="详细健康检查")
@@ -123,10 +94,7 @@ async def dependencies_check() -> Dict[str, Any]:
 async def detailed_health() -> Dict[str, Any]:
     await health_service.initialize()
     detailed_data = await health_service.get_detailed_health()
-    return ResponseWrapper.success(
-        data=detailed_data,
-        message="success"
-    )
+    return ResponseWrapper.success(data=detailed_data, message="success")
 
 
 __all__ = ["router"]

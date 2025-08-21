@@ -6,10 +6,11 @@ AI-CloudOps-aiops
 Author: Bamboo
 Email: bamboocloudops@gmail.com
 License: Apache 2.0
-Description: CORS中间件配置 - 处理跨域资源共享，支持浏览器端API访问
+Description: 跨域请求处理中间件
 """
 
 import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 

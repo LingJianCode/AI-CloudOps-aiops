@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+
 """
 AI-CloudOps-aiops
 Author: Bamboo
 Email: bamboocloudops@gmail.com
 License: Apache 2.0
-Description: 应用程序配置管理模块，提供全局配置参数和环境变量加载功能
+Description: 配置管理模块
 """
 
 import os
@@ -16,7 +17,9 @@ from typing import Any, Dict, List, Optional
 import yaml
 from dotenv import load_dotenv
 
-ROOT_DIR = Path(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+ROOT_DIR = Path(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+)
 load_dotenv()
 ENV = os.getenv("ENV", "development")
 
@@ -28,7 +31,9 @@ def load_config() -> Dict[str, Any]:
     Returns:
         Dict[str, Any]: 加载的配置字典
     """
-    config_file = ROOT_DIR / "config" / f"config{'.' + ENV if ENV != 'development' else ''}.yaml"
+    config_file = (
+        ROOT_DIR / "config" / f"config{'.' + ENV if ENV != 'development' else ''}.yaml"
+    )
     default_config_file = ROOT_DIR / "config" / "config.yaml"
 
     try:
@@ -69,7 +74,9 @@ def get_env_or_config(
     parts = config_path.split(".")
     config_value = CONFIG
     for part in parts:
-        config_value = config_value.get(part, {}) if isinstance(config_value, dict) else {}
+        config_value = (
+            config_value.get(part, {}) if isinstance(config_value, dict) else {}
+        )
 
     value = os.getenv(env_key) or config_value or default
 
@@ -105,12 +112,16 @@ class LLMConfig:
     """大语言模型配置"""
 
     provider: str = field(
-        default_factory=lambda: get_env_or_config("LLM_PROVIDER", "llm.provider", "openai")
+        default_factory=lambda: get_env_or_config(
+            "LLM_PROVIDER", "llm.provider", "openai"
+        )
         .split("#")[0]
         .strip()
     )
     model: str = field(
-        default_factory=lambda: get_env_or_config("LLM_MODEL", "llm.model", "Qwen/Qwen3-14B")
+        default_factory=lambda: get_env_or_config(
+            "LLM_MODEL", "llm.model", "Qwen/Qwen3-14B"
+        )
     )
     task_model: str = field(
         default_factory=lambda: get_env_or_config(
@@ -118,7 +129,9 @@ class LLMConfig:
         )
     )
     api_key: str = field(
-        default_factory=lambda: get_env_or_config("LLM_API_KEY", "llm.api_key", "sk-xxx")
+        default_factory=lambda: get_env_or_config(
+            "LLM_API_KEY", "llm.api_key", "sk-xxx"
+        )
     )
     base_url: str = field(
         default_factory=lambda: get_env_or_config(
@@ -126,10 +139,14 @@ class LLMConfig:
         )
     )
     temperature: float = field(
-        default_factory=lambda: get_env_or_config("LLM_TEMPERATURE", "llm.temperature", 0.7, float)
+        default_factory=lambda: get_env_or_config(
+            "LLM_TEMPERATURE", "llm.temperature", 0.7, float
+        )
     )
     max_tokens: int = field(
-        default_factory=lambda: get_env_or_config("LLM_MAX_TOKENS", "llm.max_tokens", 2048, int)
+        default_factory=lambda: get_env_or_config(
+            "LLM_MAX_TOKENS", "llm.max_tokens", 2048, int
+        )
     )
     request_timeout: int = field(
         default_factory=lambda: get_env_or_config(
@@ -138,14 +155,16 @@ class LLMConfig:
     )
 
     ollama_model: str = field(
-        default_factory=lambda: get_env_or_config("OLLAMA_MODEL", "llm.ollama_model", "qwen2.5:3b")
+        default_factory=lambda: get_env_or_config(
+            "OLLAMA_MODEL", "llm.ollama_model", "qwen2.5:3b"
+        )
     )
     ollama_base_url: str = field(
         default_factory=lambda: get_env_or_config(
             "OLLAMA_BASE_URL", "llm.ollama_base_url", "http://127.0.0.1:11434/v1"
         )
     )
-    
+
     embedding_model: str = field(
         default_factory=lambda: get_env_or_config(
             "LLM_EMBEDDING_MODEL", "llm.embedding_model", "Pro/BAAI/bge-m3"
@@ -161,7 +180,11 @@ class LLMConfig:
     @property
     def effective_base_url(self) -> str:
         if self.provider.lower() == "ollama":
-            return self.ollama_base_url.split("#")[0].strip() if self.ollama_base_url else ""
+            return (
+                self.ollama_base_url.split("#")[0].strip()
+                if self.ollama_base_url
+                else ""
+            )
         return self.base_url.split("#")[0].strip() if self.base_url else ""
 
     @property
@@ -179,7 +202,9 @@ class K8sConfig:
         )
     )
     config_path: Optional[str] = field(
-        default_factory=lambda: get_env_or_config("K8S_CONFIG_PATH", "kubernetes.config_path")
+        default_factory=lambda: get_env_or_config(
+            "K8S_CONFIG_PATH", "kubernetes.config_path"
+        )
         or str(ROOT_DIR / "deploy/kubernetes/config")
     )
     namespace: str = field(
@@ -289,7 +314,9 @@ class TavilyConfig:
     """Tavily 搜索引擎配置"""
 
     api_key: str = field(
-        default_factory=lambda: get_env_or_config("TAVILY_API_KEY", "tavily.api_key", "")
+        default_factory=lambda: get_env_or_config(
+            "TAVILY_API_KEY", "tavily.api_key", ""
+        )
     )
     max_results: int = field(
         default_factory=lambda: get_env_or_config(
@@ -303,14 +330,20 @@ class RedisConfig:
     """Redis 向量存储配置"""
 
     host: str = field(
-        default_factory=lambda: get_env_or_config("REDIS_HOST", "redis.host", "localhost")
+        default_factory=lambda: get_env_or_config(
+            "REDIS_HOST", "redis.host", "localhost"
+        )
     )
     port: int = field(
         default_factory=lambda: get_env_or_config("REDIS_PORT", "redis.port", 6379, int)
     )
-    db: int = field(default_factory=lambda: get_env_or_config("REDIS_DB", "redis.db", 0, int))
+    db: int = field(
+        default_factory=lambda: get_env_or_config("REDIS_DB", "redis.db", 0, int)
+    )
     password: str = field(
-        default_factory=lambda: get_env_or_config("REDIS_PASSWORD", "redis.password", "")
+        default_factory=lambda: get_env_or_config(
+            "REDIS_PASSWORD", "redis.password", ""
+        )
     )
     connection_timeout: int = field(
         default_factory=lambda: get_env_or_config(
@@ -354,14 +387,18 @@ class RAGConfig:
         )
     )
     chunk_size: int = field(
-        default_factory=lambda: get_env_or_config("RAG_CHUNK_SIZE", "rag.chunk_size", 1000, int)
+        default_factory=lambda: get_env_or_config(
+            "RAG_CHUNK_SIZE", "rag.chunk_size", 1000, int
+        )
     )
     chunk_overlap: int = field(
         default_factory=lambda: get_env_or_config(
             "RAG_CHUNK_OVERLAP", "rag.chunk_overlap", 200, int
         )
     )
-    top_k: int = field(default_factory=lambda: get_env_or_config("RAG_TOP_K", "rag.top_k", 4, int))
+    top_k: int = field(
+        default_factory=lambda: get_env_or_config("RAG_TOP_K", "rag.top_k", 4, int)
+    )
     similarity_threshold: float = field(
         default_factory=lambda: get_env_or_config(
             "RAG_SIMILARITY_THRESHOLD", "rag.similarity_threshold", 0.7, float
@@ -369,12 +406,16 @@ class RAGConfig:
     )
     openai_embedding_model: str = field(
         default_factory=lambda: get_env_or_config(
-            "RAG_OPENAI_EMBEDDING_MODEL", "rag.openai_embedding_model", "Pro/BAAI/bge-m3"
+            "RAG_OPENAI_EMBEDDING_MODEL",
+            "rag.openai_embedding_model",
+            "Pro/BAAI/bge-m3",
         )
     )
     ollama_embedding_model: str = field(
         default_factory=lambda: get_env_or_config(
-            "RAG_OLLAMA_EMBEDDING_MODEL", "rag.ollama_embedding_model", "nomic-embed-text"
+            "RAG_OLLAMA_EMBEDDING_MODEL",
+            "rag.ollama_embedding_model",
+            "nomic-embed-text",
         )
     )
     max_context_length: int = field(
@@ -383,33 +424,39 @@ class RAGConfig:
         )
     )
     temperature: float = field(
-        default_factory=lambda: get_env_or_config("RAG_TEMPERATURE", "rag.temperature", 0.1, float)
+        default_factory=lambda: get_env_or_config(
+            "RAG_TEMPERATURE", "rag.temperature", 0.1, float
+        )
     )
     timeout: int = field(
-        default_factory=lambda: get_env_or_config("RAG_TIMEOUT", "rag.timeout", 360, int)
+        default_factory=lambda: get_env_or_config(
+            "RAG_TIMEOUT", "rag.timeout", 360, int
+        )
     )
 
     @property
     def effective_embedding_model(self) -> str:
-        llm_provider = get_env_or_config("LLM_PROVIDER", "llm.provider", "openai").lower()
+        llm_provider = get_env_or_config(
+            "LLM_PROVIDER", "llm.provider", "openai"
+        ).lower()
         return (
-            self.ollama_embedding_model if llm_provider == "ollama" else self.openai_embedding_model
+            self.ollama_embedding_model
+            if llm_provider == "ollama"
+            else self.openai_embedding_model
         )
 
 
 @dataclass
 class MCPConfig:
     """MCP配置"""
-    
+
     server_url: str = field(
         default_factory=lambda: get_env_or_config(
             "MCP_SERVER_URL", "mcp.server_url", "http://localhost:9000"
         )
     )
     timeout: int = field(
-        default_factory=lambda: get_env_or_config(
-            "MCP_TIMEOUT", "mcp.timeout", 30, int
-        )
+        default_factory=lambda: get_env_or_config("MCP_TIMEOUT", "mcp.timeout", 30, int)
     )
     max_retries: int = field(
         default_factory=lambda: get_env_or_config(
@@ -424,14 +471,63 @@ class MCPConfig:
 
 
 @dataclass
+class TimeConfig:
+    """时间配置"""
+
+    holidays: List[str] = field(
+        default_factory=lambda: CONFIG.get("time", {}).get(
+            "holidays",
+            [
+                "0101",
+                "0102",
+                "0103",  # 元旦
+                "0210",
+                "0211",
+                "0212",
+                "0213",
+                "0214",
+                "0215",
+                "0216",
+                "0217",  # 春节
+                "0404",
+                "0405",
+                "0406",  # 清明节
+                "0501",
+                "0502",
+                "0503",
+                "0504",
+                "0505",  # 劳动节
+                "0610",
+                "0611",
+                "0612",  # 端午节
+                "0917",
+                "0918",
+                "0919",  # 中秋节
+                "1001",
+                "1002",
+                "1003",
+                "1004",
+                "1005",
+                "1006",
+                "1007",  # 国庆节
+            ],
+        )
+    )
+
+
+@dataclass
 class AppConfig:
     """应用程序主配置类"""
 
     debug: bool = field(
         default_factory=lambda: get_env_or_config("DEBUG", "app.debug", False, bool)
     )
-    host: str = field(default_factory=lambda: get_env_or_config("HOST", "app.host", "0.0.0.0"))
-    port: int = field(default_factory=lambda: get_env_or_config("PORT", "app.port", 8080, int))
+    host: str = field(
+        default_factory=lambda: get_env_or_config("HOST", "app.host", "0.0.0.0")
+    )
+    port: int = field(
+        default_factory=lambda: get_env_or_config("PORT", "app.port", 8080, int)
+    )
     log_level: str = field(
         default_factory=lambda: get_env_or_config("LOG_LEVEL", "app.log_level", "INFO")
     )
@@ -446,6 +542,7 @@ class AppConfig:
     redis: RedisConfig = field(default_factory=RedisConfig)
     rag: RAGConfig = field(default_factory=RAGConfig)
     mcp: MCPConfig = field(default_factory=MCPConfig)
+    time: TimeConfig = field(default_factory=TimeConfig)
 
 
 config = AppConfig()

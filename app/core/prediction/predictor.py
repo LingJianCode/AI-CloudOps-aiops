@@ -6,10 +6,9 @@ AI-CloudOps-aiops
 Author: Bamboo
 Email: bamboocloudops@gmail.com
 License: Apache 2.0
-Description: 预测模块 - 提供负载预测和机器学习模型功能
+Description: 预测引擎
 """
 
-# ==================== 核心依赖导入 ====================
 import datetime
 import logging
 from typing import Any, Dict, List, Optional
@@ -17,19 +16,11 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 import pandas as pd
 
-from app.config.settings import config  # 系统配置
 from app.common.constants import ServiceConstants  # 预测相关常量
-
-# ==================== 内部组件导入 ====================
+from app.config.settings import config  # 系统配置
 from app.core.prediction.model_loader import ModelLoader  # 模型加载器
 from app.services.prometheus import PrometheusService  # Prometheus数据服务
-from app.utils.error_handlers import (  # 错误处理工具
-    ErrorHandler,
-    ServiceError,
-    ValidationError,
-    validate_field_range,
-    validate_field_type,
-)
+from app.utils.error_handlers import ErrorHandler  # 错误处理工具
 from app.utils.time_utils import TimeUtils  # 时间工具类
 
 logger = logging.getLogger("aiops.predictor")
@@ -186,7 +177,9 @@ class PredictionService:
                     "current_qps": round(current_qps, 2),
                     "timestamp": timestamp.isoformat(),
                     "confidence": 0.95,  # 低流量场景置信度很高
-                    "model_version": self.model_loader.model_metadata.get("version", "1.0"),
+                    "model_version": self.model_loader.model_metadata.get(
+                        "version", "1.0"
+                    ),
                     "prediction_type": "threshold_based",  # 基于阈值的预测
                 }
 
@@ -194,18 +187,32 @@ class PredictionService:
             time_features = TimeUtils.extract_time_features(timestamp)
 
             # 步骤7：历史数据收集 - 获取1小时、1天、1周前的QPS数据用于趋势分析
-            qps_1h_ago = await self._get_historical_qps(timestamp - datetime.timedelta(hours=1))
-            qps_1d_ago = await self._get_historical_qps(timestamp - datetime.timedelta(days=1))
-            qps_1w_ago = await self._get_historical_qps(timestamp - datetime.timedelta(weeks=1))
+            qps_1h_ago = await self._get_historical_qps(
+                timestamp - datetime.timedelta(hours=1)
+            )
+            qps_1d_ago = await self._get_historical_qps(
+                timestamp - datetime.timedelta(days=1)
+            )
+            qps_1w_ago = await self._get_historical_qps(
+                timestamp - datetime.timedelta(weeks=1)
+            )
 
             # 步骤8：历史数据处理 - 确保历史QPS数据有效，否则使用合理的估计值
             # 如果无法获取历史数据，使用当前QPS的合理估计值
-            qps_1h_ago = qps_1h_ago if qps_1h_ago is not None else max(0, current_qps * 0.9)
-            qps_1d_ago = qps_1d_ago if qps_1d_ago is not None else max(0, current_qps * 1.0)
-            qps_1w_ago = qps_1w_ago if qps_1w_ago is not None else max(0, current_qps * 1.0)
+            qps_1h_ago = (
+                qps_1h_ago if qps_1h_ago is not None else max(0, current_qps * 0.9)
+            )
+            qps_1d_ago = (
+                qps_1d_ago if qps_1d_ago is not None else max(0, current_qps * 1.0)
+            )
+            qps_1w_ago = (
+                qps_1w_ago if qps_1w_ago is not None else max(0, current_qps * 1.0)
+            )
 
             # 步骤9：衍生特征计算 - 计算QPS变化率，反映流量趋势
-            qps_change = (current_qps - qps_1h_ago) / max(1.0, qps_1h_ago)  # 避免除零错误
+            qps_change = (current_qps - qps_1h_ago) / max(
+                1.0, qps_1h_ago
+            )  # 避免除零错误
 
             # 步骤10：近期流量统计 - 计算最近6小时的平均QPS
             recent_qps_data = await self._get_recent_qps_data(timestamp, hours=6)
@@ -222,7 +229,9 @@ class PredictionService:
                 "cos_time": [time_features["cos_time"]],  # 时间的余弦编码
                 "sin_day": [time_features["sin_day"]],  # 日期的正弦编码
                 "cos_day": [time_features["cos_day"]],  # 日期的余弦编码
-                "is_business_hour": [int(time_features["is_business_hour"])],  # 是否工作时间
+                "is_business_hour": [
+                    int(time_features["is_business_hour"])
+                ],  # 是否工作时间
                 "is_weekend": [int(time_features["is_weekend"])],  # 是否周末
                 "QPS_1h_ago": [qps_1h_ago],  # 1小时前的QPS
                 "QPS_1d_ago": [qps_1d_ago],  # 1天前的QPS
@@ -239,7 +248,9 @@ class PredictionService:
                 model_features = self.model_loader.model_metadata.get("features", [])
                 for feature in model_features:
                     if feature not in features.columns:
-                        logger.warning(f"模型期望特征 '{feature}' 不在当前特征集中，添加默认值0")
+                        logger.warning(
+                            f"模型期望特征 '{feature}' 不在当前特征集中，添加默认值0"
+                        )
                         features[feature] = 0.0
 
                 # 步骤14：特征排序 - 确保特征顺序与模型训练时一致
@@ -273,7 +284,9 @@ class PredictionService:
             )
 
             # 步骤18：置信度计算 - 基于多个因素计算预测结果的置信度
-            confidence = self._calculate_confidence(current_qps, time_features, prediction)
+            confidence = self._calculate_confidence(
+                current_qps, time_features, prediction
+            )
 
             logger.info(
                 f"预测完成: QPS={current_qps:.2f}, 实例数={instances}, 置信度={confidence:.2f}"
@@ -285,7 +298,9 @@ class PredictionService:
                 "current_qps": round(current_qps, 2),  # 当前QPS（保留2位小数）
                 "timestamp": timestamp.isoformat(),  # 预测时间（ISO格式）
                 "confidence": confidence,  # 预测置信度
-                "model_version": self.model_loader.model_metadata.get("version", "1.0"),  # 模型版本
+                "model_version": self.model_loader.model_metadata.get(
+                    "version", "1.0"
+                ),  # 模型版本
                 "prediction_type": "model_based",  # 预测类型：基于模型
             }
 
@@ -296,7 +311,9 @@ class PredictionService:
                     "sin_time": time_features["sin_time"],  # 时间正弦值
                     "cos_time": time_features["cos_time"],  # 时间余弦值
                     "hour": time_features["hour"],  # 小时
-                    "is_business_hour": time_features["is_business_hour"],  # 是否工作时间
+                    "is_business_hour": time_features[
+                        "is_business_hour"
+                    ],  # 是否工作时间
                     "is_weekend": time_features["is_weekend"],  # 是否周末
                     "sin_day": features_dict["sin_day"][0],  # 日期正弦值
                     "cos_day": features_dict["cos_day"][0],  # 日期余弦值
@@ -353,7 +370,9 @@ class PredictionService:
             logger.error(f"获取QPS失败: {str(e)}")
             return 0.0
 
-    async def _get_historical_qps(self, timestamp: datetime.datetime) -> Optional[float]:
+    async def _get_historical_qps(
+        self, timestamp: datetime.datetime
+    ) -> Optional[float]:
         """
         获取指定时间点的历史QPS数据 - 历史数据回溯方法
 
@@ -383,7 +402,9 @@ class PredictionService:
             if result and len(result) > 0:
                 # 从Prometheus结果中提取历史QPS值
                 qps = float(result[0]["value"][1])
-                logger.debug(f"从Prometheus获取历史QPS ({timestamp.isoformat()}): {qps}")
+                logger.debug(
+                    f"从Prometheus获取历史QPS ({timestamp.isoformat()}): {qps}"
+                )
                 return max(0, qps)  # 确保非负，避免异常数据
             else:
                 # 指定时间点没有数据，这在时间跨度较大时可能发生
@@ -454,7 +475,9 @@ class PredictionService:
             logger.error(f"获取最近QPS数据失败: {str(e)}")
             return []
 
-    def _calculate_confidence(self, qps: float, time_features: dict, prediction: float) -> float:
+    def _calculate_confidence(
+        self, qps: float, time_features: dict, prediction: float
+    ) -> float:
         """
         计算预测置信度 - 多因素置信度评估算法
 
@@ -749,7 +772,9 @@ class PredictionService:
         - 休闲时间（湍在因子中等）
         """
         # 从常量配置中获取时间因子，如果找不到则使用默认值
-        return ServiceConstants.HOUR_FACTORS.get(hour, 0.5)  # 默认为0.5，表示中等流量水平
+        return ServiceConstants.HOUR_FACTORS.get(
+            hour, 0.5
+        )  # 默认为0.5，表示中等流量水平
 
     def _get_day_factor(self, day_of_week: int) -> float:
         """
@@ -775,7 +800,9 @@ class PredictionService:
         - 特殊日期（可配置不同因子）
         """
         # 从常量配置中获取星期因子，如果找不到则使用默认值
-        return ServiceConstants.DAY_FACTORS.get(day_of_week, 1.0)  # 默认为1.0，表示正常流量水平
+        return ServiceConstants.DAY_FACTORS.get(
+            day_of_week, 1.0
+        )  # 默认为1.0，表示正常流量水平
 
     def is_healthy(self) -> bool:
         """

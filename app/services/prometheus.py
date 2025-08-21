@@ -6,7 +6,7 @@ AI-CloudOps-aiops
 Author: Bamboo
 Email: bamboocloudops@gmail.com
 License: Apache 2.0
-Description: Prometheus服务模块 - 提供监控数据查询、时间序列数据获取和指标分析功能
+Description: Prometheus监控数据服务
 """
 
 import logging
@@ -55,7 +55,9 @@ class PrometheusService:
                 if not result.get("values"):
                     continue
 
-                timestamps = [datetime.utcfromtimestamp(float(val[0])) for val in result["values"]]
+                timestamps = [
+                    datetime.utcfromtimestamp(float(val[0])) for val in result["values"]
+                ]
                 values = []
 
                 for val in result["values"]:
@@ -64,7 +66,9 @@ class PrometheusService:
                     except (ValueError, TypeError):
                         values.append(0.0)
 
-                series_df = pd.DataFrame({"value": values}, index=pd.DatetimeIndex(timestamps))
+                series_df = pd.DataFrame(
+                    {"value": values}, index=pd.DatetimeIndex(timestamps)
+                )
 
                 # 添加标签信息
                 labels = result.get("metric", {})
@@ -142,14 +146,14 @@ class PrometheusService:
         """检查Prometheus健康状态"""
         try:
             url = f"{self.base_url}/-/healthy"
-            response = requests.get(url, timeout=5)
+            response = requests.get(url, timeout=self.timeout)
             is_healthy = response.status_code == 200
             logger.debug(f"Prometheus健康状态: {is_healthy}")
             return is_healthy
         except Exception as e:
             logger.error(f"Prometheus健康检查失败: {str(e)}")
             return False
-    
+
     async def health_check(self) -> bool:
         """异步健康检查方法 - 为RCA模块提供兼容接口"""
         return self.is_healthy()

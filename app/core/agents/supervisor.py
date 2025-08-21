@@ -6,18 +6,16 @@ AI-CloudOps-aiops
 Author: Bamboo
 Email: bamboocloudops@gmail.com
 License: Apache 2.0
-Description: 主管代理 - 协调多个智能代理进行问题解决
+Description: 监督代理
 """
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
-from langchain_core.messages import BaseMessage, HumanMessage
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.messages import BaseMessage
 from pydantic import BaseModel
 from typing_extensions import Literal
 
-from app.config.settings import config
 from app.models.data_models import AgentState
 from app.services.llm import LLMService
 
@@ -221,7 +219,10 @@ class SupervisorAgent:
 以JSON格式返回分析结果。"""
 
             messages = [
-                {"role": "user", "content": analysis_prompt.format(problem=problem_description)}
+                {
+                    "role": "user",
+                    "content": analysis_prompt.format(problem=problem_description),
+                }
             ]
 
             response = await self.llm_service.generate_response(messages)
@@ -283,7 +284,9 @@ class SupervisorAgent:
         4. 上下文存储空间
         """
         return AgentState(
-            messages=[{"role": "user", "content": problem_description, "timestamp": "now"}],
+            messages=[
+                {"role": "user", "content": problem_description, "timestamp": "now"}
+            ],
             current_step="analyzing",
             context={"problem": problem_description, "start_time": "now"},
             iteration_count=0,
@@ -318,7 +321,9 @@ class SupervisorAgent:
             return False
 
         # 检测无限循环：如果最近的行动都是同一个代理，可能陷入循环
-        recent_actions = [msg.get("agent") for msg in state.messages[-5:] if isinstance(msg, dict)]
+        recent_actions = [
+            msg.get("agent") for msg in state.messages[-5:] if isinstance(msg, dict)
+        ]
         if len(set(recent_actions)) <= 1 and len(recent_actions) >= 3:
             logger.warning("检测到可能的无限循环，停止处理")
             return False

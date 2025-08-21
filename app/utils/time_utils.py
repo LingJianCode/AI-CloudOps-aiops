@@ -6,62 +6,25 @@ AI-CloudOps-aiops
 Author: Bamboo
 Email: bamboocloudops@gmail.com
 License: Apache 2.0
-Description: 时间工具模块 - 提供时间处理、特征提取和时间序列相关的工具函数
+Description: 时间工具类
 """
 
 import calendar
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Tuple
 
 import numpy as np
 import pandas as pd
+
+from app.config.settings import config
 
 
 class TimeUtils:
     """时间相关的工具函数"""
 
-    # 中国主要法定节假日（简化版，实际应该使用完整的节假日API或数据）
-    HOLIDAYS = {
-        # 元旦
-        "0101": True,
-        "0102": True,
-        "0103": True,
-        # 春节 (假设2024年日期，实际应根据农历确定)
-        "0210": True,
-        "0211": True,
-        "0212": True,
-        "0213": True,
-        "0214": True,
-        "0215": True,
-        "0216": True,
-        "0217": True,
-        # 清明节
-        "0404": True,
-        "0405": True,
-        "0406": True,
-        # 劳动节
-        "0501": True,
-        "0502": True,
-        "0503": True,
-        "0504": True,
-        "0505": True,
-        # 端午节
-        "0610": True,
-        "0611": True,
-        "0612": True,
-        # 中秋节
-        "0917": True,
-        "0918": True,
-        "0919": True,
-        # 国庆节
-        "1001": True,
-        "1002": True,
-        "1003": True,
-        "1004": True,
-        "1005": True,
-        "1006": True,
-        "1007": True,
-    }
+    @classmethod
+    def _get_holidays(cls) -> set:
+        """获取节假日集合"""
+        return set(config.time.holidays)
 
     @staticmethod
     def extract_time_features(timestamp: datetime) -> dict:
@@ -84,7 +47,8 @@ class TimeUtils:
 
         # 判断是否是节假日
         date_key = timestamp.strftime("%m%d")
-        is_holiday = TimeUtils.HOLIDAYS.get(date_key, False)
+        holidays = TimeUtils._get_holidays()
+        is_holiday = date_key in holidays
 
         # 获取月份信息和日期信息
         month = timestamp.month

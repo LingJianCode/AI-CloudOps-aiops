@@ -6,7 +6,7 @@ AI-CloudOps-aiops
 Author: Bamboo
 Email: bamboocloudops@gmail.com
 License: Apache 2.0
-Description: 日志配置模块 - 为整个应用程序提供集中的日志设置和配置管理
+Description: 日志配置模块
 """
 
 import logging
@@ -21,7 +21,8 @@ def setup_logging(app: Optional["FastAPI"] = None) -> None:
 
     # 日志格式
     formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
     )
 
     # 控制台处理器

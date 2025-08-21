@@ -2,7 +2,11 @@
 # -*- coding: utf-8 -*-
 
 """
-向量存储模块
+AI-CloudOps-aiops
+Author: Bamboo
+Email: bamboocloudops@gmail.com
+License: Apache 2.0
+Description: 模块初始化文件
 """
 
 from .redis_vector_store import EnhancedRedisVectorStore

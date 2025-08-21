@@ -6,7 +6,7 @@ AI-CloudOps-aiops
 Author: Bamboo
 Email: bamboocloudops@gmail.com
 License: Apache 2.0
-Description: 通知服务模块 - 提供多渠道通知功能，支持飞书、邮件等通知方式的集成
+Description: 通知服务
 """
 
 import json
@@ -54,13 +54,19 @@ class NotificationService:
                             },
                         },
                     ],
-                    "header": {"title": {"content": title, "tag": "plain_text"}, "template": color},
+                    "header": {
+                        "title": {"content": title, "tag": "plain_text"},
+                        "template": color,
+                    },
                 },
             }
 
             logger.debug(f"发送飞书消息: {title}")
             response = requests.post(
-                self.feishu_webhook, headers=headers, data=json.dumps(card_data), timeout=10
+                self.feishu_webhook,
+                headers=headers,
+                data=json.dumps(card_data),
+                timeout=10,
             )
 
             if response.status_code == 200:
@@ -80,7 +86,10 @@ class NotificationService:
             return False
 
     async def send_rca_alert(
-        self, root_causes: List[Dict[str, Any]], time_range: Dict[str, str], metrics_count: int
+        self,
+        root_causes: List[Dict[str, Any]],
+        time_range: Dict[str, str],
+        metrics_count: int,
     ) -> bool:
         """发送根因分析告警"""
         try:
@@ -100,7 +109,9 @@ class NotificationService:
 
             for i, cause in enumerate(root_causes[:3], 1):
                 confidence = cause.get("confidence", 0)
-                confidence_emoji = "🔴" if confidence > 0.8 else "🟡" if confidence > 0.5 else "🟢"
+                confidence_emoji = (
+                    "🔴" if confidence > 0.8 else "🟡" if confidence > 0.5 else "🟢"
+                )
 
                 message += f"""
 {i}. {confidence_emoji} **{cause.get('metric', 'Unknown')}**
@@ -188,7 +199,9 @@ class NotificationService:
             trend = "增加" if predicted_instances > current_instances else "减少"
             trend_emoji = "📈" if predicted_instances > current_instances else "📉"
 
-            confidence_level = "高" if confidence > 0.8 else "中" if confidence > 0.6 else "低"
+            confidence_level = (
+                "高" if confidence > 0.8 else "中" if confidence > 0.6 else "低"
+            )
 
             message = f"""
 {trend_emoji} **负载预测告警**
@@ -208,7 +221,9 @@ class NotificationService:
 - 监控后续变化趋势
 """
 
-            color = "orange" if abs(predicted_instances - current_instances) > 3 else "blue"
+            color = (
+                "orange" if abs(predicted_instances - current_instances) > 3 else "blue"
+            )
 
             return await self.send_feishu_message(message, "负载预测告警", color)
 
@@ -260,19 +275,19 @@ class NotificationService:
             # 根据通知类型选择颜色
             color_map = {
                 "info": "blue",
-                "success": "green", 
+                "success": "green",
                 "warning": "orange",
                 "error": "red",
-                "critical": "red"
+                "critical": "red",
             }
-            
+
             color = color_map.get(notification_type, "blue")
-            
+
             logger.info(f"发送通知: {title}, 类型: {notification_type}")
-            
+
             # 发送飞书消息
             return await self.send_feishu_message(message, title, color)
-            
+
         except Exception as e:
             logger.error(f"发送通知失败: {str(e)}")
             return False

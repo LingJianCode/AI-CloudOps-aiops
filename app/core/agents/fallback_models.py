@@ -6,7 +6,7 @@ AI-CloudOps-aiops
 Author: Bamboo
 Email: bamboocloudops@gmail.com
 License: Apache 2.0
-Description: 备用实现和数据模型 - 提供降级服务和数据结构定义
+Description: 回退模型管理器
 """
 
 import hashlib
@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from functools import lru_cache
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from langchain_core.embeddings import Embeddings
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -46,7 +46,7 @@ class ErrorCode(Enum):
     SERVICE_UNAVAILABLE = "SERVICE_UNAVAILABLE"
 
 
-# 配置常量
+# 配置常量 - 从配置文件中读取，提供默认值作为降级选项
 DEFAULT_EMBEDDING_DIMENSION = 384
 MAX_INPUT_LENGTH = 10000
 MAX_HISTORY_ITEMS = 5
@@ -332,11 +332,13 @@ class FallbackEmbeddings(Embeddings):
 
 class FallbackChatModel(BaseChatModel):
     """优化的备用聊天模型 - 当主要LLM服务不可用时使用"""
-    
+
     model_name: str = "fallback-model"
     template_manager: ResponseTemplateManager = None
 
-    def __init__(self, template_manager: Optional[ResponseTemplateManager] = None, **kwargs):
+    def __init__(
+        self, template_manager: Optional[ResponseTemplateManager] = None, **kwargs
+    ):
         super().__init__(**kwargs)
         self.template_manager = template_manager or ResponseTemplateManager()
 

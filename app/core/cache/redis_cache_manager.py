@@ -2,16 +2,15 @@
 # -*- coding: utf-8 -*-
 
 """
-Redis缓存管理器
+AI-CloudOps-aiops
 Author: Bamboo
 Email: bamboocloudops@gmail.com
 License: Apache 2.0
-Description: 基于Redis的智能缓存管理系统，支持自动过期、LRU清理和数据压缩
+Description: Redis缓存管理器
 """
 
 import gzip
 import hashlib
-import json
 import logging
 import pickle
 import threading
@@ -21,7 +20,6 @@ from typing import Any, Dict, List, Optional
 
 import redis
 from redis.connection import ConnectionPool
-import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -158,19 +156,21 @@ class RedisCacheManager:
         """生成智能缓存键 - 支持相似问题匹配"""
         # 标准化问题文本
         normalized_question = self._normalize_question(question)
-        
+
         # 提取关键词
         keywords = self._extract_keywords(normalized_question)
-        
+
         # 生成基础缓存输入
         cache_input = "|".join(sorted(keywords))  # 排序确保一致性
-        
+
         # 如果有会话上下文，添加简化的上下文信息
         if session_id and history and len(history) > 0:
             # 只使用最后一个问答对的关键信息
             last_interaction = history[-1] if history else ""
             if isinstance(last_interaction, str) and len(last_interaction) > 0:
-                last_keywords = self._extract_keywords(last_interaction)[:3]  # 只取前3个关键词
+                last_keywords = self._extract_keywords(last_interaction)[
+                    :3
+                ]  # 只取前3个关键词
                 if last_keywords:
                     context_key = "|".join(sorted(last_keywords))
                     cache_input = f"{cache_input}|ctx:{context_key}"
@@ -178,45 +178,81 @@ class RedisCacheManager:
         # 生成缓存键
         key_hash = hashlib.sha256(cache_input.encode("utf-8")).hexdigest()
         return f"{self.cache_prefix}smart:{key_hash}"
-    
+
     def _normalize_question(self, question: str) -> str:
         """标准化问题文本"""
         import re
-        
+
         # 转换为小写
         normalized = question.lower().strip()
-        
+
         # 移除多余的标点符号和空格
-        normalized = re.sub(r'[^\w\s\u4e00-\u9fff]', ' ', normalized)  # 保留中文字符
-        
+        normalized = re.sub(r"[^\w\s\u4e00-\u9fff]", " ", normalized)  # 保留中文字符
+
         # 合并多个空格为单个空格
-        normalized = re.sub(r'\s+', ' ', normalized)
-        
+        normalized = re.sub(r"\s+", " ", normalized)
+
         return normalized.strip()
-    
+
     def _extract_keywords(self, text: str, max_keywords: int = 8) -> List[str]:
         """提取关键词"""
         if not text:
             return []
-        
+
         # 简单的关键词提取：移除停用词并按长度过滤
         stop_words = {
-            '的', '了', '是', '在', '有', '和', '与', '或', '但', '不', '没', '也', '都', '要', '会', '能', '可以', '什么', '怎么', '为什么', '如何',
-            'the', 'is', 'in', 'and', 'or', 'but', 'not', 'to', 'a', 'an', 'what', 'how', 'why', 'can', 'could', 'should', 'would'
+            "的",
+            "了",
+            "是",
+            "在",
+            "有",
+            "和",
+            "与",
+            "或",
+            "但",
+            "不",
+            "没",
+            "也",
+            "都",
+            "要",
+            "会",
+            "能",
+            "可以",
+            "什么",
+            "怎么",
+            "为什么",
+            "如何",
+            "the",
+            "is",
+            "in",
+            "and",
+            "or",
+            "but",
+            "not",
+            "to",
+            "a",
+            "an",
+            "what",
+            "how",
+            "why",
+            "can",
+            "could",
+            "should",
+            "would",
         }
-        
+
         words = text.split()
         keywords = []
-        
+
         for word in words:
             # 过滤条件：长度>1，不在停用词中
             if len(word) > 1 and word not in stop_words:
                 keywords.append(word)
-        
+
         # 按词频排序（简单实现）或取最长的词
         keywords = list(set(keywords))  # 去重
         keywords.sort(key=len, reverse=True)  # 按长度排序，长词通常更有意义
-        
+
         return keywords[:max_keywords]
 
     def _serialize_data(self, data: Any) -> bytes:
@@ -363,7 +399,10 @@ class RedisCacheManager:
             if current_size > self.max_cache_size:
                 # 获取所有缓存键
                 cache_keys = self.redis_client.smembers(self.index_key)
-                cache_keys = [key.decode() if isinstance(key, bytes) else key for key in cache_keys]
+                cache_keys = [
+                    key.decode() if isinstance(key, bytes) else key
+                    for key in cache_keys
+                ]
 
                 # 获取每个缓存的访问统计
                 entries_with_stats = []
@@ -404,37 +443,37 @@ class RedisCacheManager:
             # 获取匹配模式的所有键
             cursor = 0
             deleted_count = 0
-            
+
             while True:
                 cursor, keys = self.redis_client.scan(cursor, pattern, count=SCAN_COUNT)
                 if keys:
                     # 批量删除
                     self.redis_client.delete(*keys)
                     deleted_count += len(keys)
-                    
+
                     # 从索引中移除
                     for key in keys:
                         self.redis_client.srem(self.index_key, key)
-                    
+
                 if cursor == 0:
                     break
-            
+
             logger.info(f"根据模式 '{pattern}' 清除了 {deleted_count} 个缓存项")
-            
+
             return {
                 "success": True,
                 "message": f"根据模式清除了 {deleted_count} 个缓存项",
                 "cleared_count": deleted_count,
-                "pattern": pattern
+                "pattern": pattern,
             }
-            
+
         except Exception as e:
             logger.error(f"根据模式清除缓存失败: {e}")
             return {
                 "success": False,
                 "message": f"根据模式清除缓存失败: {e}",
                 "cleared_count": 0,
-                "pattern": pattern
+                "pattern": pattern,
             }
 
     def clear_all(self) -> Dict[str, Any]:
@@ -447,7 +486,10 @@ class RedisCacheManager:
             # 删除所有缓存
             if cache_keys:
                 # 转换为字符串
-                cache_keys = [key.decode() if isinstance(key, bytes) else key for key in cache_keys]
+                cache_keys = [
+                    key.decode() if isinstance(key, bytes) else key
+                    for key in cache_keys
+                ]
                 self.redis_client.delete(*cache_keys)
 
             # 清空索引
@@ -466,7 +508,11 @@ class RedisCacheManager:
 
         except Exception as e:
             logger.error(f"清空缓存失败: {e}")
-            return {"success": False, "message": f"清空缓存失败: {e}", "cleared_count": 0}
+            return {
+                "success": False,
+                "message": f"清空缓存失败: {e}",
+                "cleared_count": 0,
+            }
 
     def get_stats(self) -> Dict[str, Any]:
         """获取缓存统计信息"""
@@ -521,27 +567,27 @@ class RedisCacheManager:
         try:
             # 生成嵌入向量缓存键
             embedding_key = self._generate_embedding_key(text)
-            
+
             # 从Redis获取缓存的嵌入向量
             cached_embedding = self.redis_client.get(embedding_key)
-            
+
             if cached_embedding is None:
                 return None
-                
+
             # 反序列化嵌入向量
             embedding_data = self._deserialize_data(cached_embedding)
             if embedding_data is None:
                 return None
-                
+
             # 检查是否过期
             if embedding_data.get("timestamp"):
                 if time.time() - embedding_data["timestamp"] > 86400:  # 24小时过期
                     self.redis_client.delete(embedding_key)
                     return None
-            
+
             logger.debug(f"嵌入向量缓存命中: {embedding_key[:16]}...")
             return embedding_data.get("embedding")
-            
+
         except Exception as e:
             logger.error(f"获取嵌入向量缓存失败: {e}")
             return None
@@ -554,22 +600,22 @@ class RedisCacheManager:
         try:
             # 生成嵌入向量缓存键
             embedding_key = self._generate_embedding_key(text)
-            
+
             # 创建缓存数据
             cache_data = {
                 "embedding": embedding,
                 "timestamp": time.time(),
-                "text_hash": hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+                "text_hash": hashlib.sha256(text.encode("utf-8")).hexdigest()[:16],
             }
-            
+
             # 序列化数据
             serialized = self._serialize_data(cache_data)
-            
+
             # 存储到Redis
             self.redis_client.setex(embedding_key, ttl, serialized)
-            
+
             logger.debug(f"嵌入向量缓存设置: {embedding_key[:16]}...")
-            
+
         except Exception as e:
             logger.error(f"设置嵌入向量缓存失败: {e}")
 

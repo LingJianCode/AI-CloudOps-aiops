@@ -77,9 +77,7 @@ setup_config() {
     # 创建开发环境YAML配置
     if [ ! -f config/config.yaml ]; then
         cat > config/config.yaml << 'EOF'
-# ==============================================
 # AIOps平台配置文件
-# ==============================================
 
 # 应用基础配置
 app:
@@ -167,9 +165,7 @@ EOF
     # 创建生产环境YAML配置
     if [ ! -f config/config.production.yaml ]; then
         cat > config/config.production.yaml << 'EOF'
-# ==============================================
 # AIOps平台生产环境配置文件
-# ==============================================
 
 # 应用基础配置
 app:
