@@ -193,6 +193,7 @@ def mock_env_vars():
 # 新增的API测试夹具
 # ==============================================================================
 
+
 @pytest.fixture(scope="session")
 def api_base_url():
     """API基础URL"""
@@ -212,7 +213,7 @@ def test_logger():
     """测试专用日志器"""
     logger = logging.getLogger("test_logger")
     logger.setLevel(logging.INFO)
-    
+
     # 避免重复添加handler
     if not logger.handlers:
         handler = logging.StreamHandler()
@@ -221,50 +222,43 @@ def test_logger():
         )
         handler.setFormatter(formatter)
         logger.addHandler(handler)
-    
+
     return logger
 
 
 @pytest.fixture
 def api_client(api_base_url, api_timeout):
     """API测试客户端"""
+
     class APIClient:
         def __init__(self, base_url, timeout):
             self.base_url = base_url
             self.timeout = timeout
             self.session = requests.Session()
-        
+
         def get(self, endpoint, **kwargs):
             return self.session.get(
-                f"{self.base_url}{endpoint}", 
-                timeout=self.timeout, 
-                **kwargs
+                f"{self.base_url}{endpoint}", timeout=self.timeout, **kwargs
             )
-        
+
         def post(self, endpoint, **kwargs):
             return self.session.post(
-                f"{self.base_url}{endpoint}", 
-                timeout=self.timeout, 
-                **kwargs
+                f"{self.base_url}{endpoint}", timeout=self.timeout, **kwargs
             )
-        
+
         def put(self, endpoint, **kwargs):
             return self.session.put(
-                f"{self.base_url}{endpoint}", 
-                timeout=self.timeout, 
-                **kwargs
+                f"{self.base_url}{endpoint}", timeout=self.timeout, **kwargs
             )
-        
+
         def delete(self, endpoint, **kwargs):
             return self.session.delete(
-                f"{self.base_url}{endpoint}", 
-                timeout=self.timeout, 
-                **kwargs
+                f"{self.base_url}{endpoint}", timeout=self.timeout, **kwargs
             )
-        
+
         def close(self):
             self.session.close()
-    
+
     client = APIClient(api_base_url, api_timeout)
     yield client
     client.close()
@@ -273,19 +267,13 @@ def api_client(api_base_url, api_timeout):
 @pytest.fixture
 def sample_predict_request():
     """示例预测请求数据"""
-    return {
-        "current_qps": 100.5,
-        "include_confidence": True
-    }
+    return {"current_qps": 100.5, "include_confidence": True}
 
 
 @pytest.fixture
 def sample_trend_request():
     """示例趋势预测请求数据"""
-    return {
-        "hours_ahead": 12,
-        "current_qps": 75.0
-    }
+    return {"hours_ahead": 12, "current_qps": 75.0}
 
 
 @pytest.fixture
@@ -295,27 +283,20 @@ def sample_rca_incident():
         "affected_services": ["nginx", "mysql"],
         "symptoms": ["高CPU使用率", "内存泄漏", "响应超时"],
         "start_time": (datetime.utcnow() - timedelta(hours=2)).isoformat() + "Z",
-        "end_time": datetime.utcnow().isoformat() + "Z"
+        "end_time": datetime.utcnow().isoformat() + "Z",
     }
 
 
 @pytest.fixture
 def sample_assistant_query():
     """示例智能助手查询数据"""
-    return {
-        "question": "AI-CloudOps平台是什么？",
-        "max_context_docs": 4
-    }
+    return {"question": "AI-CloudOps平台是什么？", "max_context_docs": 4}
 
 
 @pytest.fixture
 def sample_notification():
     """示例通知数据"""
-    return {
-        "title": "测试通知",
-        "message": "这是一条测试通知消息",
-        "type": "info"
-    }
+    return {"title": "测试通知", "message": "这是一条测试通知消息", "type": "info"}
 
 
 @pytest.fixture
@@ -329,40 +310,39 @@ def temp_log_dir():
 @pytest.fixture
 def test_result_collector():
     """测试结果收集器"""
-    results = {
-        "start_time": datetime.utcnow(),
-        "tests": [],
-        "summary": {}
-    }
-    
+    results = {"start_time": datetime.utcnow(), "tests": [], "summary": {}}
+
     def add_result(test_name, success, **kwargs):
-        results["tests"].append({
-            "name": test_name,
-            "success": success,
-            "timestamp": datetime.utcnow().isoformat(),
-            **kwargs
-        })
-    
+        results["tests"].append(
+            {
+                "name": test_name,
+                "success": success,
+                "timestamp": datetime.utcnow().isoformat(),
+                **kwargs,
+            }
+        )
+
     results["add"] = add_result
     yield results
-    
+
     # 计算统计信息
     total_tests = len(results["tests"])
     passed_tests = sum(1 for test in results["tests"] if test["success"])
     failed_tests = total_tests - passed_tests
-    
+
     results["summary"] = {
         "total": total_tests,
         "passed": passed_tests,
         "failed": failed_tests,
         "success_rate": (passed_tests / total_tests * 100) if total_tests > 0 else 0,
-        "duration": (datetime.utcnow() - results["start_time"]).total_seconds()
+        "duration": (datetime.utcnow() - results["start_time"]).total_seconds(),
     }
 
 
 @pytest.fixture(scope="session")
 def service_health_checker(api_base_url):
     """服务健康检查器"""
+
     def check_service_health(service_name=""):
         try:
             endpoint = f"/health" if not service_name else f"/{service_name}/health"
@@ -370,73 +350,51 @@ def service_health_checker(api_base_url):
             return response.status_code in [200, 500]  # 500也表示服务在运行
         except Exception:
             return False
-    
+
     return check_service_health
 
 
 @pytest.fixture
 def skip_if_service_down(service_health_checker):
     """如果服务未运行则跳过测试"""
+
     def _skip_if_down(service_name=""):
         if not service_health_checker(service_name):
             pytest.skip(f"服务 {service_name or '主服务'} 未运行")
-    
+
     return _skip_if_down
-
-
-# ==============================================================================
-# 模拟数据和工具
-# ==============================================================================
-
-@pytest.fixture
-def mock_metrics_data():
-    """模拟监控指标数据"""
-    return {
-        "cpu_usage": [
-            {"timestamp": int(time.time()) - 3600, "value": 45.2},
-            {"timestamp": int(time.time()) - 1800, "value": 52.8},
-            {"timestamp": int(time.time()), "value": 38.1}
-        ],
-        "memory_usage": [
-            {"timestamp": int(time.time()) - 3600, "value": 68.5},
-            {"timestamp": int(time.time()) - 1800, "value": 72.3},
-            {"timestamp": int(time.time()), "value": 65.9}
-        ],
-        "network_io": [
-            {"timestamp": int(time.time()) - 3600, "value": 1024},
-            {"timestamp": int(time.time()) - 1800, "value": 2048},
-            {"timestamp": int(time.time()), "value": 1536}
-        ]
-    }
 
 
 @pytest.fixture
 def performance_monitor():
     """性能监控器"""
+
     class PerformanceMonitor:
         def __init__(self):
             self.start_time = None
             self.measurements = []
-        
+
         def start(self):
             self.start_time = time.time()
-        
+
         def stop(self, operation_name=""):
             if self.start_time:
                 duration = time.time() - self.start_time
-                self.measurements.append({
-                    "operation": operation_name,
-                    "duration": duration,
-                    "timestamp": datetime.utcnow().isoformat()
-                })
+                self.measurements.append(
+                    {
+                        "operation": operation_name,
+                        "duration": duration,
+                        "timestamp": datetime.utcnow().isoformat(),
+                    }
+                )
                 self.start_time = None
                 return duration
             return 0
-        
+
         def get_stats(self):
             if not self.measurements:
                 return {}
-            
+
             durations = [m["duration"] for m in self.measurements]
             return {
                 "count": len(durations),
@@ -444,9 +402,9 @@ def performance_monitor():
                 "average": sum(durations) / len(durations),
                 "min": min(durations),
                 "max": max(durations),
-                "measurements": self.measurements
+                "measurements": self.measurements,
             }
-    
+
     return PerformanceMonitor()
 
 
@@ -454,31 +412,18 @@ def performance_monitor():
 # pytest配置选项
 # ==============================================================================
 
+
 def pytest_addoption(parser):
     """添加pytest命令行选项"""
     parser.addoption(
-        "--api-host",
-        action="store",
-        default="localhost",
-        help="API服务器主机地址"
+        "--api-host", action="store", default="localhost", help="API服务器主机地址"
+    )
+    parser.addoption("--api-port", action="store", default="8080", help="API服务器端口")
+    parser.addoption(
+        "--skip-integration", action="store_true", default=False, help="跳过集成测试"
     )
     parser.addoption(
-        "--api-port", 
-        action="store",
-        default="8080",
-        help="API服务器端口"
-    )
-    parser.addoption(
-        "--skip-integration",
-        action="store_true",
-        default=False,
-        help="跳过集成测试"
-    )
-    parser.addoption(
-        "--skip-slow",
-        action="store_true", 
-        default=False,
-        help="跳过耗时较长的测试"
+        "--skip-slow", action="store_true", default=False, help="跳过耗时较长的测试"
     )
 
 
@@ -489,7 +434,7 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "slow: 耗时较长的测试")
     config.addinivalue_line("markers", "api: API接口测试")
     config.addinivalue_line("markers", "unit: 单元测试")
-    
+
     # 设置环境变量
     os.environ["API_HOST"] = config.getoption("--api-host")
     os.environ["API_PORT"] = config.getoption("--api-port")
@@ -499,7 +444,7 @@ def pytest_collection_modifyitems(config, items):
     """修改测试收集"""
     skip_integration = pytest.mark.skip(reason="使用 --skip-integration 跳过")
     skip_slow = pytest.mark.skip(reason="使用 --skip-slow 跳过")
-    
+
     for item in items:
         if "integration" in item.keywords and config.getoption("--skip-integration"):
             item.add_marker(skip_integration)

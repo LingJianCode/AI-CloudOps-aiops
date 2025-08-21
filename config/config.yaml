@@ -1,6 +1,6 @@
 # 应用基础配置
 app:
-  debug: false
+  debug: true  # 开发环境下启用调试模式和热重载
   host: 0.0.0.0
   port: 8080
   log_level: INFO
@@ -38,15 +38,61 @@ rca:
   max_time_range: 1440
   anomaly_threshold: 0.65
   correlation_threshold: 0.7
-  default_metrics:
-    - container_cpu_usage_seconds_total
-    - container_memory_working_set_bytes
-    - kube_pod_container_status_restarts_total
-    - kube_pod_status_phase
-    - node_cpu_seconds_total
-    - node_memory_MemFree_bytes
-    - kubelet_http_requests_duration_seconds_count
-    - kubelet_http_requests_duration_seconds_sum
+  
+  # 指标收集器配置
+  metrics:
+    step_interval: "1m"
+    concurrent_limit: 3
+    cache_size: 100
+    cache_ttl: 60 # 缓存过期时间(秒)
+    anomaly_cache_size: 500
+    thresholds: # 阈值配置
+      cpu_usage:
+        warning: 0.7
+        critical: 0.9
+      memory_usage:
+        warning: 0.8
+        critical: 0.95
+      disk_usage:
+        warning: 0.75
+        critical: 0.9
+      error_rate:
+        warning: 0.01
+        critical: 0.05
+      restart_count:
+        warning: 3
+        critical: 10
+    default_metrics:
+      - container_cpu_usage_seconds_total
+      - container_memory_working_set_bytes
+      - kube_pod_container_status_restarts_total
+      - kube_pod_status_phase
+      - node_cpu_seconds_total
+      - node_memory_MemFree_bytes
+      - kubelet_http_requests_duration_seconds_count
+      - kubelet_http_requests_duration_seconds_sum
+
+  # 事件收集器配置
+  events:
+    default_event_types: ["Warning", "Normal"]
+    batch_size: 100
+    max_events_limit: 1000
+    concurrent_limit: 5
+    
+  # 日志收集器配置  
+  logs:
+    max_lines: 500
+    error_lines: 200
+    concurrent_limit: 5
+    cache_size: 1000
+    dedup_cache_size: 10000
+    max_message_length: 1000
+    max_stack_trace_lines: 20
+    default_error_only: true
+    
+  # 通用配置
+  max_retries: 3
+  timeout: 30
 
 # 预测配置
 prediction:

@@ -134,8 +134,11 @@ if __name__ == "__main__":
             host=config.host,
             port=config.port,
             reload=config.debug,
+            reload_dirs=["app", "config"] if config.debug else None,  # 指定监控的目录
+            reload_excludes=["logs", "data", "__pycache__", "*.pyc"] if config.debug else None,  # 排除不需要监控的目录
             log_level="info" if not config.debug else "debug",
-            access_log=True
+            access_log=True,
+            reload_delay=0.25 if config.debug else None,  # 减少重载延迟
         )
     except KeyboardInterrupt:
         logger.info("收到中断信号，正在关闭服务...")

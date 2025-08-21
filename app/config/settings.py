@@ -133,7 +133,7 @@ class LLMConfig:
     )
     request_timeout: int = field(
         default_factory=lambda: get_env_or_config(
-            "LLM_REQUEST_TIMEOUT", "llm.request_timeout", 15, int
+            "LLM_REQUEST_TIMEOUT", "llm.request_timeout", 360, int
         )
     )
 

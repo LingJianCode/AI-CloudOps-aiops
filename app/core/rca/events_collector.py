@@ -17,6 +17,7 @@ from collections import defaultdict
 from .base_collector import BaseDataCollector
 from app.models.rca_models import EventData, SeverityLevel
 from app.services.kubernetes import KubernetesService
+from app.config.settings import config, CONFIG
 
 
 class EventsCollector(BaseDataCollector):
@@ -26,7 +27,7 @@ class EventsCollector(BaseDataCollector):
     SEVERITY_MAPPING = {
         SeverityLevel.CRITICAL: {
             "OOMKilled", "Killing", "Failed", "FailedScheduling", 
-            "FailedMount", "FailedCreatePodSandBox", "NetworkNotReady"
+            "FailedMount", "FailedCreatePodSandBox", "NetworkNotReady", "FailedCreate"
         },
         SeverityLevel.HIGH: {
             "Unhealthy", "BackOff", "ImagePullBackOff", "ErrImagePull",
@@ -41,6 +42,17 @@ class EventsCollector(BaseDataCollector):
     def __init__(self, config_dict: Optional[Dict[str, Any]] = None):
         super().__init__("events", config_dict)
         self.k8s: Optional[KubernetesService] = None
+        
+        # 从配置文件读取事件收集器配置
+        self.rca_config = config.rca
+        self.events_config = CONFIG.get("rca", {}).get("events", {})
+        
+        # 事件配置
+        self.default_event_types = self.events_config.get("default_event_types", ["Warning", "Normal"])
+        self.batch_size = self.events_config.get("batch_size", 100)
+        self.max_events_limit = self.events_config.get("max_events_limit", 1000)
+        self.concurrent_limit = self.events_config.get("concurrent_limit", 5)
+        
         self._severity_cache = self._build_severity_cache()
 
     def _build_severity_cache(self) -> Dict[str, SeverityLevel]:
@@ -53,9 +65,29 @@ class EventsCollector(BaseDataCollector):
 
     async def _do_initialize(self) -> None:
         """初始化Kubernetes服务连接"""
-        self.k8s = KubernetesService()
-        if not await self.k8s.health_check():
-            raise RuntimeError("无法连接到Kubernetes集群")
+        try:
+            self.k8s = KubernetesService()
+            
+            # 增加重试机制的健康检查
+            for attempt in range(3):
+                try:
+                    if await self.k8s.health_check():
+                        self.logger.info("Kubernetes连接初始化成功")
+                        return
+                    else:
+                        self.logger.warning(f"Kubernetes健康检查失败，尝试 {attempt + 1}/3")
+                        if attempt < 2:
+                            await asyncio.sleep(2 ** attempt)  # 指数退避
+                except Exception as e:
+                    self.logger.warning(f"Kubernetes连接尝试 {attempt + 1}/3 失败: {str(e)}")
+                    if attempt < 2:
+                        await asyncio.sleep(2 ** attempt)
+            
+            raise RuntimeError("无法连接到Kubernetes集群，已尝试3次")
+            
+        except Exception as e:
+            self.logger.error(f"初始化Kubernetes服务时发生错误: {str(e)}")
+            raise
 
     async def collect(
         self, 
@@ -82,12 +114,13 @@ class EventsCollector(BaseDataCollector):
         start_time = self._ensure_timezone(start_time)
         end_time = self._ensure_timezone(end_time)
         
-        event_types = set(kwargs.get("event_types", ["Warning", "Normal"]))
+        event_types = set(kwargs.get("event_types", self.default_event_types))
         object_names = set(kwargs.get("object_names", []))
         
         try:
             # 获取事件
-            raw_events = await self.k8s.get_events(namespace=namespace, limit=1000)
+            raw_events = await self.k8s.get_events(namespace=namespace, limit=self.max_events_limit)
+            self.logger.info(f"获取到原始事件数量: {len(raw_events)}, 时间范围: {start_time} 到 {end_time}")
             
             # 批量处理事件
             processed_events = await self._batch_process_events(
@@ -119,9 +152,8 @@ class EventsCollector(BaseDataCollector):
         processed_events = []
         
         # 使用异步批处理
-        batch_size = 100
-        for i in range(0, len(raw_events), batch_size):
-            batch = raw_events[i:i + batch_size]
+        for i in range(0, len(raw_events), self.batch_size):
+            batch = raw_events[i:i + self.batch_size]
             batch_results = await asyncio.gather(
                 *[self._process_single_event(
                     event, start_time, end_time, event_types, object_names
@@ -168,18 +200,20 @@ class EventsCollector(BaseDataCollector):
     def _parse_event_time(self, event: Dict[str, Any]) -> datetime:
         """优化的时间解析"""
         # 按优先级尝试不同的时间字段
-        for field in ["lastTimestamp", "firstTimestamp", "eventTime"]:
+        for field in ["last_timestamp", "first_timestamp", "event_time"]:
             timestamp = event.get(field)
             if timestamp:
                 try:
                     if isinstance(timestamp, datetime):
-                        return self._ensure_timezone(timestamp)
+                        result = self._ensure_timezone(timestamp)
+                        return result
                     elif isinstance(timestamp, str):
                         # 处理ISO格式
                         if timestamp.endswith("Z"):
                             timestamp = timestamp[:-1] + "+00:00"
                         dt = datetime.fromisoformat(timestamp)
-                        return self._ensure_timezone(dt)
+                        result = self._ensure_timezone(dt)
+                        return result
                 except (ValueError, AttributeError):
                     continue
         
@@ -209,7 +243,18 @@ class EventsCollector(BaseDataCollector):
         event_type = event.get("type", "Unknown")
         reason = event.get("reason", "Unknown")
         message = str(event.get("message", ""))
-        count = int(event.get("count", 1))
+        
+        # 安全地处理count字段，确保是有效的整数
+        count_value = event.get("count", 1)
+        if count_value is None or count_value == "":
+            count = 1
+        else:
+            try:
+                count = int(count_value)
+                if count <= 0:
+                    count = 1
+            except (ValueError, TypeError):
+                count = 1
         
         involved_object = event.get("involvedObject", {})
         object_info = {
@@ -260,8 +305,11 @@ class EventsCollector(BaseDataCollector):
     async def health_check(self) -> bool:
         """健康检查"""
         try:
-            return self.k8s and await self.k8s.health_check()
-        except Exception:
+            if not self.k8s:
+                return False
+            return await self.k8s.health_check()
+        except Exception as e:
+            self.logger.error(f"事件收集器健康检查失败: {e}")
             return False
 
     async def get_event_patterns(

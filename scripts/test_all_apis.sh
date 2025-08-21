@@ -175,9 +175,9 @@ test_api "GET" "/api/v1/rca/info" "RCA服务信息" "" 10
 test_api "GET" "/api/v1/rca/config" "获取RCA配置" "" 10
 test_api "GET" "/api/v1/rca/metrics" "获取可用指标" "" 15
 
-# RCA分析测试（使用简单的测试数据）
-rca_data='{"metrics":["cpu_usage"],"start_time":"2024-01-01T00:00:00","end_time":"2024-01-01T01:00:00","service_name":"test-service","namespace":"default","include_logs":false,"severity_threshold":0.7}'
-test_api "POST" "/api/v1/rca" "根因分析" "$rca_data" 60
+# RCA分析测试（使用简化的测试数据）
+rca_data='{"namespace":"default","time_window_hours":1.0}'
+test_api "POST" "/api/v1/rca/analyze" "根因分析" "$rca_data" 60
 
 # 5. 自动修复接口测试
 log_info "开始测试自动修复服务接口..."

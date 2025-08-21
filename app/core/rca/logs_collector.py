@@ -19,6 +19,7 @@ import hashlib
 from .base_collector import BaseDataCollector
 from app.models.rca_models import LogData
 from app.services.kubernetes import KubernetesService
+from app.config.settings import config, CONFIG
 
 
 class LogsCollector(BaseDataCollector):
@@ -48,20 +49,36 @@ class LogsCollector(BaseDataCollector):
         r"^\s+\^",  # Node.js
     ]
     
-    # 时间戳格式
+    # 时间戳格式 - 支持更多微秒精度格式
     TIMESTAMP_FORMATS = [
         "%Y-%m-%dT%H:%M:%S.%fZ",
+        "%Y-%m-%dT%H:%M:%SZ",
         "%Y-%m-%d %H:%M:%S.%f",
         "%Y-%m-%d %H:%M:%S",
         "%Y/%m/%d %H:%M:%S",
         "%d/%m/%Y %H:%M:%S",
         "%b %d %H:%M:%S",
         "%Y-%m-%dT%H:%M:%S%z",
+        "%Y-%m-%dT%H:%M:%S.%f%z",
     ]
     
     def __init__(self, config_dict: Optional[Dict[str, Any]] = None):
         super().__init__("logs", config_dict)
         self.k8s: Optional[KubernetesService] = None
+        
+        # 从配置文件读取日志收集器配置
+        self.rca_config = config.rca
+        self.logs_config = CONFIG.get("rca", {}).get("logs", {})
+        
+        # 日志配置
+        self.max_lines = self.logs_config.get("max_lines", 500)
+        self.error_lines = self.logs_config.get("error_lines", 200)
+        self.concurrent_limit = self.logs_config.get("concurrent_limit", 5)
+        self.cache_size = self.logs_config.get("cache_size", 1000)
+        self.dedup_cache_size = self.logs_config.get("dedup_cache_size", 10000)
+        self.max_message_length = self.logs_config.get("max_message_length", 1000)
+        self.max_stack_trace_lines = self.logs_config.get("max_stack_trace_lines", 20)
+        self.default_error_only = self.logs_config.get("default_error_only", True)
         
         # 编译正则表达式
         self._compile_patterns()
@@ -86,18 +103,38 @@ class LogsCollector(BaseDataCollector):
             re.IGNORECASE
         )
         
-        # 优化的时间戳模式 - 按常见程度排序
+        # 优化的时间戳模式 - 按常见程度排序，修复微秒精度问题
         self.timestamp_pattern = re.compile(
-            r"(\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}:\d{2}(?:\.\d{3,6})?(?:Z|[+-]\d{2}:\d{2})?)"
+            r"(\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}:\d{2}(?:\.\d{3,9})?(?:Z|[+-]\d{2}:?\d{2})?)"
             r"|(\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2}:\d{2})"
             r"|(\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})"
         )
     
     async def _do_initialize(self) -> None:
         """初始化Kubernetes服务连接"""
-        self.k8s = KubernetesService()
-        if not await self.k8s.health_check():
-            raise RuntimeError("无法连接到Kubernetes集群")
+        try:
+            self.k8s = KubernetesService()
+            
+            # 增加重试机制的健康检查
+            for attempt in range(3):
+                try:
+                    if await self.k8s.health_check():
+                        self.logger.info("Kubernetes连接初始化成功")
+                        return
+                    else:
+                        self.logger.warning(f"Kubernetes健康检查失败，尝试 {attempt + 1}/3")
+                        if attempt < 2:
+                            await asyncio.sleep(2 ** attempt)  # 指数退避
+                except Exception as e:
+                    self.logger.warning(f"Kubernetes连接尝试 {attempt + 1}/3 失败: {str(e)}")
+                    if attempt < 2:
+                        await asyncio.sleep(2 ** attempt)
+            
+            raise RuntimeError("无法连接到Kubernetes集群，已尝试3次")
+            
+        except Exception as e:
+            self.logger.error(f"初始化Kubernetes服务时发生错误: {str(e)}")
+            raise
     
     async def collect(
         self,
@@ -125,8 +162,8 @@ class LogsCollector(BaseDataCollector):
         end_time = self._ensure_timezone(end_time)
         
         pod_names = kwargs.get("pod_names", [])
-        max_lines = kwargs.get("max_lines", 500)
-        error_only = kwargs.get("error_only", True)
+        max_lines = kwargs.get("max_lines", self.max_lines)
+        error_only = kwargs.get("error_only", self.default_error_only)
         
         # 如果没有指定Pod，获取所有Pod
         if not pod_names:
@@ -164,7 +201,7 @@ class LogsCollector(BaseDataCollector):
         tasks = []
         
         # 限制并发数
-        semaphore = asyncio.Semaphore(5)
+        semaphore = asyncio.Semaphore(self.concurrent_limit)
         
         async def collect_with_limit(pod_name):
             async with semaphore:
@@ -317,7 +354,7 @@ class LogsCollector(BaseDataCollector):
                     pod_name=pod_name,
                     container_name=container_name,
                     level=level,
-                    message=line[:1000],  # 限制消息长度
+                    message=line[:self.max_message_length],  # 限制消息长度
                     error_type=self._detect_error_type_fast(line),
                     stack_trace=None
                 )
@@ -326,7 +363,7 @@ class LogsCollector(BaseDataCollector):
         
         # 处理最后的堆栈跟踪
         if stack_trace_lines and current_entry:
-            current_entry.stack_trace = "\n".join(stack_trace_lines[:20])  # 限制堆栈行数
+            current_entry.stack_trace = "\n".join(stack_trace_lines[:self.max_stack_trace_lines])  # 限制堆栈行数
         
         return parsed_logs
     
@@ -340,12 +377,29 @@ class LogsCollector(BaseDataCollector):
         if not timestamp_str:
             return None
         
+        # 处理超高精度微秒（如纳秒）- 截断到微秒精度
+        if '.' in timestamp_str and timestamp_str.endswith('Z'):
+            # 分离时间部分和微秒部分
+            time_part, microsec_part = timestamp_str[:-1].split('.')
+            if len(microsec_part) > 6:
+                # 截断到6位微秒
+                microsec_part = microsec_part[:6]
+            timestamp_str = f"{time_part}.{microsec_part}Z"
+        
         # 尝试解析
-        for fmt in self.TIMESTAMP_FORMATS[:3]:  # 只尝试最常见的格式
+        for fmt in self.TIMESTAMP_FORMATS:
             try:
                 return datetime.strptime(timestamp_str, fmt).replace(tzinfo=timezone.utc)
             except ValueError:
                 continue
+        
+        # 如果所有格式都失败，尝试简化的ISO格式解析
+        try:
+            # 移除时区信息重新尝试
+            simplified = timestamp_str.replace('Z', '').replace('+00:00', '')
+            return datetime.fromisoformat(simplified).replace(tzinfo=timezone.utc)
+        except ValueError:
+            pass
         
         return None
     
@@ -356,11 +410,24 @@ class LogsCollector(BaseDataCollector):
         if match:
             return match.group(1).upper()
         
-        # 基于关键词的快速判断
+        # 基于关键词的快速判断（支持中英文）
         line_lower = line[:200].lower()  # 只检查前200字符
-        if any(kw in line_lower for kw in ["error", "exception", "failed", "fatal"]):
+        
+        # 错误级别关键词（中英文）
+        error_keywords = [
+            "error", "exception", "failed", "fatal", "crash", "panic", "died",
+            "错误", "异常", "失败", "崩溃", "死机", "宕机", "故障", "中断"
+        ]
+        
+        # 警告级别关键词（中英文）  
+        warn_keywords = [
+            "warn", "warning", "alert", "caution",
+            "警告", "注意", "提醒", "告警"
+        ]
+        
+        if any(kw in line_lower for kw in error_keywords):
             return "ERROR"
-        elif any(kw in line_lower for kw in ["warn", "warning"]):
+        elif any(kw in line_lower for kw in warn_keywords):
             return "WARN"
         
         return "INFO"
@@ -372,14 +439,23 @@ class LogsCollector(BaseDataCollector):
         if line_hash in self._error_cache:
             return self._error_cache[line_hash]
         
-        # 检查模式
-        result = any(
+        # 检查正则模式
+        regex_result = any(
             pattern.search(line)
             for pattern in list(self.compiled_error_patterns.values())[:5]  # 只检查最常见的模式
         )
         
+        # 检查中英文错误关键词
+        line_lower = line.lower()
+        keyword_result = any(kw in line_lower for kw in [
+            "error", "exception", "failed", "fatal", "crash", "panic", "died", "timeout",
+            "错误", "异常", "失败", "崩溃", "死机", "宕机", "故障", "中断", "超时"
+        ])
+        
+        result = regex_result or keyword_result
+        
         # 缓存结果（限制缓存大小）
-        if len(self._error_cache) < 1000:
+        if len(self._error_cache) < self.cache_size:
             self._error_cache[line_hash] = result
         
         return result
@@ -435,8 +511,11 @@ class LogsCollector(BaseDataCollector):
     async def health_check(self) -> bool:
         """健康检查"""
         try:
-            return self.k8s and await self.k8s.health_check()
-        except Exception:
+            if not self.k8s:
+                return False
+            return await self.k8s.health_check()
+        except Exception as e:
+            self.logger.error(f"日志收集器健康检查失败: {e}")
             return False
     
     async def get_error_summary(
@@ -450,7 +529,7 @@ class LogsCollector(BaseDataCollector):
         
         logs = await self.collect(
             namespace, start_time, end_time,
-            error_only=True, max_lines=200
+            error_only=True, max_lines=self.error_lines
         )
         
         summary = {

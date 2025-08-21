@@ -21,66 +21,68 @@ from scipy import stats
 from .base_collector import BaseDataCollector
 from app.models.rca_models import MetricData
 from app.services.prometheus import PrometheusService
-from app.config.settings import config
+from app.config.settings import config, CONFIG
 
 
 class MetricsCollector(BaseDataCollector):
     """优化的Prometheus指标数据收集器"""
     
-    # 关键指标定义 - 优先级排序
-    CRITICAL_METRICS = [
-        # CPU相关
-        "container_cpu_usage_seconds_total",
-        "container_cpu_cfs_throttled_periods_total",
-        "node_cpu_seconds_total",
-        
-        # 内存相关
-        "container_memory_usage_bytes",
-        "container_memory_working_set_bytes",
-        "node_memory_MemAvailable_bytes",
-        
-        # 网络相关
-        "container_network_receive_errors_total",
-        "container_network_transmit_errors_total",
-        
-        # Pod状态
-        "kube_pod_container_status_restarts_total",
-        "kube_pod_status_phase",
-        
-        # 磁盘相关
-        "node_filesystem_avail_bytes",
-        "node_filesystem_size_bytes",
-    ]
-    
-    # 指标阈值定义
-    METRIC_THRESHOLDS = {
-        "cpu_usage": {"warning": 0.7, "critical": 0.9},
-        "memory_usage": {"warning": 0.8, "critical": 0.95},
-        "disk_usage": {"warning": 0.75, "critical": 0.9},
-        "error_rate": {"warning": 0.01, "critical": 0.05},
-        "restart_count": {"warning": 3, "critical": 10},
-    }
-    
     def __init__(self, config_dict: Optional[Dict[str, Any]] = None):
         super().__init__("metrics", config_dict)
         self.prometheus: Optional[PrometheusService] = None
         
-        # 缓存
+        # 从配置文件读取RCA指标配置
+        self.rca_config = config.rca
+        # 从原始配置字典获取详细配置
+        self.metrics_config = CONFIG.get("rca", {}).get("metrics", {})
+        
+        # 缓存配置
+        cache_config = self.metrics_config
         self._query_cache = {}
         self._anomaly_cache = {}
+        self.cache_size = cache_config.get("cache_size", 100)
+        self.cache_ttl = cache_config.get("cache_ttl", 60)
+        self.anomaly_cache_size = cache_config.get("anomaly_cache_size", 500)
         
-        # 配置
-        self.default_metrics = config_dict.get("default_metrics") if config_dict else self.CRITICAL_METRICS
-        self.step_interval = config_dict.get("step_interval", "1m") if config_dict else "1m"
+        # 指标配置
+        self.default_metrics = (
+            config_dict.get("default_metrics") if config_dict 
+            else self.metrics_config.get("default_metrics", [])
+        )
+        self.step_interval = (
+            config_dict.get("step_interval") if config_dict 
+            else self.metrics_config.get("step_interval", "1m")
+        )
+        self.concurrent_limit = self.metrics_config.get("concurrent_limit", 3)
+        
+        # 阈值配置
+        self.thresholds = self.metrics_config.get("thresholds", {})
     
     async def _do_initialize(self) -> None:
         """初始化Prometheus服务连接"""
-        self.prometheus = PrometheusService()
-        
-        if not await self.prometheus.health_check():
-            raise RuntimeError("无法连接到Prometheus服务")
-        
-        self.logger.info("Prometheus连接初始化成功")
+        try:
+            self.prometheus = PrometheusService()
+            
+            # 增加重试机制的健康检查
+            for attempt in range(3):
+                try:
+                    if await self.prometheus.health_check():
+                        self.logger.info("Prometheus连接初始化成功")
+                        return
+                    else:
+                        self.logger.warning(f"Prometheus健康检查失败，尝试 {attempt + 1}/3")
+                        if attempt < 2:
+                            await asyncio.sleep(2 ** attempt)  # 指数退避
+                except Exception as e:
+                    self.logger.warning(f"Prometheus连接尝试 {attempt + 1}/3 失败: {str(e)}")
+                    if attempt < 2:
+                        await asyncio.sleep(2 ** attempt)
+            
+            raise RuntimeError("无法连接到Prometheus服务，已尝试3次")
+            
+        except Exception as e:
+            self.logger.error(f"初始化Prometheus服务时发生错误: {str(e)}")
+            raise
     
     async def collect(
         self,
@@ -109,16 +111,39 @@ class MetricsCollector(BaseDataCollector):
             end_time = self._ensure_timezone(end_time)
             
             metrics_to_collect = kwargs.get("metrics", self.default_metrics)
-            service_name = kwargs.get("service_name")
             
             # 安全检查指标列表
             if not metrics_to_collect:
                 self.logger.warning("没有指定要收集的指标")
                 return []
             
-            # 由于Prometheus可能未配置，暂时返回模拟数据
-            self.logger.warning(f"指标收集返回模拟数据，namespace={namespace}")
-            return []
+            # 并发收集所有指标
+            collected_metrics = []
+            
+            # 限制并发数
+            semaphore = asyncio.Semaphore(self.concurrent_limit)
+            
+            async def collect_with_limit(metric_name):
+                async with semaphore:
+                    return await self._collect_single_metric(
+                        metric_name, namespace, start_time, end_time
+                    )
+            
+            # 创建任务
+            tasks = [collect_with_limit(metric) for metric in metrics_to_collect]
+            
+            # 执行任务
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            # 处理结果
+            for i, result in enumerate(results):
+                if isinstance(result, list):
+                    collected_metrics.extend(result)
+                elif isinstance(result, Exception):
+                    self.logger.warning(f"收集指标 {metrics_to_collect[i]} 失败: {result}")
+            
+            self.logger.info(f"成功收集 {len(collected_metrics)} 个指标数据")
+            return collected_metrics
             
         except Exception as e:
             self.logger.error(f"指标收集失败: {str(e)}", exc_info=True)
@@ -130,24 +155,23 @@ class MetricsCollector(BaseDataCollector):
         self,
         metric_name: str,
         namespace: str,
-        service_name: Optional[str],
         start_time: datetime,
         end_time: datetime
     ) -> List[MetricData]:
         """收集单个指标"""
         try:
             # 检查缓存
-            cache_key = f"{metric_name}:{namespace}:{service_name}:{start_time}:{end_time}"
+            cache_key = f"{metric_name}:{namespace}:{start_time}:{end_time}"
             if cache_key in self._query_cache:
                 cache_entry = self._query_cache[cache_key]
-                if (datetime.now() - cache_entry["timestamp"]).seconds < 60:
+                if (datetime.now() - cache_entry["timestamp"]).seconds < self.cache_ttl:
                     return cache_entry["data"]
             
             # 构建查询
-            query = self._build_optimized_query(metric_name, namespace, service_name)
+            query = self._build_optimized_query(metric_name, namespace)
             
             # 执行查询
-            self.logger.debug(f"执行Prometheus查询: {query}")
+            self.logger.info(f"执行Prometheus查询: {query}")
             data = await self.prometheus.query_range(
                 query=query,
                 start_time=start_time,
@@ -155,11 +179,26 @@ class MetricsCollector(BaseDataCollector):
                 step=self.step_interval
             )
             
-            self.logger.debug(f"查询返回数据类型: {type(data)}, 数据: {data}")
+            self.logger.info(f"查询 {metric_name} 返回数据类型: {type(data)}")
+            if data is not None:
+                self.logger.info(f"查询 {metric_name} 返回数据形状: {data.shape if hasattr(data, 'shape') else 'N/A'}")
             
             if data is None:
-                self.logger.warning(f"Prometheus查询返回None: {metric_name}")
-                return []
+                self.logger.warning(f"Prometheus查询返回None: {metric_name}, 查询: {query}")
+                # 尝试不带聚合的查询作为回退
+                fallback_query = metric_name
+                self.logger.info(f"尝试回退查询: {fallback_query}")
+                data = await self.prometheus.query_range(
+                    query=fallback_query,
+                    start_time=start_time,
+                    end_time=end_time,
+                    step=self.step_interval
+                )
+                if data is None:
+                    self.logger.error(f"回退查询也失败: {metric_name}")
+                    return []
+                else:
+                    self.logger.info(f"回退查询成功: {metric_name}")
             
             if hasattr(data, 'empty') and data.empty:
                 self.logger.warning(f"Prometheus查询返回空数据: {metric_name}")
@@ -175,7 +214,7 @@ class MetricsCollector(BaseDataCollector):
             }
             
             # 限制缓存大小
-            if len(self._query_cache) > 100:
+            if len(self._query_cache) > self.cache_size:
                 # 删除最老的缓存项
                 oldest_key = min(self._query_cache.keys(), 
                                key=lambda k: self._query_cache[k]["timestamp"])
@@ -190,8 +229,7 @@ class MetricsCollector(BaseDataCollector):
     def _build_optimized_query(
         self,
         metric_name: str,
-        namespace: str,
-        service_name: Optional[str] = None
+        namespace: str
     ) -> str:
         """构建优化的Prometheus查询"""
         # 基础查询
@@ -200,15 +238,24 @@ class MetricsCollector(BaseDataCollector):
         # 构建标签过滤器
         filters = []
         
-        # 命名空间过滤
-        if "container_" in metric_name or "kube_" in metric_name:
-            filters.append(f'namespace="{namespace}"')
+        # 更广泛的命名空间过滤策略
+        namespace_metrics = [
+            "container_", "kube_", "apiserver_", "etcd_", "kubelet_",
+            "nginx_", "mysql_", "redis_", "postgres_"
+        ]
         
-        # 服务过滤
-        if service_name:
-            # 尝试多种标签
-            service_filter = f'(pod=~".*{service_name}.*"|service="{service_name}"|app="{service_name}")'
-            filters.append(service_filter)
+        # 检查是否需要命名空间过滤
+        needs_namespace = any(prefix in metric_name for prefix in namespace_metrics)
+        
+        # 特殊处理某些指标
+        if needs_namespace:
+            if "apiserver_" in metric_name:
+                # API服务器指标可能没有namespace标签，尝试其他过滤方式
+                pass  # 保持原始查询，不添加namespace过滤
+            elif "kube_" in metric_name:
+                filters.append(f'namespace="{namespace}"')
+            elif "container_" in metric_name:
+                filters.append(f'namespace="{namespace}"')
         
         # 组合查询
         if filters:
@@ -223,7 +270,11 @@ class MetricsCollector(BaseDataCollector):
         elif "node_" in metric_name:
             # 按节点聚合
             query = f'sum by (instance) ({query})'
+        elif "apiserver_" in metric_name:
+            # API服务器指标按请求类型聚合
+            query = f'sum by (verb, resource) ({query})'
         
+        self.logger.debug(f"构建查询: {metric_name} -> {query}")
         return query
     
     def _process_metric_data_optimized(
@@ -349,7 +400,7 @@ class MetricsCollector(BaseDataCollector):
             final_score = np.mean(scores) if scores else 0.0
             
             # 缓存结果
-            if len(self._anomaly_cache) < 500:
+            if len(self._anomaly_cache) < self.anomaly_cache_size:
                 self._anomaly_cache[values_hash] = final_score
             
             return float(min(max(final_score, 0.0), 1.0))
@@ -396,6 +447,9 @@ class MetricsCollector(BaseDataCollector):
     async def health_check(self) -> bool:
         """健康检查"""
         try:
-            return self.prometheus and await self.prometheus.health_check()
-        except Exception:
+            if not self.prometheus:
+                return False
+            return await self.prometheus.health_check()
+        except Exception as e:
+            self.logger.error(f"指标收集器健康检查失败: {e}")
             return False

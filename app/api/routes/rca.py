@@ -39,9 +39,8 @@ async def analyze_root_cause(request: RCAAnalyzeRequest, background_tasks: Backg
 
     analysis_result = await rca_service.analyze_root_cause(
         namespace=request.namespace,
-        service_name=request.service_name,
         time_window_hours=request.time_window_hours,
-        incident_time=request.incident_time
+        metrics=request.metrics
     )
 
     # 后台任务：缓存分析结果
@@ -55,11 +54,11 @@ async def analyze_root_cause(request: RCAAnalyzeRequest, background_tasks: Backg
 
 @router.get("/metrics", summary="获取指标数据")
 @api_response("获取指标数据")
+@log_api_call(log_request=True)
 async def get_metrics(
     namespace: str,
     start_time: Optional[str] = Query(None, description="开始时间(ISO格式)"),
     end_time: Optional[str] = Query(None, description="结束时间(ISO格式)"),
-    service_name: Optional[str] = Query(None, description="服务名称"),
     metrics: Optional[str] = Query(None, description="逗号分隔的指标名称")
 ) -> Dict[str, Any]:
     """获取Prometheus指标数据"""
@@ -74,7 +73,6 @@ async def get_metrics(
         namespace=namespace,
         start_time=start_dt,
         end_time=end_dt,
-        service_name=service_name,
         metrics=metrics
     )
 
@@ -163,15 +161,13 @@ async def health_check() -> Dict[str, Any]:
 @router.get("/quick-diagnosis", summary="快速诊断")
 @api_response("快速诊断")
 async def quick_diagnosis(
-    namespace: str,
-    service_name: Optional[str] = Query(None, description="服务名称")
+    namespace: str
 ) -> Dict[str, Any]:
     """快速问题诊断，返回最近1小时内的关键问题"""
     await rca_service.initialize()
 
     diagnosis_result = await rca_service.quick_diagnosis(
-        namespace=namespace,
-        service_name=service_name
+        namespace=namespace
     )
 
     return ResponseWrapper.success(
@@ -217,6 +213,107 @@ async def get_error_summary(
     return ResponseWrapper.success(
         data=summary_result,
         message="success"
+    )
+
+
+@router.get("/debug/data-collection", summary="调试数据收集")
+@api_response("调试数据收集")
+@log_api_call(log_request=True)
+async def debug_data_collection(
+    namespace: str,
+    time_window_hours: float = Query(1.0, ge=0.1, le=24, description="时间窗口（小时）"),
+    metrics: Optional[str] = Query(None, description="逗号分隔的指标名称")
+) -> Dict[str, Any]:
+    """调试端点：查看原始数据收集结果"""
+    from datetime import datetime, timedelta, timezone
+    
+    await rca_service.initialize()
+    
+    end_time = datetime.now(timezone.utc)
+    start_time = end_time - timedelta(hours=time_window_hours)
+    
+    # 准备指标列表
+    metric_list = metrics.split(",") if metrics else ["apiserver_request_total", "node_cpu_seconds_total"]
+    
+    # 直接测试数据收集器
+    debug_result = {
+        "test_info": {
+            "namespace": namespace,
+            "start_time": start_time.isoformat(),
+            "end_time": end_time.isoformat(),
+            "requested_metrics": metric_list,
+            "time_window_hours": time_window_hours
+        },
+        "collection_results": {}
+    }
+    
+    try:
+        # 测试指标收集
+        metrics_data = await rca_service._metrics_collector.collect(
+            namespace=namespace,
+            start_time=start_time,
+            end_time=end_time,
+            metrics=metric_list
+        )
+        debug_result["collection_results"]["metrics"] = {
+            "success": True,
+            "count": len(metrics_data),
+            "data": [{"name": m.name, "values_count": len(m.values), "anomaly_score": m.anomaly_score} for m in metrics_data[:5]]
+        }
+    except Exception as e:
+        debug_result["collection_results"]["metrics"] = {
+            "success": False,
+            "error": str(e)
+        }
+    
+    try:
+        # 测试事件收集
+        events_data = await rca_service._events_collector.collect(
+            namespace=namespace,
+            start_time=start_time,
+            end_time=end_time
+        )
+        debug_result["collection_results"]["events"] = {
+            "success": True,
+            "count": len(events_data),
+            "critical_count": len([e for e in events_data if e.severity.value in ["critical", "high"]])
+        }
+    except Exception as e:
+        debug_result["collection_results"]["events"] = {
+            "success": False,
+            "error": str(e)
+        }
+    
+    try:
+        # 测试日志收集
+        logs_data = await rca_service._logs_collector.collect(
+            namespace=namespace,
+            start_time=start_time,
+            end_time=end_time,
+            error_only=True,
+            max_lines=100
+        )
+        debug_result["collection_results"]["logs"] = {
+            "success": True,
+            "count": len(logs_data),
+            "error_count": len([l for l in logs_data if l.level in ["ERROR", "FATAL"]])
+        }
+    except Exception as e:
+        debug_result["collection_results"]["logs"] = {
+            "success": False,
+            "error": str(e)
+        }
+    
+    # 健康检查
+    try:
+        health_checks = await rca_service._gather_health_checks()
+        debug_result["health_checks"] = health_checks
+    except Exception as e:
+        debug_result["health_checks"] = {"error": str(e)}
+    
+    return ResponseWrapper.success(
+        data=debug_result,
+        message="调试数据收集完成"
     )
 
 

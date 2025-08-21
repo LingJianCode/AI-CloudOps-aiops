@@ -1,0 +1,118 @@
+---
+# 修复后的镜像拉取失败应用
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: image-pull-fail-fixed
+  namespace: test
+  labels:
+    app: image-pull-fail-fixed
+    problem-type: image-pull-error
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: image-pull-fail-fixed
+  template:
+    metadata:
+      labels:
+        app: image-pull-fail-fixed
+    spec:
+      containers:
+      - name: image-pull-fail
+        image: nonexistent-registry.com/fake-image:latest  # 故意使用不存在的镜像
+        imagePullPolicy: Always
+        resources:
+          requests:
+            cpu: "5m"
+            memory: "16Mi"
+          limits:
+            cpu: "10m"
+            memory: "32Mi"
+
+---
+# 网络错误应用（修复资源限制）
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: network-error-fixed
+  namespace: test
+  labels:
+    app: network-error-fixed
+    problem-type: network-issue
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: network-error-fixed
+  template:
+    metadata:
+      labels:
+        app: network-error-fixed
+    spec:
+      containers:
+      - name: network-error
+        image: busybox:1.35
+        command:
+        - sh
+        - -c
+        - |
+          echo "尝试网络连接..."
+          while true; do
+            # 尝试连接不存在的服务
+            wget -T 5 http://nonexistent-service:8080 || echo "连接失败"
+            nc -zv nonexistent-host.com 80 || echo "网络连接超时"
+            sleep 30
+          done
+        resources:
+          requests:
+            cpu: "5m"
+            memory: "16Mi"
+          limits:
+            cpu: "10m"
+            memory: "32Mi"
+
+---
+# 错误日志生成器（修复资源限制）
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: error-logger-fixed
+  namespace: test
+  labels:
+    app: error-logger-fixed
+    problem-type: application-errors
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: error-logger-fixed
+  template:
+    metadata:
+      labels:
+        app: error-logger-fixed
+    spec:
+      containers:
+      - name: error-logger
+        image: busybox:1.35
+        command:
+        - sh
+        - -c
+        - |
+          echo "开始生成错误日志..."
+          while true; do
+            echo "$(date) ERROR: Database connection failed: Connection refused" >&2
+            echo "$(date) FATAL: Out of memory exception in thread main" >&2
+            echo "$(date) ERROR: HTTP 500 Internal Server Error" >&2
+            echo "$(date) WARN: High CPU usage detected: 95%" >&2
+            echo "$(date) ERROR: Disk space full: /var/log" >&2
+            echo "$(date) Exception in thread \"main\" java.lang.OutOfMemoryError: Java heap space" >&2
+            sleep 15
+          done
+        resources:
+          requests:
+            cpu: "5m"
+            memory: "16Mi"
+          limits:
+            cpu: "10m"
+            memory: "32Mi"

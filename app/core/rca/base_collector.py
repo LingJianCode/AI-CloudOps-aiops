@@ -119,12 +119,40 @@ class BaseDataCollector(ABC):
         Raises:
             ValueError: 时间范围无效
         """
+        if not isinstance(start_time, datetime) or not isinstance(end_time, datetime):
+            raise ValueError("时间参数必须是datetime对象")
+            
         if start_time >= end_time:
             raise ValueError("开始时间必须早于结束时间")
 
         # 限制时间范围不能超过24小时
-        if (end_time - start_time).total_seconds() > 24 * 3600:
-            raise ValueError("时间范围不能超过24小时")
+        time_diff = (end_time - start_time).total_seconds()
+        if time_diff > 24 * 3600:
+            raise ValueError(f"时间范围不能超过24小时，当前范围: {time_diff/3600:.2f}小时")
+        
+        if time_diff < 0:
+            raise ValueError("时间范围不能为负数")
+    
+    def _validate_namespace(self, namespace: str) -> None:
+        """
+        验证命名空间参数
+        
+        Args:
+            namespace: Kubernetes命名空间
+            
+        Raises:
+            ValueError: 命名空间无效
+        """
+        if not namespace or not isinstance(namespace, str):
+            raise ValueError("命名空间不能为空且必须是字符串")
+        
+        if len(namespace) > 253:
+            raise ValueError("命名空间长度不能超过253个字符")
+        
+        # 基本的Kubernetes命名空间名称验证
+        import re
+        if not re.match(r'^[a-z0-9]([-a-z0-9]*[a-z0-9])?$', namespace):
+            raise ValueError("命名空间名称必须符合Kubernetes规范（小写字母、数字、连字符）")
 
     async def collect_with_retry(
         self,
@@ -148,6 +176,7 @@ class BaseDataCollector(ABC):
             收集到的数据列表
         """
         self._ensure_initialized()
+        self._validate_namespace(namespace)
         self._validate_time_range(start_time, end_time)
 
         last_exception = None

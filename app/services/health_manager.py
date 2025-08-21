@@ -21,6 +21,7 @@ from app.services.kubernetes import KubernetesService
 from app.services.llm import LLMService
 from app.services.notification import NotificationService
 from app.services.prometheus import PrometheusService
+from app.services.rca_service import RCAService
 
 logger = logging.getLogger("aiops.health_manager")
 
@@ -41,7 +42,8 @@ class HealthManager:
             'kubernetes': KubernetesService,
             'llm': LLMService,
             'notification': NotificationService,
-            'prediction': PredictionService
+            'prediction': PredictionService,
+            'rca': RCAService
         }
         
         if service_name not in self._service_cache:
@@ -167,7 +169,7 @@ class HealthManager:
     
     def check_all_components(self) -> Dict[str, Dict[str, Any]]:
 
-        components = ['prometheus', 'kubernetes', 'llm', 'notification', 'prediction']
+        components = ['prometheus', 'kubernetes', 'llm', 'notification', 'prediction', 'rca']
         return {comp: self.check_component_health(comp) for comp in components}
 
     # 兼容路由层调用：返回包含 components 字段的结构

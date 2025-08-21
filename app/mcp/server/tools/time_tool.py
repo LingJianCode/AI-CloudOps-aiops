@@ -9,7 +9,7 @@ License: Apache 2.0
 Description: 获取当前时间的MCP工具
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict
 
 from ..mcp_server import BaseTool
@@ -52,7 +52,7 @@ class TimeTool(BaseTool):
             timezone_str = parameters.get("timezone", "UTC")
             
             # 获取当前时间
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             
             if time_format == "timestamp":
                 # 返回Unix时间戳

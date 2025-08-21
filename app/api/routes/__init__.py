@@ -27,21 +27,21 @@ except Exception as e:
 
 try:
     from .predict import router as predict_router
-    api_v1.include_router(predict_router)
+    api_v1.include_router(predict_router, prefix="/predict")
     logger.info("已注册预测路由")
 except Exception as e:
     logger.warning(f"注册预测路由失败: {str(e)}")
 
 try:
     from .rca import router as rca_router
-    api_v1.include_router(rca_router)
+    api_v1.include_router(rca_router, prefix="/rca")
     logger.info("已注册根因分析路由")
 except Exception as e:
     logger.warning(f"注册根因分析路由失败: {str(e)}")
 
 try:
     from .autofix import router as autofix_router
-    api_v1.include_router(autofix_router)
+    api_v1.include_router(autofix_router, prefix="/autofix")
     logger.info("已注册自动修复路由")
 except Exception as e:
     logger.warning(f"注册自动修复路由失败: {str(e)}")

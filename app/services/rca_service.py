@@ -72,9 +72,8 @@ class RCAService(BaseService, HealthCheckMixin):
     async def analyze_root_cause(
         self,
         namespace: str,
-        service_name: Optional[str] = None,
         time_window_hours: float = 1.0,
-        incident_time: Optional[datetime] = None
+        metrics: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """执行根因分析"""
         start_time = time.time()
@@ -84,16 +83,14 @@ class RCAService(BaseService, HealthCheckMixin):
             
             # 准备参数
             time_window = timedelta(hours=time_window_hours)
-            incident_time = incident_time or datetime.now(timezone.utc)
             
-            self.logger.info(f"开始RCA分析: namespace={namespace}, service={service_name}")
+            self.logger.info(f"开始RCA分析: namespace={namespace}, time_window={time_window_hours}小时")
             
             # 执行分析
             analysis_result = await self._engine.analyze(
                 namespace=namespace,
-                service_name=service_name,
                 time_window=time_window,
-                incident_time=incident_time
+                metrics=metrics
             )
             
             # 转换根因数据
@@ -114,7 +111,6 @@ class RCAService(BaseService, HealthCheckMixin):
                 "success": True,
                 "timestamp": analysis_result.timestamp,
                 "namespace": analysis_result.namespace,
-                "service_name": analysis_result.service_name,
                 "root_causes": root_causes,
                 "confidence_score": analysis_result.confidence_score,
                 "recommendations": analysis_result.recommendations,
@@ -134,7 +130,6 @@ class RCAService(BaseService, HealthCheckMixin):
         namespace: str,
         start_time: Optional[datetime] = None,
         end_time: Optional[datetime] = None,
-        service_name: Optional[str] = None,
         metrics: Optional[str] = None
     ) -> Dict[str, Any]:
         """获取指标数据"""
@@ -155,7 +150,6 @@ class RCAService(BaseService, HealthCheckMixin):
                 namespace=namespace,
                 start_time=start_time,
                 end_time=end_time,
-                service_name=service_name,
                 metrics=metric_list
             )
             
@@ -303,8 +297,7 @@ class RCAService(BaseService, HealthCheckMixin):
 
     async def quick_diagnosis(
         self,
-        namespace: str,
-        service_name: Optional[str] = None
+        namespace: str
     ) -> Dict[str, Any]:
         """快速诊断"""
         try:
@@ -313,7 +306,6 @@ class RCAService(BaseService, HealthCheckMixin):
             # 执行快速分析（最近1小时）
             analysis_result = await self._engine.analyze(
                 namespace=namespace,
-                service_name=service_name,
                 time_window=timedelta(hours=1)
             )
             
@@ -342,7 +334,6 @@ class RCAService(BaseService, HealthCheckMixin):
             
             return {
                 "namespace": namespace,
-                "service_name": service_name,
                 "diagnosis_time": datetime.now(timezone.utc).isoformat(),
                 "critical_issues": critical_issues,
                 "recommendations": analysis_result.recommendations[:3],

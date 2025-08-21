@@ -13,7 +13,7 @@ import json
 import logging
 import os
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 
@@ -118,15 +118,14 @@ class KubernetesService:
         if not self.initialized:
             self._try_init()
         if not self.initialized:
-            logger.warning("Kubernetes未初始化，相关功能将返回模拟数据或空值")
+            logger.warning("Kubernetes未初始化，无法执行操作")
 
         return True  # 始终返回True，让调用者继续执行
 
     async def get_deployment(self, name: str, namespace: str = None) -> Optional[Dict]:
         """获取Deployment信息"""
         if not self._ensure_initialized():
-            logger.warning("Kubernetes未初始化，无法获取Deployment信息")
-            return None
+            raise RuntimeError("Kubernetes未初始化，无法获取Deployment信息")
 
         try:
             namespace = namespace or config.k8s.namespace
@@ -154,8 +153,7 @@ class KubernetesService:
     ) -> bool:
         """更新Deployment"""
         if not self._ensure_initialized():
-            logger.warning("Kubernetes未初始化，无法更新Deployment")
-            return False
+            raise RuntimeError("Kubernetes未初始化，无法更新Deployment")
 
         try:
             namespace = namespace or config.k8s.namespace
@@ -177,8 +175,7 @@ class KubernetesService:
     async def get_pods(self, namespace: str = None, label_selector: str = None) -> List[Dict]:
         """获取Pod列表"""
         if not self._ensure_initialized():
-            logger.warning("Kubernetes未初始化，无法获取Pod列表")
-            return []
+            raise RuntimeError("Kubernetes未初始化，无法获取Pod列表")
 
         try:
             namespace = namespace or config.k8s.namespace
@@ -211,14 +208,14 @@ class KubernetesService:
     ) -> List[Dict]:
         """获取事件列表"""
         if not self._ensure_initialized():
-            logger.warning("Kubernetes未初始化，无法获取事件列表")
-            return []
+            raise RuntimeError("Kubernetes未初始化，无法获取事件列表")
 
         try:
             namespace = namespace or config.k8s.namespace
             events = self.core_v1.list_namespaced_event(
                 namespace=namespace, field_selector=field_selector, limit=limit
             )
+
 
             event_list = []
             for event in events.items:
@@ -243,8 +240,7 @@ class KubernetesService:
     async def restart_deployment(self, name: str, namespace: str = None) -> bool:
         """重启Deployment"""
         if not self._ensure_initialized():
-            logger.warning("Kubernetes未初始化，无法重启Deployment")
-            return False
+            raise RuntimeError("Kubernetes未初始化，无法重启Deployment")
 
         try:
             namespace = namespace or config.k8s.namespace
@@ -255,7 +251,7 @@ class KubernetesService:
                     "template": {
                         "metadata": {
                             "annotations": {
-                                "kubectl.kubernetes.io/restartedAt": datetime.utcnow().isoformat()
+                                "kubectl.kubernetes.io/restartedAt": datetime.now(timezone.utc).isoformat()
                             }
                         }
                     }
@@ -275,8 +271,7 @@ class KubernetesService:
     async def scale_deployment(self, name: str, replicas: int, namespace: str = None) -> bool:
         """扩缩容Deployment"""
         if not self._ensure_initialized():
-            logger.warning("Kubernetes未初始化，无法扩缩容Deployment")
-            return False
+            raise RuntimeError("Kubernetes未初始化，无法扩缩容Deployment")
 
         try:
             namespace = namespace or config.k8s.namespace
@@ -322,8 +317,7 @@ class KubernetesService:
     ) -> Optional[Dict[str, Any]]:
         """获取Deployment状态详情"""
         if not self._ensure_initialized():
-            logger.warning("Kubernetes未初始化，无法获取Deployment状态")
-            return None
+            raise RuntimeError("Kubernetes未初始化，无法获取Deployment状态")
 
         try:
             deployment = await self.get_deployment(name, namespace)
@@ -361,8 +355,7 @@ class KubernetesService:
             Optional[Dict]: Pod信息字典，如果不存在则返回None
         """
         if not self._ensure_initialized():
-            logger.warning("Kubernetes未初始化，无法获取Pod信息")
-            return None
+            raise RuntimeError("Kubernetes未初始化，无法获取Pod信息")
             
         try:
             pod = self.core_v1.read_namespaced_pod(
@@ -414,8 +407,7 @@ class KubernetesService:
             Optional[str]: 日志内容，如果获取失败则返回None
         """
         if not self._ensure_initialized():
-            logger.warning("Kubernetes未初始化，无法获取Pod日志")
-            return None
+            raise RuntimeError("Kubernetes未初始化，无法获取Pod日志")
             
         try:
             # 构建日志查询参数
@@ -430,7 +422,11 @@ class KubernetesService:
                 kwargs["container"] = container_name
                 
             if since_time:
-                kwargs["since_seconds"] = int((datetime.now() - since_time).total_seconds())
+                # 确保两个时间都有时区信息
+                current_time = datetime.now(timezone.utc)
+                if since_time.tzinfo is None:
+                    since_time = since_time.replace(tzinfo=timezone.utc)
+                kwargs["since_seconds"] = int((current_time - since_time).total_seconds())
                 
             if tail_lines:
                 kwargs["tail_lines"] = tail_lines
