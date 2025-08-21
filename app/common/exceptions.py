@@ -13,11 +13,7 @@ from typing import Any, Dict, Optional
 
 
 class AIOpsException(Exception):
-    """
-    AIOps平台基础异常类
-
-    所有业务异常的基类，提供统一的异常处理接口
-    """
+    """AIOps平台基础异常类"""
 
     def __init__(
         self,

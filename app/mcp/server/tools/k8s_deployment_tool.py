@@ -20,7 +20,7 @@ from .k8s_base_tool import K8sBaseTool
 
 
 class K8sDeploymentTool(K8sBaseTool):
-    """k8s Deployment管理工具"""
+    """Deployment管理工具"""
 
     def __init__(self):
         super().__init__(
@@ -29,7 +29,6 @@ class K8sDeploymentTool(K8sBaseTool):
         )
 
     def get_parameters(self) -> Dict[str, Any]:
-        """获取工具参数定义"""
         return {
             "type": "object",
             "properties": {

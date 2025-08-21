@@ -35,7 +35,7 @@ rca_service = RCAService()
 async def analyze_root_cause(
     request: RCAAnalyzeRequest, background_tasks: BackgroundTasks
 ) -> Dict[str, Any]:
-    """执行根因分析，整合指标、事件和日志三种数据源"""
+    """执行根因分析"""
     await rca_service.initialize()
 
     analysis_result = await rca_service.analyze_root_cause(
@@ -70,7 +70,7 @@ async def analyze_root_cause(
 @router.get("/metrics", summary="获取所有可用的Prometheus指标")
 @api_response("获取所有可用的Prometheus指标")
 async def get_all_prometheus_metrics() -> Dict[str, Any]:
-    """获取所有可用的Prometheus指标列表"""
+    """获取Prometheus指标"""
     from datetime import datetime
 
     await rca_service.initialize()

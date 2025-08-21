@@ -6,7 +6,7 @@ AI-CloudOps-aiops
 Author: Bamboo
 Email: bamboocloudops@gmail.com
 License: Apache 2.0
-cdDescription: 预测服务API接口
+Description: 预测服务API接口
 """
 
 import logging

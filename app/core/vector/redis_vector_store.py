@@ -39,7 +39,7 @@ class SearchConfig:
 
 
 class EnhancedRedisVectorStore:
-    """增强的Redis向量存储"""
+    """Redis向量存储"""
 
     def __init__(
         self,
@@ -71,7 +71,6 @@ class EnhancedRedisVectorStore:
         self._initialize()
 
     def _initialize(self):
-        """初始化存储"""
         try:
             self.client.ping()
             logger.info(f"Redis向量存储初始化成功: {self.collection_name}")

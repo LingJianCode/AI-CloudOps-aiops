@@ -20,19 +20,9 @@ from app.common.exceptions import ServiceUnavailableError
 
 
 class BaseService(ABC):
-    """
-    业务服务基类
-
-    定义所有业务服务必须实现的接口和提供公共功能
-    """
+    """业务服务基类"""
 
     def __init__(self, service_name: str) -> None:
-        """
-        初始化服务
-
-        Args:
-            service_name: 服务名称
-        """
         self.service_name = service_name
         self.logger = logging.getLogger(f"aiops.services.{service_name}")
         self._initialized = False
@@ -40,11 +30,6 @@ class BaseService(ABC):
         self._health_status = False
 
     async def initialize(self) -> None:
-        """
-        异步初始化服务
-
-        子类可以重写此方法来实现具体的初始化逻辑
-        """
         self.logger.info(f"正在初始化服务: {self.service_name}")
 
         try:
@@ -60,18 +45,9 @@ class BaseService(ABC):
 
     @abstractmethod
     async def _do_initialize(self) -> None:
-        """
-        子类实现具体的初始化逻辑
-        """
         pass
 
     async def health_check(self) -> bool:
-        """
-        异步健康检查
-
-        Returns:
-            健康状态，True表示健康
-        """
         try:
             # 缓存健康检查结果，避免频繁检查
             now = datetime.now()

@@ -21,7 +21,7 @@ from ..mcp_server import BaseTool
 
 
 class K8sBaseTool(BaseTool):
-    """Kubernetes工具基类，提供通用功能"""
+    """K8s工具基类"""
 
     def __init__(self, name: str, description: str):
         super().__init__(name, description)
@@ -31,7 +31,6 @@ class K8sBaseTool(BaseTool):
     def _initialize_clients(
         self, config_path: Optional[str] = None
     ) -> Dict[str, client.ApiClient]:
-        """初始化Kubernetes API客户端 - 统一实现"""
         if self._api_clients:
             return self._api_clients
 

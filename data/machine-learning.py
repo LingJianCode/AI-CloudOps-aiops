@@ -33,7 +33,6 @@ METADATA_PATH = 'models/time_qps_auto_scaling_model_metadata.json'
 CSV_PATH = 'data.csv'
 
 def load_real_data() -> Optional[pd.DataFrame]:
-    """加载真实数据"""
     print("正在加载真实数据...")
     
     try:

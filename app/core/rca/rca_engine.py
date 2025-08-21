@@ -36,7 +36,7 @@ from .metrics_collector import MetricsCollector
 
 
 class RCAAnalysisEngine:
-    """根因分析引擎 - 整合指标异常检测、事件关联分析和日志模式识别"""
+    """根因分析引擎"""
 
     # 根因模式定义
     ROOT_CAUSE_PATTERNS = {

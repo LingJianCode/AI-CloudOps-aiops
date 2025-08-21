@@ -26,12 +26,10 @@ class BaseTool(ABC):
 
     @abstractmethod
     def get_parameters(self) -> Dict[str, Any]:
-        """获取工具参数定义"""
         pass
 
     @abstractmethod
     async def execute(self, parameters: Dict[str, Any]) -> Any:
-        """执行工具"""
         pass
 
 
@@ -44,7 +42,6 @@ class MCPServer:
         logger.info("MCP服务器核心初始化完成")
 
     async def register_tool(self, tool: BaseTool) -> None:
-        """注册工具"""
         self.tools[tool.name] = tool
         logger.info(f"工具已注册: {tool.name}")
 

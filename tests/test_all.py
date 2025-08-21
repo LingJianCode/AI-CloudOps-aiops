@@ -27,14 +27,12 @@ logger = logging.getLogger("test_all")
 
 
 def ensure_logs_directory():
-    """确保日志目录存在"""
     logs_dir = Path("logs")
     logs_dir.mkdir(exist_ok=True)
     return logs_dir
 
 
 def run_all_tests():
-    """运行所有测试模块"""
     start_time = time.time()
     logger.info("开始运行AI-CloudOps平台完整测试套件...")
     

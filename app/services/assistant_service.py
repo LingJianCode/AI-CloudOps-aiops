@@ -23,14 +23,13 @@ logger = logging.getLogger("aiops.services.assistant")
 
 
 class OptimizedAssistantService(BaseService):
-    """优化的智能助手服务"""
+    """智能助手服务"""
 
     def __init__(self) -> None:
         super().__init__("assistant")
         self._assistant = None
 
     async def _do_initialize(self) -> None:
-        """初始化服务"""
         try:
             self._assistant = await get_enterprise_assistant()
             logger.info("智能助手服务初始化完成")
@@ -40,7 +39,6 @@ class OptimizedAssistantService(BaseService):
             self._assistant = None
 
     async def _do_health_check(self) -> bool:
-        """健康检查"""
         try:
             # 如果assistant为None，尝试获取但不强制失败
             if not self._assistant:
@@ -69,21 +67,7 @@ class OptimizedAssistantService(BaseService):
         session_id: Optional[str] = None,
         max_context_docs: int = ServiceConstants.ASSISTANT_DEFAULT_CONTEXT_DOCS,
     ) -> Dict[str, Any]:
-        """
-        获取智能回答
-
-        Args:
-            question: 用户问题
-            mode: 助手模式，1=RAG模式，2=MCP模式
-            session_id: 会话ID
-            max_context_docs: 最大上下文文档数（仅RAG模式使用）
-
-        优化点：
-        1. 并行预热缓存和向量索引
-        2. 智能超时管理
-        3. 性能监控
-        4. 模式隔离处理
-        """
+        """获取智能回答"""
         # 参数验证
         self._validate_question(question)
         self._validate_mode(mode)
@@ -97,7 +81,6 @@ class OptimizedAssistantService(BaseService):
     async def _use_fallback_response(
         self, question: str, session_id: Optional[str], error_reason: str
     ) -> Dict[str, Any]:
-        """使用备用实现生成响应"""
         try:
             logger.warning(f"使用备用实现处理请求，原因: {error_reason}")
 

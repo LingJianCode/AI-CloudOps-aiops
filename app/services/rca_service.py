@@ -26,7 +26,7 @@ logger = logging.getLogger("aiops.services.rca")
 
 
 class RCAService(BaseService, HealthCheckMixin):
-    """根因分析服务 - 整合三种数据源的智能根因分析"""
+    """根因分析服务"""
 
     def __init__(self) -> None:
         super().__init__("rca")
@@ -36,7 +36,6 @@ class RCAService(BaseService, HealthCheckMixin):
         self._logs_collector: Optional[LogsCollector] = None
 
     async def _do_initialize(self) -> None:
-        """初始化RCA服务组件"""
         try:
             # 初始化引擎
             self._engine = RCAAnalysisEngine()
@@ -58,7 +57,6 @@ class RCAService(BaseService, HealthCheckMixin):
             raise RCAError(f"初始化失败: {str(e)}")
 
     async def _do_health_check(self) -> bool:
-        """健康检查"""
         try:
             if (
                 not self._metrics_collector
@@ -79,7 +77,6 @@ class RCAService(BaseService, HealthCheckMixin):
         time_window_hours: float = 1.0,
         metrics: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
-        """执行根因分析"""
         start_time = time.time()
 
         try:

@@ -34,9 +34,6 @@ startup_service = StartupService()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """
-    FastAPI应用生命周期管理
-    """
     # 启动时执行
     logger = logging.getLogger("aiops")
     logger.info("=" * 50)

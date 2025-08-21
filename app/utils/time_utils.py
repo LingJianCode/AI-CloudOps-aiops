@@ -19,16 +19,14 @@ from app.config.settings import config
 
 
 class TimeUtils:
-    """时间相关的工具函数"""
+    """时间工具"""
 
     @classmethod
     def _get_holidays(cls) -> set:
-        """获取节假日集合"""
         return set(config.time.holidays)
 
     @staticmethod
     def extract_time_features(timestamp: datetime) -> dict:
-        """提取时间特征，包括周期性特征、工作/非工作时间等"""
         # 将时间转换为分钟
         minutes = timestamp.hour * 60 + timestamp.minute
 

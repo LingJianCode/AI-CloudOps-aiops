@@ -27,38 +27,9 @@ logger = logging.getLogger("aiops.predictor")
 
 
 class PredictionService:
-    """
-    负载预测服务类 - AI-CloudOps系统的核心预测引擎
-
-    该类负责整个负载预测的生命周期管理，从数据获取到模型推理再到结果输出。
-    它集成了机器学习模型、历史数据分析和实时监控，提供智能化的容量规划服务。
-
-    核心功能：
-    1. 模型管理 - 加载、验证和更新预测模型
-    2. 数据获取 - 从Prometheus获取实时和历史监控数据
-    3. 特征工程 - 构建多维度特征向量
-    4. 预测推理 - 执行模型推理并生成预测结果
-    5. 结果处理 - 置信度计算和结果验证
-    6. 服务健康检查 - 监控服务状态和模型可用性
-
-    预测流程：
-    数据获取 -> 特征提取 -> 模型推理 -> 结果处理 -> 置信度评估
-
-    Attributes:
-        prometheus (PrometheusService): Prometheus监控数据服务
-        model_loader (ModelLoader): 机器学习模型加载器
-        model_loaded (bool): 模型是否已成功加载
-        scaler_loaded (bool): 特征缩放器是否已加载
-        error_handler (ErrorHandler): 错误处理器
-    """
+    """负载预测服务"""
 
     def __init__(self):
-        """
-        初始化负载预测服务
-
-        创建并配置所有必要的组件，包括数据服务、模型加载器和错误处理器。
-        初始化过程中会自动加载预训练模型并验证其可用性。
-        """
         # 初始化Prometheus数据服务，用于获取监控指标
         self.prometheus = PrometheusService()
 
@@ -76,18 +47,6 @@ class PredictionService:
         self._initialize()
 
     def _initialize(self):
-        """
-        初始化预测服务内部组件
-
-        加载机器学习模型和特征缩放器，验证模型的完整性和可用性。
-        如果模型加载失败，服务将回退到基于规则的预测模式。
-
-        初始化流程：
-        1. 加载预训练的机器学习模型
-        2. 加载特征标准化缩放器
-        3. 验证模型的完整性和兼容性
-        4. 设置服务状态标志
-        """
         try:
             # 尝试加载预训练模型和相关组件
             success = self.model_loader.load_models()

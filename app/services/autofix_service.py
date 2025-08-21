@@ -23,9 +23,7 @@ logger = logging.getLogger("aiops.services.autofix")
 
 
 class AutoFixService(BaseService):
-    """
-    自动修复服务 - 管理Kubernetes问题诊断和自动修复流程
-    """
+    """自动修复服务"""
 
     def __init__(self) -> None:
         super().__init__("autofix")
@@ -33,7 +31,6 @@ class AutoFixService(BaseService):
         self._supervisor: Optional[SupervisorAgent] = None
 
     async def _do_initialize(self) -> None:
-        """初始化自动修复服务"""
         try:
             # 初始化K8s修复代理
             self._k8s_fixer = K8sFixerAgent()
@@ -48,7 +45,6 @@ class AutoFixService(BaseService):
             raise AutoFixError(f"初始化失败: {str(e)}")
 
     async def _do_health_check(self) -> bool:
-        """自动修复服务健康检查"""
         try:
             if not self._k8s_fixer or not self._supervisor:
                 return False
@@ -73,23 +69,7 @@ class AutoFixService(BaseService):
         force_fix: bool = False,
         dry_run: bool = False,
     ) -> Dict[str, Any]:
-        """
-        修复Kubernetes部署问题
-
-        Args:
-            deployment: 部署名称
-            namespace: 命名空间
-            force_fix: 是否强制修复
-            dry_run: 是否为演练模式
-
-        Returns:
-            修复结果字典
-
-        Raises:
-            ValidationError: 参数验证失败
-            ResourceNotFoundError: 资源未找到
-            AutoFixError: 修复过程失败
-        """
+        """修复K8s部署问题"""
         self._ensure_initialized()
 
         # 验证输入参数

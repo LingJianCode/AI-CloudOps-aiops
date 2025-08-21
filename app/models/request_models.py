@@ -16,15 +16,7 @@ from app.config.settings import config
 
 
 class RCARequest(BaseModel):
-    """
-    根因分析请求模型 - 用于分析系统异常的根本原因
-
-    Attributes:
-        start_time: 分析开始时间
-        end_time: 分析结束时间
-        metrics: 要分析的指标列表
-        time_range_minutes: 时间范围（分钟）
-    """
+    """根因分析请求模型"""
 
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
@@ -33,7 +25,6 @@ class RCARequest(BaseModel):
 
     @validator("start_time", "end_time", pre=True, allow_reuse=True)
     def parse_datetime(cls, v):
-        """验证并解析日期时间字符串"""
         if isinstance(v, str):
             try:
                 return datetime.fromisoformat(v.replace("Z", "+00:00"))
@@ -44,7 +35,7 @@ class RCARequest(BaseModel):
     def __init__(self, **data):
         super().__init__(**data)
 
-        # 如果没有提供时间范围，使用默认值
+        # 设置默认时间范围
         if not self.start_time or not self.end_time:
             tz = timezone.utc
             now = datetime.now(tz)
@@ -59,22 +50,13 @@ class RCARequest(BaseModel):
                     minutes=config.rca.default_time_range
                 )
 
-        # 如果没有提供指标，使用默认指标
+        # 设置默认指标
         if not self.metrics:
             self.metrics = config.rca.default_metrics
 
 
 class AutoFixRequest(BaseModel):
-    """
-    自动修复请求模型 - 用于自动修复Kubernetes集群中的问题
-
-    Attributes:
-        deployment: 部署名称
-        namespace: 命名空间名称
-        event: 触发事件描述
-        force: 是否强制执行修复
-        auto_restart: 是否在需要时自动重启Pod
-    """
+    """自动修复请求模型"""
 
     deployment: str = Field(..., min_length=1)
     namespace: str = Field(default="default", min_length=1)
@@ -84,17 +66,7 @@ class AutoFixRequest(BaseModel):
 
 
 class PredictionRequest(BaseModel):
-    """
-    负载预测请求模型 - 用于预测未来系统负载
-
-    Attributes:
-        service_name: 服务名称
-        current_qps: 当前每秒查询数
-        hours: 预测小时数
-        instance_cpu: 实例CPU数
-        instance_memory: 实例内存(GB)
-        include_confidence: 是否包含置信区间
-    """
+    """负载预测请求模型"""
 
     service_name: str = Field(default="unknown", description="服务名称")
     current_qps: float = Field(..., description="当前QPS", gt=0)
@@ -105,24 +77,13 @@ class PredictionRequest(BaseModel):
 
     @validator("current_qps", allow_reuse=True)
     def validate_qps(cls, v):
-        """验证QPS值非负"""
         if v < 0:
             raise ValueError("QPS不能为负数")
         return v
 
 
 class AssistantRequest(BaseModel):
-    """
-    智能小助手请求模型 - 用于与AI助手交互
-
-    Attributes:
-        question: 用户提问内容
-        mode: 助手模式，1为RAG模式，2为MCP模式
-        chat_history: 历史对话记录
-        use_web_search: 是否使用网络搜索增强回答
-        max_context_docs: 最大上下文文档数量
-        session_id: 会话ID，为空则创建新会话
-    """
+    """智能小助手请求模型"""
 
     question: str = Field(..., min_length=1, description="用户提问")
     mode: int = Field(
@@ -147,7 +108,7 @@ class SessionRequest(BaseModel):
 
 
 class DiagnoseRequest(BaseModel):
-    """Kubernetes问题诊断请求模型"""
+    """K8s问题诊断请求模型"""
 
     deployment: Optional[str] = Field(None, description="Kubernetes Deployment名称")
     namespace: str = Field("default", description="Kubernetes命名空间")

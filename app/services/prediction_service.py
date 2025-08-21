@@ -22,16 +22,13 @@ logger = logging.getLogger("aiops.services.prediction")
 
 
 class PredictionService(BaseService, HealthCheckMixin):
-    """
-    负载预测服务 - 管理QPS预测和负载趋势分析
-    """
+    """负载预测服务"""
 
     def __init__(self) -> None:
         super().__init__("prediction")
         self._core_service: Optional[CorePredictionService] = None
 
     async def _do_initialize(self) -> None:
-        """初始化预测服务"""
         try:
             self._core_service = CorePredictionService()
             self.logger.info("预测服务核心组件初始化完成")
@@ -40,7 +37,6 @@ class PredictionService(BaseService, HealthCheckMixin):
             raise PredictionError(f"初始化失败: {str(e)}")
 
     async def _do_health_check(self) -> bool:
-        """预测服务健康检查"""
         try:
             if not self._core_service:
                 return False
@@ -70,23 +66,7 @@ class PredictionService(BaseService, HealthCheckMixin):
         instance_cpu: Optional[int] = None,
         instance_memory: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """
-        预测实例数量
-
-        Args:
-            service_name: 服务名称
-            current_qps: 当前QPS
-            hours: 预测小时数
-            instance_cpu: 实例CPU数
-            instance_memory: 实例内存(GB)
-
-        Returns:
-            预测结果字典
-
-        Raises:
-            ValidationError: 参数验证失败
-            PredictionError: 预测过程失败
-        """
+        """预测实例数量"""
         self._ensure_initialized()
 
         # 验证输入参数

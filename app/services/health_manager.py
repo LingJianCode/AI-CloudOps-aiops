@@ -57,7 +57,6 @@ class HealthManager:
         return self._service_cache[service_name]
 
     def _check_fallback_capabilities(self) -> Dict[str, bool]:
-        """检查备用实现的可用性"""
         fallback_status = {
             "fallback_chat_model": False,
             "fallback_embeddings": False,

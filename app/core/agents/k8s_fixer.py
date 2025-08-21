@@ -25,7 +25,7 @@ logger = logging.getLogger("aiops.k8s_fixer")
 
 
 class K8sFixerAgent:
-    """Kubernetes fixer agent for cluster issue diagnosis and automatic repair"""
+    """K8s自动修复代理"""
 
     def __init__(self):
         self.k8s_service = KubernetesService()
@@ -40,7 +40,6 @@ class K8sFixerAgent:
         self._llm_checked = False
 
     def _test_model_failover(self):
-        """测试模型故障切换功能"""
         try:
             # 检查主要模型连接
             primary_healthy = False

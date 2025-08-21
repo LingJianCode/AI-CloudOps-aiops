@@ -20,14 +20,7 @@ from app.common.constants import HttpStatusCodes, Messages
 
 
 class AICloudOpsError(Exception):
-    """
-    AI-CloudOps 基础异常类
-
-    Args:
-        message: 错误消息
-        error_code: 错误代码
-        details: 详细错误信息
-    """
+    """基础异常类"""
 
     def __init__(
         self,
@@ -43,14 +36,7 @@ class AICloudOpsError(Exception):
 
 
 class ValidationError(AICloudOpsError):
-    """
-    输入验证错误
-
-    Args:
-        message: 错误消息
-        field: 出错的字段名
-        value: 无效的字段值
-    """
+    """输入验证错误"""
 
     def __init__(
         self, message: str, field: Optional[str] = None, value: Optional[Any] = None
@@ -64,14 +50,7 @@ class ValidationError(AICloudOpsError):
 
 
 class ServiceError(AICloudOpsError):
-    """
-    服务层错误
-
-    Args:
-        message: 错误消息
-        service: 服务名称
-        operation: 操作名称
-    """
+    """服务层错误"""
 
     def __init__(self, message: str, service: str, operation: Optional[str] = None):
         details = {"service": service}

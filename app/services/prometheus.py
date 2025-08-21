@@ -30,7 +30,6 @@ class PrometheusService:
     async def query_range(
         self, query: str, start_time: datetime, end_time: datetime, step: str = "1m"
     ) -> Optional[pd.DataFrame]:
-        """查询Prometheus范围数据"""
         try:
             url = f"{self.base_url}/api/v1/query_range"
             params = {

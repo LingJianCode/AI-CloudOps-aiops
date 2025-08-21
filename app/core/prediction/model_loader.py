@@ -30,7 +30,6 @@ class ModelLoader:
         logger.info("模型加载器初始化完成")
 
     def load_models(self) -> bool:
-        """加载预测模型和标准化器"""
         try:
             # 获取模型文件的绝对路径
             model_path = os.path.abspath(config.prediction.model_path)

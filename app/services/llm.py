@@ -34,15 +34,9 @@ logger = logging.getLogger("aiops.llm")
 
 
 class LLMService:
-    """LLM服务管理类，支持OpenAI和Ollama提供商，具备自动故障转移功能"""
+    """LLM服务"""
 
     def __init__(self):
-        """
-        初始化LLM服务管理器
-
-        设置主要和备用LLM提供商，配置相关参数和客户端连接。
-        系统会优先使用外部模型(OpenAI)，如果不可用则自动回退到本地模型(Ollama)。
-        """
         # 初始化错误处理器和基本配置
         self._init_error_handler()
         self._init_basic_config()
@@ -55,7 +49,6 @@ class LLMService:
         self.error_handler = ErrorHandler(logger)
 
     def _init_basic_config(self) -> None:
-        """初始化基本配置参数"""
         # 解析和清理提供商配置，移除可能的注释和空格
         self.provider = (
             config.llm.provider.split("#")[0].strip()
@@ -67,7 +60,6 @@ class LLMService:
         self.max_tokens = config.llm.max_tokens
 
     def _init_providers(self) -> None:
-        """初始化主要和备用提供商"""
         # 设置备用提供商，确保高可用性
         self.backup_provider = (
             "ollama" if self.provider.lower() == "openai" else "openai"
@@ -87,7 +79,6 @@ class LLMService:
             raise ValidationError(f"不支持的LLM提供商: {self.provider}")
 
     def _init_openai_provider(self) -> None:
-        """初始化OpenAI提供商"""
         # OpenAI提供商初始化流程
         self.client = OpenAI(
             api_key=config.llm.effective_api_key, base_url=config.llm.effective_base_url
@@ -98,7 +89,6 @@ class LLMService:
         self._init_backup_ollama()
 
     def _init_ollama_provider(self) -> None:
-        """初始化Ollama提供商"""
         # Ollama提供商初始化流程
         self.client = None  # Ollama使用独立的API调用，不需要客户端实例
 

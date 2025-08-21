@@ -21,27 +21,12 @@ logger = logging.getLogger("aiops.response")
 
 
 class ResponseWrapper:
-    """
-    统一响应包装器
-
-    提供标准化的成功和错误响应格式
-    """
+    """统一响应包装器"""
 
     @staticmethod
     def success(
         data: Any = None, message: str = "success", code: int = 0
     ) -> Dict[str, Any]:
-        """
-        创建成功响应
-
-        Args:
-            data: 响应数据
-            message: 响应消息
-            code: 业务状态码，0表示成功
-
-        Returns:
-            标准化的成功响应字典
-        """
         return {"code": code, "message": message, "data": data}
 
     @staticmethod

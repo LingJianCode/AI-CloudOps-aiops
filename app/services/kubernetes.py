@@ -35,7 +35,6 @@ class KubernetesService:
         self._try_init()
 
     def _try_init(self):
-        """尝试初始化Kubernetes客户端"""
         try:
             if time.time() - self.last_init_attempt < self._init_retry_interval:
                 return  # 避免频繁重试
@@ -67,7 +66,6 @@ class KubernetesService:
             logger.error(f"Kubernetes初始化失败: {str(e)}")
 
     def _load_config(self):
-        """加载Kubernetes配置"""
         try:
             config_file = config.k8s.config_path
             logger.info(

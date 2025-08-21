@@ -25,12 +25,7 @@ ENV = os.getenv("ENV", "development")
 
 
 def load_config() -> Dict[str, Any]:
-    """
-    加载配置文件，优先使用环境对应的配置
-
-    Returns:
-        Dict[str, Any]: 加载的配置字典
-    """
+    """加载配置文件"""
     config_file = (
         ROOT_DIR / "config" / f"config{'.' + ENV if ENV != 'development' else ''}.yaml"
     )

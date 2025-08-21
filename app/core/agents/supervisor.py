@@ -23,17 +23,16 @@ logger = logging.getLogger("aiops.supervisor")
 
 
 class RouteResponse(BaseModel):
-    """Route response data model for supervisor decisions"""
+    """督导决策响应模型"""
 
     next: Literal["Researcher", "Coder", "K8sFixer", "Notifier", "FINISH"]
     reasoning: Optional[str] = None
 
 
 class SupervisorAgent:
-    """Supervisor agent - AIOps system intelligent coordinator"""
+    """智能监督代理"""
 
     def __init__(self):
-        """Initialize supervisor agent"""
         # 使用我们自己的LLM服务进行智能决策
         self.llm_service = LLMService()
 
@@ -46,7 +45,6 @@ class SupervisorAgent:
         logger.info("Supervisor Agent initialized")
 
     def _setup_prompt(self):
-        """Setup decision prompt template"""
         system_prompt = """你是一个AIOps系统的主管，负责协调以下工作人员来解决Kubernetes相关问题：
 
 工作人员及其职责：
