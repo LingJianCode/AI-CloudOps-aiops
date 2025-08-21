@@ -56,11 +56,9 @@ class ServiceConstants:
     STATUS_NOT_READY = "not_ready"
     STATUS_ALIVE = "alive"
 
-    # 预测服务
+    # 预测服务常量
     PREDICTION_MIN_QPS = 0.1
     PREDICTION_MAX_QPS = 10000.0
-    PREDICTION_MIN_HOURS = 1
-    PREDICTION_MAX_HOURS = 168  # 7天
     PREDICTION_TIMEOUT = 120  # 2分钟
 
     # RCA服务
@@ -86,10 +84,8 @@ class ServiceConstants:
     ASSISTANT_TIMEOUT = 360  # 6分钟
     ASSISTANT_SESSION_TIMEOUT = 3600  # 1小时
 
-    # 预测服务常量
+    # 预测服务常量  
     LOW_QPS_THRESHOLD = 5.0
-    MAX_PREDICTION_HOURS = 168  # 7天
-    DEFAULT_PREDICTION_HOURS = 24
     PREDICTION_VARIATION_FACTOR = 0.1  # 10%波动
 
     # QPS置信度阈值

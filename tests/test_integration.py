@@ -100,14 +100,28 @@ class TestSystemIntegration:
         else:
             workflow_results["health_check"] = {"success": False, "status_code": health_response.status_code if health_response else None}
         
-        # 2. 负载预测
-        predict_url = f"{self.api_base_url}/predict"
-        predict_response = make_request("get", predict_url, logger=logger)
+        # 2. 新预测服务健康检查
+        predict_health_url = f"{self.api_base_url}/predict/health"
+        predict_response = make_request("get", predict_health_url, logger=logger)
         
         if predict_response and predict_response.status_code == 200:
-            workflow_results["prediction"] = {"success": True, "status_code": 200}
+            workflow_results["prediction_health"] = {"success": True, "status_code": 200}
         else:
-            workflow_results["prediction"] = {"success": False, "status_code": predict_response.status_code if predict_response else None}
+            workflow_results["prediction_health"] = {"success": False, "status_code": predict_response.status_code if predict_response else None}
+        
+        # 2.1 测试QPS预测API
+        qps_predict_url = f"{self.api_base_url}/predict/qps"
+        qps_payload = {
+            "prediction_type": "qps",
+            "current_value": 100.0,
+            "prediction_hours": 12
+        }
+        qps_response = make_request("post", qps_predict_url, json_data=qps_payload, logger=logger)
+        
+        if qps_response and qps_response.status_code == 200:
+            workflow_results["qps_prediction"] = {"success": True, "status_code": 200}
+        else:
+            workflow_results["qps_prediction"] = {"success": False, "status_code": qps_response.status_code if qps_response else None}
         
         # 3. 根因分析配置检查
         rca_config_url = f"{self.api_base_url}/rca/config"

@@ -5,7 +5,9 @@ __pycache__/
 
 # C extensions
 *.so
-data/models/time_qps_auto_scaling_model_metadata.json
+data/models
+data/training_data
+data/visualizations
 # Distribution / packaging
 .Python
 build/

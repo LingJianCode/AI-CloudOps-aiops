@@ -39,8 +39,13 @@ from .predict_models import (
     CostAnalysis,
     AnomalyPrediction,
     ModelInfo,
-    # 请求响应模型
-    PredictionRequest,
+    # 请求模型
+    BasePredictionRequest,
+    QpsPredictionRequest,
+    CpuPredictionRequest,
+    MemoryPredictionRequest,
+    DiskPredictionRequest,
+    # 响应模型
     PredictionResponse,
     PredictionServiceHealthResponse,
 )
@@ -77,8 +82,13 @@ __all__ = [
     "CostAnalysis",
     "AnomalyPrediction",
     "ModelInfo",
-    # 预测请求响应模型
-    "PredictionRequest",
+    # 预测请求模型
+    "BasePredictionRequest",
+    "QpsPredictionRequest",
+    "CpuPredictionRequest",
+    "MemoryPredictionRequest",
+    "DiskPredictionRequest",
+    # 预测响应模型
     "PredictionResponse",
     "PredictionServiceHealthResponse",
 ]

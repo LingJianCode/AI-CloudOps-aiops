@@ -104,7 +104,7 @@ def llm_service():
 @pytest.fixture
 def prediction_service():
     """获取预测服务实例"""
-    from app.core.prediction.predictor import PredictionService
+    from app.services.prediction_service import PredictionService
 
     return PredictionService()
 

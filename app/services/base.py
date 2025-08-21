@@ -163,9 +163,8 @@ class BaseService(ABC):
             ServiceUnavailableError: 服务未初始化
         """
         if not self._initialized:
-            raise ServiceUnavailableError(
-                service_name=self.service_name, details={"error": "服务未初始化"}
-            )
+            from app.common.exceptions import PredictionError
+            raise PredictionError("服务未初始化")
 
 
 class HealthCheckMixin:

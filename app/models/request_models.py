@@ -11,7 +11,7 @@ Description: 请求模型定义
 
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 from app.config.settings import config
 
 
@@ -23,7 +23,8 @@ class RCARequest(BaseModel):
     metrics: Optional[List[str]] = None
     time_range_minutes: Optional[int] = Field(None, ge=1, le=config.rca.max_time_range)
 
-    @validator("start_time", "end_time", pre=True, allow_reuse=True)
+    @field_validator("start_time", "end_time", mode="before")
+    @classmethod
     def parse_datetime(cls, v):
         if isinstance(v, str):
             try:
@@ -64,22 +65,6 @@ class AutoFixRequest(BaseModel):
     force: bool = Field(default=False)
     auto_restart: bool = Field(default=True)
 
-
-class PredictionRequest(BaseModel):
-    """负载预测请求模型"""
-
-    service_name: str = Field(default="unknown", description="服务名称")
-    current_qps: float = Field(..., description="当前QPS", gt=0)
-    hours: int = Field(default=24, description="预测小时数", ge=1, le=168)
-    instance_cpu: Optional[int] = Field(None, description="实例CPU数", gt=0)
-    instance_memory: Optional[int] = Field(None, description="实例内存(GB)", gt=0)
-    include_confidence: bool = Field(default=True, description="是否包含置信区间")
-
-    @validator("current_qps", allow_reuse=True)
-    def validate_qps(cls, v):
-        if v < 0:
-            raise ValueError("QPS不能为负数")
-        return v
 
 
 class AssistantRequest(BaseModel):

@@ -9,7 +9,8 @@ License: Apache 2.0
 Description: 模块初始化文件
 """
 
-from .prediction.predictor import PredictionService
 from .rca import RCAAnalysisEngine
 
-__all__ = ["RCAAnalysisEngine", "PredictionService"]
+__all__ = [
+    "RCAAnalysisEngine"
+]

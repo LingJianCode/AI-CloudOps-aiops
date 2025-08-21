@@ -16,7 +16,7 @@ from typing import Any, Dict
 
 import psutil
 
-from app.core.prediction.predictor import PredictionService
+from app.services.prediction_service import PredictionService
 from app.services.kubernetes import KubernetesService
 from app.services.llm import LLMService
 from app.services.notification import NotificationService

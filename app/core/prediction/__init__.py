@@ -6,10 +6,21 @@ AI-CloudOps-aiops
 Author: Bamboo
 Email: bamboocloudops@gmail.com
 License: Apache 2.0
-Description: 模块初始化文件
+Description: Core层预测模块初始化文件
 """
 
-from .model_loader import ModelLoader
-from .predictor import PredictionService
+from .unified_predictor import UnifiedPredictor
+from .feature_extractor import FeatureExtractor
+from .anomaly_detector import AnomalyDetector
+from .scaling_advisor import ScalingAdvisor
+from .cost_analyzer import CostAnalyzer
+from .model_manager import ModelManager
 
-__all__ = ["PredictionService", "ModelLoader"]
+__all__ = [
+    "UnifiedPredictor",
+    "FeatureExtractor",
+    "AnomalyDetector",
+    "ScalingAdvisor",
+    "CostAnalyzer",
+    "ModelManager"
+]

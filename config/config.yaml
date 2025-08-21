@@ -96,11 +96,87 @@ rca:
 
 # 预测配置
 prediction:
-  model_path: data/models/time_qps_auto_scaling_model.pkl
-  scaler_path: data/models/time_qps_auto_scaling_scaler.pkl
+  # 模型路径配置
+  model_base_path: data/models
+  model_paths:
+    qps:
+      model: data/models/qps_prediction_model.pkl
+      scaler: data/models/qps_prediction_scaler.pkl
+      metadata: data/models/qps_prediction_model_metadata.json
+    cpu:
+      model: data/models/cpu_prediction_model.pkl
+      scaler: data/models/cpu_prediction_scaler.pkl
+      metadata: data/models/cpu_prediction_model_metadata.json
+    memory:
+      model: data/models/memory_prediction_model.pkl
+      scaler: data/models/memory_prediction_scaler.pkl
+      metadata: data/models/memory_prediction_model_metadata.json
+    disk:
+      model: data/models/disk_prediction_model.pkl
+      scaler: data/models/disk_prediction_scaler.pkl
+      metadata: data/models/disk_prediction_model_metadata.json
+  
+  # 实例配置
   max_instances: 20
   min_instances: 1
+  
+  # Prometheus查询配置
   prometheus_query: 'rate(nginx_ingress_controller_nginx_process_requests_total{service="ingress-nginx-controller-metrics"}[10m])'
+  
+  # 预测参数
+  default_prediction_hours: 24
+  max_prediction_hours: 168
+  min_prediction_hours: 1
+  default_granularity: hour
+  default_target_utilization: 0.7
+  default_sensitivity: 0.8
+  
+  # 扩缩容阈值
+  scaling_thresholds:
+    qps:
+      scale_up: 1000
+      scale_down: 200
+      per_instance: 500
+    cpu:
+      scale_up: 80
+      scale_down: 30
+      optimal: 60
+    memory:
+      scale_up: 85
+      scale_down: 40
+      optimal: 70
+    disk:
+      scale_up: 90
+      scale_down: 50
+      optimal: 75
+  
+  # 冷却时间（分钟）
+  cooldown_periods:
+    scale_up: 5
+    scale_down: 15
+  
+  # 成本分析配置
+  cost_analysis:
+    enabled: true
+    default_pricing:
+      instance:
+        small: 0.02
+        medium: 0.04
+        large: 0.08
+        xlarge: 0.16
+      cpu_per_core: 0.02
+      memory_per_gb: 0.005
+      disk_per_gb: 0.0001
+      bandwidth_per_gb: 0.01
+  
+  # 异常检测配置
+  anomaly_detection:
+    default_method: zscore
+    default_sensitivity: 0.8
+    enabled_methods:
+      - zscore
+      - iqr
+      - mad
 
 # 通知配置
 notification:

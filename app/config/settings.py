@@ -255,20 +255,14 @@ class RCAConfig:
 class PredictionConfig:
     """预测模型配置"""
 
-    model_path: str = field(
+    # 模型路径配置
+    model_base_path: str = field(
         default_factory=lambda: get_env_or_config(
-            "PREDICTION_MODEL_PATH",
-            "prediction.model_path",
-            "data/models/time_qps_auto_scaling_model.pkl",
+            "PREDICTION_MODEL_BASE_PATH", "prediction.model_base_path", "data/models"
         )
     )
-    scaler_path: str = field(
-        default_factory=lambda: get_env_or_config(
-            "PREDICTION_SCALER_PATH",
-            "prediction.scaler_path",
-            "data/models/time_qps_auto_scaling_scaler.pkl",
-        )
-    )
+    
+    # 实例配置
     max_instances: int = field(
         default_factory=lambda: get_env_or_config(
             "PREDICTION_MAX_INSTANCES", "prediction.max_instances", 20, int
@@ -279,6 +273,8 @@ class PredictionConfig:
             "PREDICTION_MIN_INSTANCES", "prediction.min_instances", 1, int
         )
     )
+    
+    # Prometheus查询配置
     prometheus_query: str = field(
         default_factory=lambda: get_env_or_config(
             "PREDICTION_PROMETHEUS_QUERY",
@@ -286,6 +282,63 @@ class PredictionConfig:
             'rate(nginx_ingress_controller_nginx_process_requests_total{service="ingress-nginx-controller-metrics"}[10m])',
         )
     )
+    
+    # 预测参数
+    default_prediction_hours: int = field(
+        default_factory=lambda: get_env_or_config(
+            "PREDICTION_DEFAULT_HOURS", "prediction.default_prediction_hours", 24, int
+        )
+    )
+    max_prediction_hours: int = field(
+        default_factory=lambda: get_env_or_config(
+            "PREDICTION_MAX_HOURS", "prediction.max_prediction_hours", 168, int
+        )
+    )
+    min_prediction_hours: int = field(
+        default_factory=lambda: get_env_or_config(
+            "PREDICTION_MIN_HOURS", "prediction.min_prediction_hours", 1, int
+        )
+    )
+    default_granularity: str = field(
+        default_factory=lambda: get_env_or_config(
+            "PREDICTION_DEFAULT_GRANULARITY", "prediction.default_granularity", "hour"
+        )
+    )
+    default_target_utilization: float = field(
+        default_factory=lambda: get_env_or_config(
+            "PREDICTION_DEFAULT_TARGET_UTILIZATION", "prediction.default_target_utilization", 0.7, float
+        )
+    )
+    default_sensitivity: float = field(
+        default_factory=lambda: get_env_or_config(
+            "PREDICTION_DEFAULT_SENSITIVITY", "prediction.default_sensitivity", 0.8, float
+        )
+    )
+    
+    @property
+    def model_paths(self) -> Dict[str, Dict[str, str]]:
+        """获取模型路径配置"""
+        return CONFIG.get("prediction", {}).get("model_paths", {})
+    
+    @property
+    def scaling_thresholds(self) -> Dict[str, Dict[str, float]]:
+        """获取扩缩容阈值配置"""
+        return CONFIG.get("prediction", {}).get("scaling_thresholds", {})
+    
+    @property
+    def cooldown_periods(self) -> Dict[str, int]:
+        """获取冷却时间配置"""
+        return CONFIG.get("prediction", {}).get("cooldown_periods", {})
+    
+    @property
+    def cost_analysis_config(self) -> Dict[str, Any]:
+        """获取成本分析配置"""
+        return CONFIG.get("prediction", {}).get("cost_analysis", {})
+    
+    @property
+    def anomaly_detection_config(self) -> Dict[str, Any]:
+        """获取异常检测配置"""
+        return CONFIG.get("prediction", {}).get("anomaly_detection", {})
 
 
 @dataclass
