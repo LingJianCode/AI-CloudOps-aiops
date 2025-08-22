@@ -302,18 +302,21 @@ async def get_tool_info(tool_name: str) -> Dict[str, Any]:
 
 def parse_server_url(url: str) -> tuple[str, int]:
     """解析服务器URL，返回主机和端口"""
+    from app.config.settings import config
+    
     try:
         if "://" not in url:
             url = f"http://{url}"
 
         parsed = urlparse(url)
         host = parsed.hostname or "0.0.0.0"
-        port = parsed.port or 9000
+        port = parsed.port or config.mcp.server_url.split(':')[-1] or 9000
 
         return host, port
     except Exception as e:
         logger.warning(f"解析URL失败: {e}，使用默认配置")
-        return "0.0.0.0", 9000
+        default_port = config.mcp.server_url.split(':')[-1] if config.mcp.server_url else 9000
+        return "0.0.0.0", int(default_port) if str(default_port).isdigit() else 9000
 
 
 def signal_handler(signum, frame):

@@ -17,14 +17,17 @@ from typing import Any, Dict
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 
 from app.api.decorators import api_response, log_api_call
-from app.common.constants import (
-    AppConstants,
-    ErrorMessages,
-    HttpStatusCodes,
-    ServiceConstants,
-)
+from app.common.constants import AppConstants, ErrorMessages, HttpStatusCodes
 from app.common.response import ResponseWrapper
-from app.models import ListResponse
+from app.models import (
+    ErrorSummaryResponse,
+    EventPatternsResponse,
+    ListResponse,
+    QuickDiagnosisResponse,
+    ServiceConfigResponse,
+    ServiceInfoResponse,
+    ServiceReadyResponse,
+)
 from app.models.rca_models import (
     RCAAnalysisResponse,
     RCAAnalyzeRequest,
@@ -53,10 +56,7 @@ async def analyze_root_cause(
         metrics=request.metrics,
     )
 
-    # 后台任务：缓存分析结果
     background_tasks.add_task(rca_service.cache_analysis_result, analysis_result)
-
-    # 使用统一的响应模型
     response = RCAAnalysisResponse(
         namespace=request.namespace,
         analysis_id=str(uuid.uuid4()),
@@ -80,15 +80,9 @@ async def get_all_prometheus_metrics() -> Dict[str, Any]:
     await rca_service.initialize()
 
     try:
-        # 获取所有可用的指标
         available_metrics = await rca_service.get_all_available_metrics()
-
-        # 使用统一的列表响应格式
-        metrics_response = ListResponse[str](
-            items=available_metrics, total=len(available_metrics)
-        )
-        return ResponseWrapper.success(
-            data=metrics_response.dict(),
+        return ResponseWrapper.success_list(
+            items=available_metrics,
             message="success",
         )
     except Exception as e:
@@ -107,8 +101,7 @@ async def health_check() -> Dict[str, Any]:
 
     health_status = await rca_service.get_health_status()
 
-    # 使用统一的响应模型
-    from datetime import datetime
+
 
     response = RCAHealthResponse(
         status=health_status.get("status", "healthy"),
@@ -125,7 +118,7 @@ async def health_check() -> Dict[str, Any]:
 @router.get("/ready", summary="AI-CloudOps RCA服务就绪检查")
 @api_response("AI-CloudOps RCA服务就绪检查")
 async def rca_ready() -> Dict[str, Any]:
-    """检查RCA服务是否已就绪可以提供服务"""
+    """检查RCA服务就绪状态"""
     try:
         await rca_service.initialize()
         health_status = await rca_service.get_health_status()
@@ -135,12 +128,14 @@ async def rca_ready() -> Dict[str, Any]:
         if not is_ready:
             raise HTTPException(status_code=503, detail="RCA服务未就绪")
 
+        response = ServiceReadyResponse(
+            ready=True,
+            service="rca",
+            timestamp=datetime.now().isoformat(),
+            message="服务就绪"
+        )
         return ResponseWrapper.success(
-            data={
-                "ready": True,
-                "service": "rca",
-                "timestamp": datetime.now().isoformat(),
-            },
+            data=response.dict(),
             message="服务就绪",
         )
     except HTTPException:
@@ -153,11 +148,17 @@ async def rca_ready() -> Dict[str, Any]:
 @router.get("/config", summary="AI-CloudOps获取RCA配置")
 @api_response("AI-CloudOps获取RCA配置")
 async def get_rca_config() -> Dict[str, Any]:
-    """获取RCA服务的配置信息"""
+    """获取RCA配置信息"""
     try:
         await rca_service.initialize()
         config_info = await rca_service.get_config_info()
-        return ResponseWrapper.success(data=config_info, message="配置获取成功")
+        
+        response = ServiceConfigResponse(
+            service="rca",
+            config=config_info,
+            timestamp=datetime.now().isoformat()
+        )
+        return ResponseWrapper.success(data=response.dict(), message="配置获取成功")
     except Exception as e:
         logger.error(f"获取RCA配置失败: {str(e)}")
         return ResponseWrapper.error(message=f"配置获取失败: {str(e)}")
@@ -166,12 +167,22 @@ async def get_rca_config() -> Dict[str, Any]:
 @router.get("/quick-diagnosis", summary="AI-CloudOps快速诊断")
 @api_response("AI-CloudOps快速诊断")
 async def quick_diagnosis(namespace: str) -> Dict[str, Any]:
-    """快速问题诊断，返回最近1小时内的关键问题"""
+    """快速问题诊断"""
     await rca_service.initialize()
 
     diagnosis_result = await rca_service.quick_diagnosis(namespace=namespace)
+    
+    response = QuickDiagnosisResponse(
+        namespace=namespace,
+        status=diagnosis_result.get("status", "completed"),
+        critical_issues=diagnosis_result.get("critical_issues", []),
+        warnings=diagnosis_result.get("warnings", []),
+        recommendations=diagnosis_result.get("recommendations", []),
+        timestamp=datetime.now().isoformat(),
+        analysis_duration=diagnosis_result.get("analysis_duration", 0.0)
+    )
 
-    return ResponseWrapper.success(data=diagnosis_result, message="success")
+    return ResponseWrapper.success(data=response.dict(), message="success")
 
 
 @router.get("/event-patterns", summary="AI-CloudOps事件模式分析")
@@ -180,14 +191,23 @@ async def get_event_patterns(
     namespace: str,
     hours: float = Query(1.0, ge=0.1, le=24, description="分析时间范围（小时）"),
 ) -> Dict[str, Any]:
-    """分析事件模式和趋势"""
+    """分析事件模式"""
     await rca_service.initialize()
 
     patterns_result = await rca_service.get_event_patterns(
         namespace=namespace, hours=hours
     )
+    
+    response = EventPatternsResponse(
+        namespace=namespace,
+        time_range_hours=hours,
+        patterns=patterns_result.get("patterns", []),
+        trending_events=patterns_result.get("trending_events", []),
+        anomalous_events=patterns_result.get("anomalous_events", []),
+        timestamp=datetime.now().isoformat()
+    )
 
-    return ResponseWrapper.success(data=patterns_result, message="success")
+    return ResponseWrapper.success(data=response.dict(), message="success")
 
 
 @router.get("/error-summary", summary="AI-CloudOps错误摘要")
@@ -202,18 +222,28 @@ async def get_error_summary(
     summary_result = await rca_service.get_error_summary(
         namespace=namespace, hours=hours
     )
+    
+    response = ErrorSummaryResponse(
+        namespace=namespace,
+        time_range_hours=hours,
+        total_errors=summary_result.get("total_errors", 0),
+        error_categories=summary_result.get("error_categories", {}),
+        top_errors=summary_result.get("top_errors", []),
+        error_timeline=summary_result.get("error_timeline", []),
+        timestamp=datetime.now().isoformat()
+    )
 
-    return ResponseWrapper.success(data=summary_result, message="success")
+    return ResponseWrapper.success(data=response.dict(), message="success")
 
 
 @router.get("/info", summary="AI-CloudOps RCA服务信息")
 @api_response("AI-CloudOps RCA服务信息")
 async def rca_info() -> Dict[str, Any]:
-    """获取RCA服务的详细信息"""
+    """获取RCA服务信息"""
     info = {
         "service": "根因分析",
         "version": AppConstants.APP_VERSION,
-        "description": "多数据源智能根因分析服务，整合指标、事件和日志进行深度分析",
+        "description": "智能根因分析服务",
         "capabilities": [
             "根因分析",
             "指标异常检测",
@@ -233,28 +263,28 @@ async def rca_info() -> Dict[str, Any]:
             "info": "/rca/info",
         },
         "data_sources": ["Prometheus指标", "Kubernetes事件", "Pod日志"],
-        "analysis_methods": [
-            "统计异常检测",
-            "时间序列分析",
-            "模式匹配",
-            "关联分析",
-            "因果推理",
-        ],
+        "analysis_methods": ["异常检测", "时间序列分析", "关联分析"],
         "constraints": {
             "max_time_window_hours": 24,
             "min_time_window_hours": 0.1,
             "max_log_lines": 1000,
             "default_log_lines": 100,
-            "timeout": (
-                ServiceConstants.RCA_TIMEOUT
-                if hasattr(ServiceConstants, "RCA_TIMEOUT")
-                else 300
-            ),
+            "timeout": 300,
         },
         "status": "available" if rca_service else "unavailable",
     }
 
-    return ResponseWrapper.success(data=info, message="success")
+    response = ServiceInfoResponse(
+        service=info["service"],
+        version=info["version"],
+        description=info["description"],
+        capabilities=info["capabilities"],
+        endpoints=info["endpoints"],
+        constraints=info["constraints"],
+        status=info["status"]
+    )
+
+    return ResponseWrapper.success(data=response.dict(), message="success")
 
 
 __all__ = ["router"]

@@ -16,15 +16,18 @@ from typing import Any, Dict
 from fastapi import APIRouter, HTTPException
 
 from app.api.decorators import api_response, log_api_call
-from app.common.constants import ErrorMessages, HttpStatusCodes, ServiceConstants
+from app.common.constants import ErrorMessages, HttpStatusCodes
 from app.common.response import ResponseWrapper
 from app.models import (
     CpuPredictionRequest,
     DiskPredictionRequest,
     MemoryPredictionRequest,
+    ModelInfoResponse,
     PredictionResponse,
     PredictionServiceHealthResponse,
     QpsPredictionRequest,
+    ServiceInfoResponse,
+    ServiceReadyResponse,
 )
 from app.services.prediction_service import PredictionService
 
@@ -44,7 +47,6 @@ async def predict_qps(request: QpsPredictionRequest) -> Dict[str, Any]:
     try:
 
         if request.enable_ai_insights:
-
             prediction_result = await prediction_service.predict_with_ai_analysis(
                 prediction_type="qps",
                 current_value=request.current_qps,
@@ -62,7 +64,6 @@ async def predict_qps(request: QpsPredictionRequest) -> Dict[str, Any]:
                 sensitivity=request.sensitivity,
             )
         else:
-
             prediction_result = await prediction_service.predict_qps(
                 current_qps=request.current_qps,
                 metric_query=request.metric_query,
@@ -104,7 +105,6 @@ async def predict_cpu(request: CpuPredictionRequest) -> Dict[str, Any]:
     try:
 
         if request.enable_ai_insights:
-
             prediction_result = await prediction_service.predict_with_ai_analysis(
                 prediction_type="cpu",
                 current_value=request.current_cpu_percent,
@@ -122,7 +122,6 @@ async def predict_cpu(request: CpuPredictionRequest) -> Dict[str, Any]:
                 sensitivity=request.sensitivity,
             )
         else:
-
             prediction_result = await prediction_service.predict_cpu_utilization(
                 current_cpu_percent=request.current_cpu_percent,
                 metric_query=request.metric_query,
@@ -164,7 +163,6 @@ async def predict_memory(request: MemoryPredictionRequest) -> Dict[str, Any]:
     try:
 
         if request.enable_ai_insights:
-
             prediction_result = await prediction_service.predict_with_ai_analysis(
                 prediction_type="memory",
                 current_value=request.current_memory_percent,
@@ -182,7 +180,6 @@ async def predict_memory(request: MemoryPredictionRequest) -> Dict[str, Any]:
                 sensitivity=request.sensitivity,
             )
         else:
-
             prediction_result = await prediction_service.predict_memory_utilization(
                 current_memory_percent=request.current_memory_percent,
                 metric_query=request.metric_query,
@@ -224,7 +221,6 @@ async def predict_disk(request: DiskPredictionRequest) -> Dict[str, Any]:
     try:
 
         if request.enable_ai_insights:
-
             prediction_result = await prediction_service.predict_with_ai_analysis(
                 prediction_type="disk",
                 current_value=request.current_disk_percent,
@@ -242,7 +238,6 @@ async def predict_disk(request: DiskPredictionRequest) -> Dict[str, Any]:
                 sensitivity=request.sensitivity,
             )
         else:
-
             prediction_result = await prediction_service.predict_disk_utilization(
                 current_disk_percent=request.current_disk_percent,
                 metric_query=request.metric_query,
@@ -313,13 +308,14 @@ async def prediction_ready() -> Dict[str, Any]:
                 detail=ErrorMessages.SERVICE_UNAVAILABLE,
             )
 
+        response = ServiceReadyResponse(
+            ready=True,
+            service="prediction",
+            timestamp=datetime.now().isoformat(),
+            message="服务就绪"
+        )
         return ResponseWrapper.success(
-            data={
-                "ready": True,
-                "initialized": is_initialized,
-                "healthy": is_healthy,
-                "timestamp": datetime.now().isoformat(),
-            },
+            data=response.dict(),
             message="服务就绪",
         )
     except HTTPException:
@@ -413,9 +409,9 @@ async def prediction_info() -> Dict[str, Any]:
         "constraints": {
             "min_hours": config.prediction.min_prediction_hours,
             "max_hours": config.prediction.max_prediction_hours,
-            "qps_range": f"{ServiceConstants.PREDICTION_MIN_QPS}-{ServiceConstants.PREDICTION_MAX_QPS}",
+            "qps_range": "0.1-10000.0",
             "utilization_range": "0-100%",
-            "timeout_seconds": ServiceConstants.PREDICTION_TIMEOUT,
+            "timeout_seconds": 120,
             "default_prediction_hours": config.prediction.default_prediction_hours,
             "default_granularity": config.prediction.default_granularity,
             "default_target_utilization": config.prediction.default_target_utilization,
@@ -424,7 +420,17 @@ async def prediction_info() -> Dict[str, Any]:
         "service_status": "available" if prediction_service else "unavailable",
     }
 
-    return ResponseWrapper.success(data=info, message="服务信息获取成功")
+    response = ServiceInfoResponse(
+        service=info["service"],
+        version=info["version"],
+        description=info["description"],
+        capabilities=info["capabilities"],
+        endpoints=info["endpoints"],
+        constraints=info["constraints"],
+        status=info["service_status"]
+    )
+
+    return ResponseWrapper.success(data=response.dict(), message="服务信息获取成功")
 
 
 @router.get("/models", summary="AI-CloudOps 模型信息")
@@ -434,12 +440,27 @@ async def model_info() -> Dict[str, Any]:
     try:
         await prediction_service.initialize()
         model_details = await prediction_service.get_model_info()
-        return ResponseWrapper.success(data=model_details, message="模型信息获取成功")
+        
+        response = ModelInfoResponse(
+            models=model_details.get("models", []),
+            total_models=model_details.get("total_models", 0),
+            loaded_models=model_details.get("loaded_models", 0),
+            status=model_details.get("status", "healthy"),
+            timestamp=datetime.now().isoformat()
+        )
+        return ResponseWrapper.success(data=response.dict(), message="模型信息获取成功")
     except Exception as e:
         logger.error(f"获取模型信息失败: {str(e)}")
 
+        error_response = ModelInfoResponse(
+            models=[],
+            total_models=0,
+            loaded_models=0,
+            status="error",
+            timestamp=datetime.now().isoformat()
+        )
         return ResponseWrapper.success(
-            data={"models": [], "status": "error", "error_message": "无法获取模型信息"},
+            data=error_response.dict(),
             message="模型信息获取失败",
         )
 

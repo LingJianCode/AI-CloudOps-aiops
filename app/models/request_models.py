@@ -9,7 +9,7 @@ License: Apache 2.0
 Description: 请求模型定义
 """
 
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -51,6 +51,28 @@ class DiagnoseRequest(BaseModel):
     include_logs: bool = Field(True, description="是否包含日志分析")
     include_pods: bool = Field(True, description="是否包含Pod信息")
     include_events: bool = Field(True, description="是否包含事件信息")
+
+
+class UploadKnowledgeRequest(BaseModel):
+    """上传知识库请求模型"""
+
+    title: str = Field(..., min_length=1, description="知识库文档标题")
+    content: str = Field(..., min_length=1, description="知识库文档内容")
+    source: Optional[str] = Field(None, description="文档来源")
+    category: Optional[str] = Field(None, description="文档分类")
+    tags: Optional[List[str]] = Field(default=None, description="文档标签")
+    metadata: Optional[Dict[str, str]] = Field(default=None, description="额外元数据")
+
+
+class AddDocumentRequest(BaseModel):
+    """添加文档请求模型"""
+    
+    title: str = Field(..., min_length=1, description="文档标题")
+    content: str = Field(..., min_length=1, description="文档内容")
+    source: Optional[str] = Field(default="api", description="文档来源")
+    category: Optional[str] = Field(default="general", description="文档分类")
+    tags: Optional[List[str]] = Field(default=None, description="文档标签")
+    metadata: Optional[Dict[str, Any]] = Field(default=None, description="额外元数据")
 
 
 

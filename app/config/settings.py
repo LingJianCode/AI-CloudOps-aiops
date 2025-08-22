@@ -255,14 +255,12 @@ class RCAConfig:
 class PredictionConfig:
     """预测模型配置"""
 
-    # 模型路径配置
     model_base_path: str = field(
         default_factory=lambda: get_env_or_config(
             "PREDICTION_MODEL_BASE_PATH", "prediction.model_base_path", "data/models"
         )
     )
 
-    # 实例配置
     max_instances: int = field(
         default_factory=lambda: get_env_or_config(
             "PREDICTION_MAX_INSTANCES", "prediction.max_instances", 20, int
@@ -274,7 +272,6 @@ class PredictionConfig:
         )
     )
 
-    # Prometheus查询配置 - 使用node_exporter标准指标
     prometheus_query: str = field(
         default_factory=lambda: get_env_or_config(
             "PREDICTION_PROMETHEUS_QUERY",
@@ -283,7 +280,6 @@ class PredictionConfig:
         )
     )
 
-    # 预测参数
     default_prediction_hours: int = field(
         default_factory=lambda: get_env_or_config(
             "PREDICTION_DEFAULT_HOURS", "prediction.default_prediction_hours", 24, int

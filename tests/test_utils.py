@@ -19,7 +19,9 @@ import requests
 
 
 # 测试配置常量
-DEFAULT_API_BASE_URL = "http://localhost:8080/api/v1"
+from app.config.settings import config
+
+DEFAULT_API_BASE_URL = f"http://{config.host}:{config.port}/api/v1"
 DEFAULT_MAX_RETRIES = 5
 DEFAULT_RETRY_DELAY = 3
 DEFAULT_REQUEST_TIMEOUT = 60

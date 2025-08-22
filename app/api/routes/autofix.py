@@ -10,18 +10,22 @@ Description: AI-CloudOps智能自动修复API接口
 """
 
 import logging
+from datetime import datetime
 from typing import Any, Dict
 
 from fastapi import APIRouter, BackgroundTasks
 
 from app.api.decorators import api_response, log_api_call
-from app.common.constants import ApiEndpoints, AppConstants, ServiceConstants
+from app.common.constants import ApiEndpoints, AppConstants
 from app.common.response import ResponseWrapper
 from app.models import (
     AutoFixRequest,
     AutoFixResponse,
     DiagnoseRequest,
     DiagnoseResponse,
+    ServiceConfigResponse,
+    ServiceHealthResponse,
+    ServiceInfoResponse,
 )
 from app.services.autofix_service import AutoFixService
 from app.services.notification import NotificationService
@@ -106,8 +110,6 @@ async def diagnose_k8s(request: DiagnoseRequest) -> Dict[str, Any]:
         include_events=request.include_events,
     )
 
-    from datetime import datetime
-
     response = DiagnoseResponse(
         deployment=request.deployment,
         namespace=request.namespace,
@@ -129,8 +131,17 @@ async def autofix_health() -> Dict[str, Any]:
     await autofix_service.initialize()
 
     health_status = await autofix_service.get_service_health_info()
+    
+    response = ServiceHealthResponse(
+        status=health_status.get("status", "healthy"),
+        service="autofix",
+        version=health_status.get("version"),
+        dependencies=health_status.get("dependencies"),
+        last_check_time=datetime.now().isoformat(),
+        uptime=health_status.get("uptime")
+    )
 
-    return ResponseWrapper.success(data=health_status, message="success")
+    return ResponseWrapper.success(data=response.dict(), message="success")
 
 
 @router.get("/config", summary="AI-CloudOps获取自动修复配置")
@@ -139,8 +150,14 @@ async def get_autofix_config() -> Dict[str, Any]:
     await autofix_service.initialize()
 
     config_info = await autofix_service.get_autofix_config()
+    
+    response = ServiceConfigResponse(
+        service="autofix",
+        config=config_info,
+        timestamp=datetime.now().isoformat()
+    )
 
-    return ResponseWrapper.success(data=config_info, message="success")
+    return ResponseWrapper.success(data=response.dict(), message="success")
 
 
 @router.get("/info", summary="AI-CloudOps自动修复服务信息")
@@ -149,7 +166,7 @@ async def autofix_info() -> Dict[str, Any]:
     info = {
         "service": "自动修复",
         "version": AppConstants.APP_VERSION,
-        "description": "基于智能代理的Kubernetes自动修复服务",
+        "description": "Kubernetes自动修复服务",
         "capabilities": ["部署问题诊断", "自动修复建议", "工作流执行", "故障自愈"],
         "endpoints": {
             "autofix": ApiEndpoints.AUTOFIX,
@@ -173,15 +190,25 @@ async def autofix_info() -> Dict[str, Any]:
             "resource_adjustment",
         ],
         "constraints": {
-            "max_name_length": ServiceConstants.AUTOFIX_MAX_NAME_LENGTH,
-            "k8s_timeout": ServiceConstants.AUTOFIX_K8S_TIMEOUT,
-            "workflow_timeout": ServiceConstants.AUTOFIX_WORKFLOW_TIMEOUT,
-            "analysis_timeout": ServiceConstants.AUTOFIX_ANALYSIS_TIMEOUT,
+            "max_name_length": 63,
+            "k8s_timeout": 30,
+            "workflow_timeout": 300,
+            "analysis_timeout": 120,
         },
         "status": "available" if autofix_service else "unavailable",
     }
 
-    return ResponseWrapper.success(data=info, message="success")
+    response = ServiceInfoResponse(
+        service=info["service"],
+        version=info["version"],
+        description=info["description"],
+        capabilities=info["capabilities"],
+        endpoints=info["endpoints"],
+        constraints=info["constraints"],
+        status=info["status"]
+    )
+
+    return ResponseWrapper.success(data=response.dict(), message="success")
 
 
 __all__ = ["router"]

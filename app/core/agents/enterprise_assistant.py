@@ -1053,11 +1053,13 @@ def _get_embedding_dimension(embedding_model):
 async def _load_knowledge_base(vector_store) -> None:
     """加载知识库到向量存储"""
     import os
+    from app.config.settings import config
 
     try:
-        knowledge_base_path = "data/knowledge_base"
+        # 使用配置文件中定义的知识库路径
+        knowledge_base_path = config.rag.knowledge_base_path
         if not os.path.exists(knowledge_base_path):
-            logger.warning("知识库目录不存在，跳过加载")
+            logger.warning(f"知识库目录不存在: {knowledge_base_path}，跳过加载")
             return
 
         documents = []

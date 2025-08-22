@@ -15,20 +15,16 @@ from typing import Any, Dict
 class AppConstants:
     """应用级常量"""
 
-    # 应用信息
     APP_NAME = "AI-CloudOps Platform"
     APP_VERSION = "1.0.0"
     APP_DESCRIPTION = "AI-CloudOps智能云原生运维平台"
 
-    # API版本
     API_VERSION_V1 = "/api/v1"
 
-    # 默认超时设置（秒）
     DEFAULT_REQUEST_TIMEOUT = 30
     DEFAULT_WARMUP_TIMEOUT = 60
     DEFAULT_RETRY_DELAY = 2
 
-    # 分页设置
     DEFAULT_PAGE_SIZE = 20
     MAX_PAGE_SIZE = 100
 
@@ -36,31 +32,26 @@ class AppConstants:
 class ServiceConstants:
     """服务相关常量"""
 
-    # 默认服务超时设置（秒）
     DEFAULT_SERVICE_TIMEOUT = 60
     DEFAULT_WARMUP_TIMEOUT = 60
     DEFAULT_RETRY_DELAY = 2
 
-    # HTTP状态码常量
     HTTP_OK = 200
     HTTP_BAD_REQUEST = 400
     HTTP_CLIENT_ERROR_MIN = 400
     HTTP_SERVER_ERROR_MIN = 500
     HTTP_INTERNAL_SERVER_ERROR = 500
 
-    # 错误消息常量
     VALIDATION_ERROR_MESSAGE = "请求参数验证失败"
     INTERNAL_SERVER_ERROR_MESSAGE = "内部服务器错误"
     CRITICAL_ERROR_MESSAGE = "严重内部错误"
 
-    # LLM服务常量
     LLM_MAX_RETRIES = 3
     LLM_TEMPERATURE_MIN = 0.0
     LLM_TEMPERATURE_MAX = 2.0
-    LLM_HEALTH_CHECK_TOKENS = 5  # 健康检查使用的最小令牌数
-    LLM_DEFAULT_TEMPERATURE = 0.7  # 默认温度值
+    LLM_HEALTH_CHECK_TOKENS = 5
+    LLM_DEFAULT_TEMPERATURE = 0.7
 
-    # 服务状态
     STATUS_HEALTHY = "healthy"
     STATUS_UNHEALTHY = "unhealthy"
     STATUS_DEGRADED = "degraded"
@@ -68,39 +59,32 @@ class ServiceConstants:
     STATUS_NOT_READY = "not_ready"
     STATUS_ALIVE = "alive"
 
-    # 预测服务常量
     PREDICTION_MIN_QPS = 0.1
     PREDICTION_MAX_QPS = 10000.0
-    PREDICTION_TIMEOUT = 120  # 2分钟
+    PREDICTION_TIMEOUT = 120
 
-    # RCA服务
     RCA_MIN_METRICS = 1
     RCA_MAX_METRICS = 50
     RCA_DEFAULT_SEVERITY_THRESHOLD = 0.7
     RCA_TIMEOUT = 90
 
-    # 自动修复服务
     AUTOFIX_K8S_TIMEOUT = 30
     AUTOFIX_LOGS_TIMEOUT = 15
-    AUTOFIX_WORKFLOW_TIMEOUT = 300  # 5分钟
-    AUTOFIX_ANALYSIS_TIMEOUT = 120  # 2分钟
+    AUTOFIX_WORKFLOW_TIMEOUT = 300
+    AUTOFIX_ANALYSIS_TIMEOUT = 120
     AUTOFIX_MAX_PODS_FOR_LOGS = 5
-    AUTOFIX_MAX_NAME_LENGTH = 63  # K8s资源名称最大长度
+    AUTOFIX_MAX_NAME_LENGTH = 63
     AUTOFIX_MIN_TIMEOUT = 60
-    AUTOFIX_MAX_TIMEOUT = 1800  # 30分钟
-    AUTOFIX_DEFAULT_TIMEOUT = 300  # 5分钟
+    AUTOFIX_MAX_TIMEOUT = 1800
+    AUTOFIX_DEFAULT_TIMEOUT = 300
 
-    # 智能助手服务
     ASSISTANT_MAX_CONTEXT_DOCS = 10
     ASSISTANT_DEFAULT_CONTEXT_DOCS = 3
-    ASSISTANT_TIMEOUT = 360  # 6分钟
-    ASSISTANT_SESSION_TIMEOUT = 3600  # 1小时
+    ASSISTANT_TIMEOUT = 360
+    ASSISTANT_SESSION_TIMEOUT = 3600
 
-    # 预测服务常量
     LOW_QPS_THRESHOLD = 5.0
-    PREDICTION_VARIATION_FACTOR = 0.1  # 10%波动
-
-    # QPS置信度阈值
+    PREDICTION_VARIATION_FACTOR = 0.1
     QPS_CONFIDENCE_THRESHOLDS = {
         "low": 100,
         "medium": 500,
@@ -108,7 +92,7 @@ class ServiceConstants:
         "very_high": 2000,
     }
 
-    # 时间模式常量
+
     HOUR_FACTORS = {
         0: 0.3,
         1: 0.2,
@@ -137,13 +121,7 @@ class ServiceConstants:
     }
 
     DAY_FACTORS = {
-        0: 0.95,  # 周一
-        1: 1.0,  # 周二
-        2: 1.05,  # 周三
-        3: 1.05,  # 周四
-        4: 0.95,  # 周五
-        5: 0.7,  # 周六
-        6: 0.6,  # 周日
+        0: 0.95, 1: 1.0, 2: 1.05, 3: 1.05, 4: 0.95, 5: 0.7, 6: 0.6
     }
 
 

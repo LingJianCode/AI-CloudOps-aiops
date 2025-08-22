@@ -1,14 +1,14 @@
 # 应用基础配置
 app:
-  debug: true  # 是否启用调试模式（开发环境建议为true，生产环境建议为false）
-  host: 0.0.0.0  # 应用监听的主机地址
-  port: 8080  # 应用监听的端口号
-  log_level: INFO  # 日志级别（可选：DEBUG/INFO/WARNING/ERROR）
+  debug: true # 是否启用调试模式（开发环境建议为true，生产环境建议为false）
+  host: 0.0.0.0 # 应用监听的主机地址
+  port: 8080 # 应用监听的端口号
+  log_level: INFO # 日志级别（可选：DEBUG/INFO/WARNING/ERROR）
 
 # Prometheus配置
 prometheus:
-  host: 127.0.0.1:9090  # Prometheus服务地址
-  timeout: 30  # Prometheus请求超时时间（秒）
+  host: 127.0.0.1:9090 # Prometheus服务地址
+  timeout: 30 # Prometheus请求超时时间（秒）
 
 # LLM模型配置
 llm:
@@ -78,7 +78,7 @@ rca:
     max_events_limit: 1000 # 最大事件数量限制
     concurrent_limit: 5 # 并发事件收集限制
 
-  # 日志收集器配置  
+  # 日志收集器配置
   logs:
     max_lines: 500 # 单次收集最大日志行数
     error_lines: 200 # 单次收集最大错误日志行数
@@ -195,8 +195,8 @@ rag:
   knowledge_base_path: data/knowledge_base # 知识库路径
   chunk_size: 1000 # 文档分块大小
   chunk_overlap: 200 # 分块重叠大小
-  top_k: 8  # 检索返回文档数量
-  similarity_threshold: 0.3  # 相似度阈值
+  top_k: 8 # 检索返回文档数量
+  similarity_threshold: 0.3 # 相似度阈值
   openai_embedding_model: Pro/BAAI/bge-m3 # OpenAI嵌入模型名称
   ollama_embedding_model: nomic-embed-text # Ollama嵌入模型名称
   max_context_length: 4000 # 最大上下文长度
