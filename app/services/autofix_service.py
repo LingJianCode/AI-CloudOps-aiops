@@ -418,3 +418,41 @@ class AutoFixService(BaseService):
             )
 
         return wrapped_result
+
+    async def cleanup(self) -> None:
+        """清理自动修复服务资源"""
+        try:
+            self.logger.info("开始清理自动修复服务资源...")
+
+            # 清理K8s修复代理
+            if self._k8s_fixer:
+                try:
+                    if hasattr(self._k8s_fixer, 'cleanup'):
+                        if asyncio.iscoroutinefunction(self._k8s_fixer.cleanup):
+                            await self._k8s_fixer.cleanup()
+                        else:
+                            self._k8s_fixer.cleanup()
+                except Exception as e:
+                    self.logger.warning(f"清理K8s修复代理失败: {e}")
+                self._k8s_fixer = None
+
+            # 清理监督代理
+            if self._supervisor:
+                try:
+                    if hasattr(self._supervisor, 'cleanup'):
+                        if asyncio.iscoroutinefunction(self._supervisor.cleanup):
+                            await self._supervisor.cleanup()
+                        else:
+                            self._supervisor.cleanup()
+                except Exception as e:
+                    self.logger.warning(f"清理监督代理失败: {e}")
+                self._supervisor = None
+
+            # 调用父类清理方法
+            await super().cleanup()
+            
+            self.logger.info("自动修复服务资源清理完成")
+
+        except Exception as e:
+            self.logger.error(f"自动修复服务资源清理失败: {str(e)}")
+            raise

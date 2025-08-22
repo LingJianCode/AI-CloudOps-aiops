@@ -400,7 +400,8 @@ class OptimizedAssistantService(BaseService):
 
     def _calculate_timeout(self, question: str) -> float:
         """智能计算超时时间"""
-        base_timeout = 30.0
+        # 使用配置文件中的超时时间作为基础超时
+        base_timeout = float(config.rag.timeout)
 
         # 根据问题长度调整
         length_factor = min(len(question) / 100, 3.0)
@@ -414,7 +415,8 @@ class OptimizedAssistantService(BaseService):
             performance_factor = 1.0
 
         timeout = base_timeout * (1 + length_factor * 0.2) * performance_factor
-        return min(timeout, 120.0)  # 最大120秒
+        # 使用配置文件中的超时时间作为最大值
+        return min(timeout, base_timeout * 2)  # 最大为配置超时时间的2倍
 
     def _enhance_result(
         self, result: Dict[str, Any], question: str, session_id: Optional[str]

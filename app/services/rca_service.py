@@ -462,3 +462,51 @@ class RCAService(BaseService, HealthCheckMixin):
                 "container_cpu_usage_seconds_total",
                 "container_memory_usage_bytes",
             ]
+
+    async def cleanup(self) -> None:
+        """清理RCA服务资源"""
+        try:
+            self.logger.info("开始清理RCA服务资源...")
+
+            # 清理收集器
+            if self._metrics_collector:
+                try:
+                    if hasattr(self._metrics_collector, 'cleanup'):
+                        await self._metrics_collector.cleanup()
+                except Exception as e:
+                    self.logger.warning(f"清理metrics_collector失败: {e}")
+                self._metrics_collector = None
+
+            if self._events_collector:
+                try:
+                    if hasattr(self._events_collector, 'cleanup'):
+                        await self._events_collector.cleanup()
+                except Exception as e:
+                    self.logger.warning(f"清理events_collector失败: {e}")
+                self._events_collector = None
+
+            if self._logs_collector:
+                try:
+                    if hasattr(self._logs_collector, 'cleanup'):
+                        await self._logs_collector.cleanup()
+                except Exception as e:
+                    self.logger.warning(f"清理logs_collector失败: {e}")
+                self._logs_collector = None
+
+            # 清理分析引擎
+            if self._engine:
+                try:
+                    if hasattr(self._engine, 'cleanup'):
+                        await self._engine.cleanup()
+                except Exception as e:
+                    self.logger.warning(f"清理RCA引擎失败: {e}")
+                self._engine = None
+
+            # 调用父类清理方法
+            await super().cleanup()
+            
+            self.logger.info("RCA服务资源清理完成")
+
+        except Exception as e:
+            self.logger.error(f"RCA服务资源清理失败: {str(e)}")
+            raise

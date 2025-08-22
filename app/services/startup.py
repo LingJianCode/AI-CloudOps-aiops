@@ -9,8 +9,9 @@ License: Apache 2.0
 Description: AI-CloudOps应用启动服务
 """
 
+import asyncio
 import time
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 
 from .base import BaseService
 
@@ -23,6 +24,8 @@ class StartupService(BaseService):
     def __init__(self) -> None:
         super().__init__("startup")
         self.start_time = time.time()
+        self._managed_services: List[BaseService] = []
+        self._service_instances: Dict[str, Any] = {}
 
     async def _do_initialize(self) -> None:
         """初始化启动服务"""
@@ -133,4 +136,143 @@ class StartupService(BaseService):
             "uptime": self.get_uptime(),
             "initialized": self.is_initialized(),
             "healthy": self.is_healthy(),
+            "managed_services": len(self._managed_services),
         }
+
+    def register_service(self, service: BaseService) -> None:
+        """注册需要管理的服务"""
+        if service not in self._managed_services:
+            self._managed_services.append(service)
+            self.logger.info(f"注册服务: {service.service_name}")
+
+    def register_service_instance(self, name: str, instance: Any) -> None:
+        """注册服务实例（非BaseService类型）"""
+        self._service_instances[name] = instance
+        self.logger.info(f"注册服务实例: {name}")
+
+    async def cleanup_all_services(self) -> Dict[str, Any]:
+        """清理所有注册的服务"""
+        cleanup_results = {
+            "started_at": time.time(),
+            "services": {},
+            "instances": {},
+            "total_time": 0,
+            "success": True,
+        }
+
+        self.logger.info("开始清理所有服务...")
+
+        # 清理BaseService类型的服务
+        for service in reversed(self._managed_services):  # 反向清理
+            service_result = await self._cleanup_service(service)
+            cleanup_results["services"][service.service_name] = service_result
+
+        # 清理其他服务实例
+        for name, instance in self._service_instances.items():
+            instance_result = await self._cleanup_instance(name, instance)
+            cleanup_results["instances"][name] = instance_result
+
+        cleanup_results["total_time"] = time.time() - cleanup_results["started_at"]
+        cleanup_results["success"] = all(
+            result.get("success", False)
+            for result in {**cleanup_results["services"], **cleanup_results["instances"]}.values()
+        )
+
+        self.logger.info(f"服务清理完成，总耗时: {cleanup_results['total_time']:.2f}秒")
+        return cleanup_results
+
+    async def _cleanup_service(self, service: BaseService) -> Dict[str, Any]:
+        """清理单个BaseService"""
+        result = {
+            "service": service.service_name,
+            "success": False,
+            "error": None,
+            "duration": 0,
+        }
+
+        try:
+            start_time = time.time()
+            await service.cleanup()
+            result["duration"] = time.time() - start_time
+            result["success"] = True
+            self.logger.info(f"服务 {service.service_name} 清理成功，耗时: {result['duration']:.2f}秒")
+        except Exception as e:
+            result["duration"] = time.time() - start_time if "start_time" in locals() else 0
+            result["error"] = str(e)
+            self.logger.error(f"服务 {service.service_name} 清理失败: {str(e)}")
+
+        return result
+
+    async def _cleanup_instance(self, name: str, instance: Any) -> Dict[str, Any]:
+        """清理单个服务实例"""
+        result = {
+            "instance": name,
+            "success": False,
+            "error": None,
+            "duration": 0,
+        }
+
+        try:
+            start_time = time.time()
+            
+            # 尝试不同的清理方法
+            if hasattr(instance, 'shutdown') and callable(getattr(instance, 'shutdown')):
+                if asyncio.iscoroutinefunction(instance.shutdown):
+                    await instance.shutdown()
+                else:
+                    instance.shutdown()
+            elif hasattr(instance, 'close') and callable(getattr(instance, 'close')):
+                if asyncio.iscoroutinefunction(instance.close):
+                    await instance.close()
+                else:
+                    instance.close()
+            elif hasattr(instance, 'cleanup') and callable(getattr(instance, 'cleanup')):
+                if asyncio.iscoroutinefunction(instance.cleanup):
+                    await instance.cleanup()
+                else:
+                    instance.cleanup()
+            else:
+                self.logger.debug(f"实例 {name} 没有可用的清理方法")
+                
+            result["duration"] = time.time() - start_time
+            result["success"] = True
+            self.logger.info(f"实例 {name} 清理成功，耗时: {result['duration']:.2f}秒")
+        except Exception as e:
+            result["duration"] = time.time() - start_time if "start_time" in locals() else 0
+            result["error"] = str(e)
+            self.logger.error(f"实例 {name} 清理失败: {str(e)}")
+
+        return result
+
+    async def get_services_status(self) -> Dict[str, Any]:
+        """获取所有服务状态"""
+        services_status = {}
+        
+        # BaseService类型的服务状态
+        for service in self._managed_services:
+            services_status[service.service_name] = {
+                "type": "BaseService",
+                "initialized": service.is_initialized(),
+                "healthy": service.is_healthy(),
+            }
+        
+        # 其他服务实例状态
+        for name, instance in self._service_instances.items():
+            status = {"type": "Instance", "available": True}
+            
+            # 尝试获取健康状态
+            try:
+                if hasattr(instance, 'health_check'):
+                    if asyncio.iscoroutinefunction(instance.health_check):
+                        status["healthy"] = await instance.health_check()
+                    else:
+                        status["healthy"] = instance.health_check()
+                elif hasattr(instance, 'is_healthy'):
+                    status["healthy"] = instance.is_healthy()
+            except Exception as e:
+                status["healthy"] = False
+                status["error"] = str(e)
+                
+            services_status[name] = status
+        
+        return services_status

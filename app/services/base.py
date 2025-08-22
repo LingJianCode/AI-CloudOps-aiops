@@ -167,6 +167,18 @@ class BaseService(ABC):
 
             raise PredictionError("服务未初始化")
 
+    async def cleanup(self) -> None:
+        """
+        清理服务资源（子类可重写）
+        """
+        try:
+            self._initialized = False
+            self._health_status = False
+            self.logger.info(f"服务 {self.service_name} 资源清理完成")
+        except Exception as e:
+            self.logger.error(f"服务 {self.service_name} 资源清理失败: {str(e)}")
+            raise
+
 
 class HealthCheckMixin:
     """

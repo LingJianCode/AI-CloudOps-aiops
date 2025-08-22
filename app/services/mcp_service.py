@@ -265,5 +265,39 @@ class MCPService(BaseService):
                 logger.error(f"无法初始化MCP助手: {str(e)}")
                 raise AssistantError(f"MCP服务暂未就绪: {str(e)}")
 
+    async def cleanup(self) -> None:
+        """清理MCP服务资源"""
+        try:
+            self.logger.info("开始清理MCP服务资源...")
+
+            # 清理MCP助手实例
+            if self._mcp_assistant:
+                try:
+                    if hasattr(self._mcp_assistant, 'cleanup'):
+                        if asyncio.iscoroutinefunction(self._mcp_assistant.cleanup):
+                            await self._mcp_assistant.cleanup()
+                        else:
+                            self._mcp_assistant.cleanup()
+                    elif hasattr(self._mcp_assistant, 'close'):
+                        if asyncio.iscoroutinefunction(self._mcp_assistant.close):
+                            await self._mcp_assistant.close()
+                        else:
+                            self._mcp_assistant.close()
+                except Exception as e:
+                    self.logger.warning(f"清理MCP助手实例失败: {e}")
+                self._mcp_assistant = None
+
+            # 重置健康缓存
+            self._health_cache = {"healthy": False, "last_check": None}
+
+            # 调用父类清理方法
+            await super().cleanup()
+            
+            self.logger.info("MCP服务资源清理完成")
+
+        except Exception as e:
+            self.logger.error(f"MCP服务资源清理失败: {str(e)}")
+            raise
+
 
 __all__ = ["MCPService"]

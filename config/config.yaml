@@ -13,7 +13,7 @@ prometheus:
 # LLM模型配置
 llm:
   provider: openai # LLM主提供商（可选：openai, ollama）
-  model: Qwen/Qwen3-14B # 主模型名称（OpenAI时使用）
+  model: Qwen/Qwen2.5-32B-Instruct # 主模型名称（OpenAI时使用）
   task_model: Qwen/Qwen2.5-14B-Instruct # 任务专用模型名称
   temperature: 0.7 # 生成温度，值越大结果越随机
   max_tokens: 2048 # 最大生成Token数
