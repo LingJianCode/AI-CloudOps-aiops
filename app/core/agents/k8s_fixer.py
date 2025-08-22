@@ -12,6 +12,7 @@ Description: Kubernetes自动修复代理
 import json
 import logging
 import os
+import requests
 import time
 from typing import Any, Dict, List
 
@@ -31,9 +32,12 @@ class K8sFixerAgent:
         self.k8s_service = KubernetesService()
         self.llm_service = LLMService()
         self.llm = self.llm_service  # 保留一个llm属性作为兼容
-        # 不再使用langchain_openai直接初始化LLM
-        self.max_retries = 3
-        self.retry_delay = 2
+
+        # 从配置获取重试参数
+        self.max_retries = config.rca.max_retries if hasattr(config, 'rca') else 3
+        self.retry_delay = (
+            getattr(config.common, 'retry_delay', 2) if hasattr(config, 'common') else 2
+        )
         logger.info("K8s Fixer Agent initialized")
 
         # 延迟进行LLM健康检查，避免阻塞初始化
@@ -53,7 +57,7 @@ class K8sFixerAgent:
                     response = requests.get(
                         f"{config.llm.base_url.rstrip('/')}/models",
                         headers=headers,
-                        timeout=3,
+                        timeout=config.llm.request_timeout,
                     )
                     primary_healthy = response.status_code < 400
                     logger.info(
@@ -65,7 +69,9 @@ class K8sFixerAgent:
                 # 检查备用Ollama
                 try:
                     ollama_host = config.llm.ollama_base_url.replace("/v1", "")
-                    response = requests.get(f"{ollama_host}/api/tags", timeout=3)
+                    response = requests.get(
+                        f"{ollama_host}/api/tags", timeout=config.llm.request_timeout
+                    )
                     backup_healthy = response.status_code == 200
                     logger.info(
                         f"备用Ollama模型服务状态: {'可用' if backup_healthy else '不可用'}"
@@ -76,7 +82,9 @@ class K8sFixerAgent:
                 # Ollama作为主要模型
                 try:
                     ollama_host = config.llm.ollama_base_url.replace("/v1", "")
-                    response = requests.get(f"{ollama_host}/api/tags", timeout=3)
+                    response = requests.get(
+                        f"{ollama_host}/api/tags", timeout=config.llm.request_timeout
+                    )
                     primary_healthy = response.status_code == 200
                     logger.info(
                         f"主要Ollama模型服务状态: {'可用' if primary_healthy else '不可用'}"
@@ -90,7 +98,7 @@ class K8sFixerAgent:
                     response = requests.get(
                         f"{config.llm.base_url.rstrip('/')}/models",
                         headers=headers,
-                        timeout=3,
+                        timeout=config.llm.request_timeout,
                     )
                     backup_healthy = response.status_code < 400
                     logger.info(
@@ -311,7 +319,7 @@ class K8sFixerAgent:
                     # 如果验证失败，记录但继续尝试其他修复方案
                     logger.warning(f"自动修复验证失败: {verification_result}")
                     # 等待一段时间后再次检查，给K8s一些时间应用更改
-                    time.sleep(3)
+                    time.sleep(self.retry_delay + 1)
 
             try:
                 # 使用LLM分析问题
@@ -1134,7 +1142,7 @@ class K8sFixerAgent:
             # 等待短暂时间以便修改生效
             import asyncio
 
-            await asyncio.sleep(3)
+            await asyncio.sleep(self.retry_delay + 1)
 
             # 重试多次检查
             retries = 3
@@ -1148,7 +1156,7 @@ class K8sFixerAgent:
                         f"验证修复时无法获取部署: {deployment_name} (尝试 {attempt+1}/{retries})"
                     )
                     if attempt < retries - 1:
-                        await asyncio.sleep(2)
+                        await asyncio.sleep(self.retry_delay)
                         continue
                     return "无法获取部署状态"
 
@@ -1189,7 +1197,7 @@ class K8sFixerAgent:
                         logger.info(
                             f"未找到相关Pod，等待后重试 (尝试 {attempt+1}/{retries})"
                         )
-                        await asyncio.sleep(2)
+                        await asyncio.sleep(self.retry_delay)
                         continue
                     return "未找到相关Pod"
 
@@ -1209,7 +1217,7 @@ class K8sFixerAgent:
                         logger.info(
                             f"部分Pod已就绪 ({ready_pods}/{total_pods})，等待后重试 (尝试 {attempt+1}/{retries})"
                         )
-                        await asyncio.sleep(3)
+                        await asyncio.sleep(self.retry_delay + 1)
                         continue
                     return f"部分修复: 就绪Pod: {ready_pods}/{total_pods} ({readiness_percentage:.1f}%)"
 
@@ -1219,7 +1227,7 @@ class K8sFixerAgent:
                         logger.warning(
                             f"检测到CrashLoopBackOff状态，等待后重试 (尝试 {attempt+1}/{retries})"
                         )
-                        await asyncio.sleep(3)
+                        await asyncio.sleep(self.retry_delay + 1)
                         continue
                     return f"验证失败: {len(crash_loop_pods)}/{total_pods} 的Pod处于CrashLoopBackOff状态"
 
@@ -1228,7 +1236,7 @@ class K8sFixerAgent:
                     logger.info(
                         f"当前就绪Pod: {ready_pods}/{total_pods}，等待后重试 (尝试 {attempt+1}/{retries})"
                     )
-                    await asyncio.sleep(3)
+                    await asyncio.sleep(self.retry_delay + 1)
                     continue
 
             # 返回最终状态
@@ -1495,7 +1503,7 @@ class K8sFixerAgent:
             namespace = context.get("namespace", "default")
             problem = context.get("problem", "")
             # 强制修复标志，默认为False
-            force = context.get("force", False)
+            context.get("force", False)
 
             if not deployment:
                 logger.warning("没有指定部署名称，无法进行修复")

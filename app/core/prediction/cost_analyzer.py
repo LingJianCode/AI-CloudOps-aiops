@@ -29,40 +29,45 @@ class CostAnalyzer:
     """成本分析器"""
 
     def __init__(self):
+        from app.config.settings import config
+
         # 从配置文件获取定价信息
         self.default_pricing = self._init_pricing()
 
-        # 折扣策略
-        self.discount_tiers = [
-            {"hours": 730, "discount": 0.1},  # 1个月使用，10%折扣
-            {"hours": 2190, "discount": 0.2},  # 3个月使用，20%折扣
-            {"hours": 8760, "discount": 0.3},  # 1年使用，30%折扣
-        ]
+        # 从配置获取折扣策略
+        cost_config = config.prediction.cost_analysis_config
+        self.discount_tiers = cost_config.get(
+            "discount_tiers",
+            [
+                {"hours": 730, "discount": 0.1},
+                {"hours": 2190, "discount": 0.2},
+                {"hours": 8760, "discount": 0.3},
+            ],
+        )
 
     def _init_pricing(self) -> Dict[str, Any]:
         """初始化定价配置"""
         from app.config.settings import config
 
         # 从配置文件获取成本分析配置
-        cost_config = getattr(config.prediction, "cost_analysis", None)
-        default_pricing = {
-            "instance": {
-                "small": 0.02,  # 1 CPU, 2GB RAM
-                "medium": 0.04,  # 2 CPU, 4GB RAM
-                "large": 0.08,  # 4 CPU, 8GB RAM
-                "xlarge": 0.16,  # 8 CPU, 16GB RAM
-            },
-            "cpu_per_core": 0.02,
-            "memory_per_gb": 0.005,
-            "disk_per_gb": 0.0001,
-            "bandwidth_per_gb": 0.01,
-        }
+        cost_config = config.prediction.cost_analysis_config
 
-        # 使用配置或默认定价
-        if cost_config and "default_pricing" in cost_config:
-            return cost_config["default_pricing"]
-        else:
-            return default_pricing
+        # 使用配置中的定价，如果不存在则使用默认值
+        return cost_config.get(
+            "default_pricing",
+            {
+                "instance": {
+                    "small": 0.02,
+                    "medium": 0.04,
+                    "large": 0.08,
+                    "xlarge": 0.16,
+                },
+                "cpu_per_core": 0.02,
+                "memory_per_gb": 0.005,
+                "disk_per_gb": 0.0001,
+                "bandwidth_per_gb": 0.01,
+            },
+        )
 
     async def analyze_cost(
         self,

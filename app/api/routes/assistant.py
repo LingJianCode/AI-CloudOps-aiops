@@ -76,7 +76,7 @@ async def assistant_query(request: AssistantRequest) -> Dict[str, Any]:
 async def get_session_info(session_id: str) -> Dict[str, Any]:
     await assistant_service.initialize()
 
-    session_info = await assistant_service.get_session_info(session_id    )
+    session_info = await assistant_service.get_session_info(session_id)
 
     response = SessionInfoResponse(
         session_id=session_id,
@@ -96,13 +96,13 @@ async def refresh_knowledge_base() -> Dict[str, Any]:
     await assistant_service.initialize()
 
     refresh_result = await assistant_service.refresh_knowledge_base()
-    
+
     response = RefreshKnowledgeResponse(
         refreshed=refresh_result.get("refreshed", True),
         documents_count=refresh_result.get("documents_count", 0),
         vector_count=refresh_result.get("vector_count", 0),
         timestamp=datetime.now().isoformat(),
-        message=refresh_result.get("message", "知识库刷新成功")
+        message=refresh_result.get("message", "知识库刷新成功"),
     )
 
     return ResponseWrapper.success(data=response.dict(), message="success")
@@ -112,16 +112,16 @@ async def refresh_knowledge_base() -> Dict[str, Any]:
 @api_response("智能助手健康检查")
 async def assistant_health() -> Dict[str, Any]:
     await assistant_service.initialize()
-    
+
     health_status = await assistant_service.get_service_health_info_with_mode()
-    
+
     response = ServiceHealthResponse(
         status=health_status.get("status", "healthy"),
         service="assistant",
         version=health_status.get("version"),
         dependencies=health_status.get("dependencies"),
         last_check_time=datetime.now().isoformat(),
-        uptime=health_status.get("uptime")
+        uptime=health_status.get("uptime"),
     )
 
     return ResponseWrapper.success(data=response.dict(), message="success")
@@ -150,7 +150,7 @@ async def assistant_ready() -> Dict[str, Any]:
             ready=True,
             service="assistant",
             timestamp=datetime.now().isoformat(),
-            message="服务就绪"
+            message="服务就绪",
         )
         return ResponseWrapper.success(
             data=response.dict(),
@@ -171,12 +171,12 @@ async def assistant_ready() -> Dict[str, Any]:
 async def clear_cache() -> Dict[str, Any]:
     await assistant_service.initialize()
     clear_result = await assistant_service.clear_cache()
-    
+
     response = ClearCacheResponse(
         cleared=clear_result.get("cleared", True),
         cache_keys_cleared=clear_result.get("cache_keys_cleared", 0),
         timestamp=datetime.now().isoformat(),
-        message=clear_result.get("message", "缓存清除成功")
+        message=clear_result.get("message", "缓存清除成功"),
     )
     return ResponseWrapper.success(data=response.dict(), message="success")
 
@@ -186,39 +186,60 @@ async def clear_cache() -> Dict[str, Any]:
 async def create_session(request: AssistantRequest) -> Dict[str, Any]:
     await assistant_service.initialize()
     session_result = await assistant_service.create_session(request)
-    
+
     response = CreateSessionResponse(
-        session_id=session_result if isinstance(session_result, str) else session_result.get("session_id", ""),
+        session_id=(
+            session_result
+            if isinstance(session_result, str)
+            else session_result.get("session_id", "")
+        ),
         mode=request.mode,
         created_time=datetime.now().isoformat(),
-        status="active"
+        status="active",
     )
     return ResponseWrapper.success(data=response.dict(), message="success")
 
-@router.post("/upload_knowledge", summary="上传知识库(结构化/文件)")
+
+@router.post("/upload_knowledge", summary="上传知识库(JSON格式)")
 @api_response("上传知识库")
-async def upload_knowledge(
-    request: UploadKnowledgeRequest = None,
-    file: UploadFile = File(None),
+async def upload_knowledge(request: UploadKnowledgeRequest) -> Dict[str, Any]:
+    """上传结构化知识库数据"""
+    await assistant_service.initialize()
+
+    upload_result = await assistant_service.upload_knowledge(request)
+
+    response = UploadKnowledgeResponse(
+        uploaded=upload_result.get("uploaded", True),
+        document_id=upload_result.get("document_id"),
+        filename=None,
+        file_size=None,
+        message=upload_result.get("message", "知识库上传成功"),
+        timestamp=datetime.now().isoformat(),
+    )
+    return ResponseWrapper.success(data=response.dict(), message="success")
+
+
+@router.post("/upload_knowledge_file", summary="上传知识库文件")
+@api_response("上传知识库文件")
+async def upload_knowledge_file(
+    file: UploadFile = File(...),
     title: str = Form(None),
     source: str = Form(None),
 ) -> Dict[str, Any]:
+    """上传知识库文件"""
     await assistant_service.initialize()
 
-    if file is not None:
-        upload_result = await assistant_service.upload_knowledge_file(
-            file=file, title=title, source=source
-        )
-    else:
-        upload_result = await assistant_service.upload_knowledge(request)
-    
+    upload_result = await assistant_service.upload_knowledge_file(
+        file=file, title=title, source=source
+    )
+
     response = UploadKnowledgeResponse(
         uploaded=upload_result.get("uploaded", True),
         document_id=upload_result.get("document_id"),
         filename=upload_result.get("filename"),
         file_size=upload_result.get("file_size"),
         message=upload_result.get("message", "知识库上传成功"),
-        timestamp=datetime.now().isoformat()
+        timestamp=datetime.now().isoformat(),
     )
     return ResponseWrapper.success(data=response.dict(), message="success")
 
@@ -228,12 +249,12 @@ async def upload_knowledge(
 async def add_document(request: AddDocumentRequest) -> Dict[str, Any]:
     await assistant_service.initialize()
     result = await assistant_service.add_document(request.dict())
-    
+
     response = AddDocumentResponse(
         added=result.get("added", True),
         document_id=result.get("document_id", ""),
         message=result.get("message", "文档添加成功"),
-        timestamp=datetime.now().isoformat()
+        timestamp=datetime.now().isoformat(),
     )
     return ResponseWrapper.success(data=response.dict(), message="success")
 
@@ -244,11 +265,9 @@ async def get_assistant_config() -> Dict[str, Any]:
     await assistant_service.initialize()
 
     config_info = await assistant_service.get_assistant_config()
-    
+
     response = ServiceConfigResponse(
-        service="assistant",
-        config=config_info,
-        timestamp=datetime.now().isoformat()
+        service="assistant", config=config_info, timestamp=datetime.now().isoformat()
     )
 
     return ResponseWrapper.success(data=response.dict(), message="success")
@@ -347,7 +366,7 @@ async def assistant_info() -> Dict[str, Any]:
         capabilities=info["capabilities"],
         endpoints=info["endpoints"],
         constraints=info["constraints"],
-        status=info["status"]
+        status=info["status"],
     )
 
     return ResponseWrapper.success(data=response.dict(), message="success")

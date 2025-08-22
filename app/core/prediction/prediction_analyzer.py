@@ -303,11 +303,11 @@ class PredictionAnalyzer:
         """从文本中提取指定章节内容"""
         import re
 
-        # 尝试匹配不同格式的章节标题
+        # 匹配章节标题的正则模式
         patterns = [
-            rf"\*\*{section_name}[^*]*?\*\*[：:]\s*([^*\n]+(?:\n[^*\n#]+)*)",  # **章节**: 内容
-            rf"{section_name}[：:]\s*([^\n]+(?:\n[^#\n]+)*)",  # 章节: 内容
-            rf"\d+\.\s*\*\*{section_name}[^*]*?\*\*[：:]\s*([^*\n]+(?:\n[^*\n#]+)*)",  # 1. **章节**: 内容
+            rf"\*\*{section_name}[^*]*?\*\*[：:]\s*([^*\n]+(?:\n[^*\n#]+)*)",
+            rf"{section_name}[：:]\s*([^\n]+(?:\n[^#\n]+)*)",
+            rf"\d+\.\s*\*\*{section_name}[^*]*?\*\*[：:]\s*([^*\n]+(?:\n[^*\n#]+)*)",
         ]
 
         for pattern in patterns:
@@ -336,10 +336,10 @@ class PredictionAnalyzer:
                 line = re.sub(r"^[-*•]\s*", "", line)
                 line = re.sub(r"^\d+\.\s*", "", line)
 
-                if len(line) > 10:  # 过滤过短的行
+                if len(line) > 10:
                     insights.append(line)
 
-            return insights[:7]  # 最多返回7个洞察
+            return insights[:7]
 
         except Exception as e:
             logger.warning(f"解析洞察响应失败: {str(e)}")

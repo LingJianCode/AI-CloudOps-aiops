@@ -63,13 +63,10 @@ class UploadKnowledgeRequest(BaseModel):
 
 class AddDocumentRequest(BaseModel):
     """添加文档请求模型"""
-    
+
     title: str = Field(..., min_length=1, description="文档标题")
     content: str = Field(..., min_length=1, description="文档内容")
     source: Optional[str] = Field(default="api", description="文档来源")
     category: Optional[str] = Field(default="general", description="文档分类")
     tags: Optional[List[str]] = Field(default=None, description="文档标签")
     metadata: Optional[Dict[str, Any]] = Field(default=None, description="额外元数据")
-
-
-

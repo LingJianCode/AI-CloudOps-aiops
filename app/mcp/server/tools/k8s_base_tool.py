@@ -54,15 +54,18 @@ class K8sBaseTool(BaseTool):
 
     async def execute(self, parameters: Dict[str, Any]) -> Any:
         """统一的执行方法，包含超时处理"""
+        from app.common.constants import ServiceConstants
+
         try:
             return await asyncio.wait_for(
-                self._execute_internal(parameters), timeout=60.0
+                self._execute_internal(parameters),
+                timeout=ServiceConstants.AUTOFIX_WORKFLOW_TIMEOUT,
             )
         except asyncio.TimeoutError:
             return {
                 "success": False,
                 "error": "操作超时",
-                "message": f"{self.name}执行时间超过60秒，已中止操作。",
+                "message": f"{self.name}执行时间超过{ServiceConstants.AUTOFIX_WORKFLOW_TIMEOUT}秒，已中止操作。",
                 "timestamp": datetime.utcnow().isoformat() + "Z",
             }
         except Exception as e:

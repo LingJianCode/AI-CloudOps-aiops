@@ -9,6 +9,7 @@ License: Apache 2.0
 Description: AI-CloudOps智能自动修复服务
 """
 
+import asyncio
 import logging
 from datetime import datetime
 from typing import Any, Dict, Optional
@@ -450,7 +451,7 @@ class AutoFixService(BaseService):
 
             # 调用父类清理方法
             await super().cleanup()
-            
+
             self.logger.info("自动修复服务资源清理完成")
 
         except Exception as e:

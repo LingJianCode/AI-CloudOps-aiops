@@ -85,11 +85,6 @@ class MCPService(BaseService):
     ) -> Dict[str, Any]:
         """
         获取MCP回答
-
-        Args:
-            question: 用户问题
-            session_id: 会话ID（目前MCP模式不使用会话）
-            **kwargs: 其他参数（为兼容性保留）
         """
         # 参数验证
         self._validate_question(question)
@@ -98,6 +93,9 @@ class MCPService(BaseService):
         await self._ensure_ready()
 
         try:
+            # 导入配置
+            from app.config.settings import config
+            
             # 设置超时
             timeout = config.mcp.timeout
 
@@ -292,7 +290,7 @@ class MCPService(BaseService):
 
             # 调用父类清理方法
             await super().cleanup()
-            
+
             self.logger.info("MCP服务资源清理完成")
 
         except Exception as e:

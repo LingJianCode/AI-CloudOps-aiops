@@ -60,13 +60,7 @@ class ServiceError(AICloudOpsError):
 
 
 class ConfigurationError(AICloudOpsError):
-    """
-    配置错误
-
-    Args:
-        message: 错误消息
-        config_key: 配置键名
-    """
+    """配置错误"""
 
     def __init__(self, message: str, config_key: Optional[str] = None):
         details = {}
@@ -76,14 +70,7 @@ class ConfigurationError(AICloudOpsError):
 
 
 class ExternalServiceError(AICloudOpsError):
-    """
-    外部服务错误
-
-    Args:
-        message: 错误消息
-        service: 外部服务名称
-        status_code: HTTP状态码
-    """
+    """外部服务错误"""
 
     def __init__(self, message: str, service: str, status_code: Optional[int] = None):
         details = {"external_service": service}
@@ -93,12 +80,7 @@ class ExternalServiceError(AICloudOpsError):
 
 
 class ErrorHandler:
-    """
-    统一错误处理器
-
-    Args:
-        logger: 日志记录器实例
-    """
+    """统一错误处理器"""
 
     def __init__(self, logger: Optional[logging.Logger] = None):
         self.logger = logger or logging.getLogger(__name__)
@@ -106,17 +88,7 @@ class ErrorHandler:
     def log_and_return_error(
         self, error: Exception, context: str, include_traceback: bool = True
     ) -> Tuple[str, Dict[str, Any]]:
-        """
-        记录错误并返回格式化的错误信息
-
-        Args:
-            error: 异常对象
-            context: 错误上下文
-            include_traceback: 是否包含堆栈信息
-
-        Returns:
-            Tuple[str, Dict[str, Any]]: 错误消息和详细信息
-        """
+        """记录错误并返回格式化的错误信息"""
 
         error_id = f"error_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
 
@@ -148,16 +120,7 @@ class ErrorHandler:
     def handle_validation_error(
         self, error: Exception, context: str = ""
     ) -> Tuple[Dict[str, Any], int]:
-        """
-        处理验证错误
-
-        Args:
-            error: 异常对象
-            context: 错误上下文
-
-        Returns:
-            Tuple[Dict[str, Any], int]: 错误响应和HTTP状态码
-        """
+        """处理验证错误"""
         message, details = self.log_and_return_error(
             error, f"Validation error: {context}", False
         )
@@ -172,16 +135,7 @@ class ErrorHandler:
     def handle_service_error(
         self, error: Exception, context: str = ""
     ) -> Tuple[Dict[str, Any], int]:
-        """
-        处理服务错误
-
-        Args:
-            error: 异常对象
-            context: 错误上下文
-
-        Returns:
-            Tuple[Dict[str, Any], int]: 错误响应和HTTP状态码
-        """
+        """处理服务错误"""
         message, details = self.log_and_return_error(error, f"Service error: {context}")
 
         return {
@@ -194,16 +148,7 @@ class ErrorHandler:
     def handle_not_found_error(
         self, resource: str, identifier: str = ""
     ) -> Tuple[Dict[str, Any], int]:
-        """
-        处理资源未找到错误
-
-        Args:
-            resource: 资源类型
-            identifier: 资源标识符
-
-        Returns:
-            Tuple[Dict[str, Any], int]: 错误响应和HTTP状态码
-        """
+        """处理资源未找到错误"""
         message = f"{resource} not found"
         if identifier:
             message += f": {identifier}"
@@ -227,17 +172,7 @@ def error_handler(
     return_exceptions: bool = False,
     default_return_value: Any = None,
 ) -> Callable:
-    """
-    错误处理装饰器
-
-    Args:
-        logger: 日志记录器实例
-        return_exceptions: 是否返回异常而不是抛出
-        default_return_value: 出现异常时的默认返回值
-
-    Returns:
-        Callable: 装饰后的函数
-    """
+    """错误处理装饰器"""
 
     def decorator(func: Callable) -> Callable:
         @wraps(func)
@@ -278,19 +213,7 @@ def retry_on_exception(
     exceptions: Tuple[Type[Exception], ...] = (Exception,),
     logger: Optional[logging.Logger] = None,
 ) -> Callable:
-    """
-    重试装饰器
-
-    Args:
-        max_retries: 最大重试次数
-        delay: 初始延迟时间（秒）
-        backoff_factor: 延迟时间的增长因子
-        exceptions: 需要捕获的异常类型
-        logger: 日志记录器实例
-
-    Returns:
-        Callable: 装饰后的函数
-    """
+    """重试装饰器"""
 
     def decorator(func: Callable) -> Callable:
         @wraps(func)
@@ -349,16 +272,7 @@ def retry_on_exception(
 
 
 def validate_required_fields(data: Dict[str, Any], required_fields: List[str]) -> None:
-    """
-    验证必填字段是否存在
-
-    Args:
-        data: 要验证的数据字典
-        required_fields: 必填字段列表
-
-    Raises:
-        ValidationError: 如果缺少必填字段
-    """
+    """验证必填字段是否存在"""
     missing_fields = []
 
     for field in required_fields:
@@ -375,18 +289,7 @@ def validate_required_fields(data: Dict[str, Any], required_fields: List[str]) -
 def validate_field_type(
     data: Dict[str, Any], field: str, expected_type: Type, required: bool = True
 ) -> None:
-    """
-    验证字段类型是否正确
-
-    Args:
-        data: 要验证的数据字典
-        field: 字段名称
-        expected_type: 期望的字段类型
-        required: 字段是否必需
-
-    Raises:
-        ValidationError: 如果字段类型不正确或必填字段缺失
-    """
+    """验证字段类型是否正确"""
     if field not in data or data[field] is None:
         if required:
             raise ValidationError(f"缺少必填字段: {field}", field=field)
@@ -406,18 +309,7 @@ def validate_field_range(
     min_value: Optional[Union[int, float]] = None,
     max_value: Optional[Union[int, float]] = None,
 ) -> None:
-    """
-    验证数值字段是否在指定范围内
-
-    Args:
-        data: 要验证的数据字典
-        field: 字段名称
-        min_value: 最小值
-        max_value: 最大值
-
-    Raises:
-        ValidationError: 如果字段值不在指定范围内
-    """
+    """验证数值字段是否在指定范围内"""
     if field not in data or data[field] is None:
         return
 
@@ -445,17 +337,7 @@ def validate_field_range(
 
 
 def safe_cast(value: Any, target_type: Type, default: Any = None) -> Any:
-    """
-    安全地转换值类型，转换失败时返回默认值
-
-    Args:
-        value: 要转换的值
-        target_type: 目标类型
-        default: 转换失败时的默认值
-
-    Returns:
-        Any: 转换后的值或默认值
-    """
+    """安全地转换值类型"""
     try:
         return target_type(value)
     except (ValueError, TypeError):
@@ -463,28 +345,14 @@ def safe_cast(value: Any, target_type: Type, default: Any = None) -> Any:
 
 
 class ContextualLogger:
-    """
-    上下文感知日志记录器，自动添加上下文信息
-
-    Args:
-        logger: 基础日志记录器
-        context: 上下文信息字典
-    """
+    """上下文感知日志记录器"""
 
     def __init__(self, logger: logging.Logger, context: Dict[str, Any]):
         self.logger = logger
         self.context = context
 
     def _format_message(self, message: str) -> str:
-        """
-        格式化日志消息，添加上下文信息
-
-        Args:
-            message: 原始消息
-
-        Returns:
-            str: 添加上下文后的消息
-        """
+        """格式化日志消息"""
         context_str = " ".join(f"{k}={v}" for k, v in self.context.items())
         return f"{message} [{context_str}]"
 
@@ -512,14 +380,5 @@ class ContextualLogger:
 def create_contextual_logger(
     logger: logging.Logger, **context: Any
 ) -> ContextualLogger:
-    """
-    创建上下文感知日志记录器
-
-    Args:
-        logger: 基础日志记录器
-        **context: 上下文信息
-
-    Returns:
-        ContextualLogger: 上下文感知日志记录器实例
-    """
+    """创建上下文感知日志记录器"""
     return ContextualLogger(logger, context)

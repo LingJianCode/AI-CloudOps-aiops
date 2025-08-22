@@ -18,11 +18,10 @@ T = TypeVar("T")
 
 class APIResponse(BaseModel):
     """通用API响应模型"""
-    
+
     code: int
     message: str
     data: Optional[Any] = None
-
 
 
 class AutoFixResponse(BaseModel):
@@ -38,7 +37,6 @@ class AutoFixResponse(BaseModel):
     execution_time: float
     success: bool = True
     error_message: Optional[str] = None
-
 
 
 class AssistantResponse(BaseModel):
@@ -87,7 +85,7 @@ class DiagnoseResponse(BaseModel):
 # 通用响应模型
 class ServiceInfoResponse(BaseModel):
     """服务信息响应模型"""
-    
+
     service: str
     version: str
     description: str
@@ -95,11 +93,11 @@ class ServiceInfoResponse(BaseModel):
     endpoints: Dict[str, str]
     constraints: Optional[Dict[str, Any]] = None
     status: str
-    
-    
+
+
 class ServiceReadyResponse(BaseModel):
     """服务就绪响应模型"""
-    
+
     ready: bool
     service: str
     timestamp: str
@@ -108,7 +106,7 @@ class ServiceReadyResponse(BaseModel):
 
 class ServiceHealthResponse(BaseModel):
     """服务健康检查响应模型"""
-    
+
     status: str
     service: str
     version: Optional[str] = None
@@ -119,7 +117,7 @@ class ServiceHealthResponse(BaseModel):
 
 class ServiceConfigResponse(BaseModel):
     """服务配置响应模型"""
-    
+
     service: str
     config: Dict[str, Any]
     version: Optional[str] = None
@@ -129,7 +127,7 @@ class ServiceConfigResponse(BaseModel):
 # Assistant API 专用响应模型
 class RefreshKnowledgeResponse(BaseModel):
     """刷新知识库响应模型"""
-    
+
     refreshed: bool
     documents_count: int
     vector_count: int
@@ -139,7 +137,7 @@ class RefreshKnowledgeResponse(BaseModel):
 
 class ClearCacheResponse(BaseModel):
     """清除缓存响应模型"""
-    
+
     cleared: bool
     cache_keys_cleared: int
     timestamp: str
@@ -148,7 +146,7 @@ class ClearCacheResponse(BaseModel):
 
 class CreateSessionResponse(BaseModel):
     """创建会话响应模型"""
-    
+
     session_id: str
     mode: int
     created_time: str
@@ -157,7 +155,7 @@ class CreateSessionResponse(BaseModel):
 
 class UploadKnowledgeResponse(BaseModel):
     """上传知识库响应模型"""
-    
+
     uploaded: bool
     document_id: Optional[str] = None
     filename: Optional[str] = None
@@ -168,7 +166,7 @@ class UploadKnowledgeResponse(BaseModel):
 
 class AddDocumentResponse(BaseModel):
     """添加文档响应模型"""
-    
+
     added: bool
     document_id: str
     message: str
@@ -178,7 +176,7 @@ class AddDocumentResponse(BaseModel):
 # Predict API 专用响应模型
 class ModelInfoResponse(BaseModel):
     """模型信息响应模型"""
-    
+
     models: List[Dict[str, Any]]
     total_models: int
     loaded_models: int
@@ -189,7 +187,7 @@ class ModelInfoResponse(BaseModel):
 # RCA API 专用响应模型
 class QuickDiagnosisResponse(BaseModel):
     """快速诊断响应模型"""
-    
+
     namespace: str
     status: str
     critical_issues: List[str]
@@ -201,7 +199,7 @@ class QuickDiagnosisResponse(BaseModel):
 
 class EventPatternsResponse(BaseModel):
     """事件模式响应模型"""
-    
+
     namespace: str
     time_range_hours: float
     patterns: List[Dict[str, Any]]
@@ -212,7 +210,7 @@ class EventPatternsResponse(BaseModel):
 
 class ErrorSummaryResponse(BaseModel):
     """错误摘要响应模型"""
-    
+
     namespace: str
     time_range_hours: float
     total_errors: int

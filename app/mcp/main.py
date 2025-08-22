@@ -183,8 +183,10 @@ async def sse_endpoint(request: Request) -> StreamingResponse:
                     logger.info(f"客户端连接 {connection_id} 已断开")
                     break
 
-                # 每30秒发送心跳
-                await asyncio.sleep(30)
+                from app.config.settings import config
+
+                # 根据配置发送心跳
+                await asyncio.sleep(config.mcp.health_check_interval)
                 heartbeat = {
                     "type": "heartbeat",
                     "timestamp": time.time(),
@@ -303,7 +305,7 @@ async def get_tool_info(tool_name: str) -> Dict[str, Any]:
 def parse_server_url(url: str) -> tuple[str, int]:
     """解析服务器URL，返回主机和端口"""
     from app.config.settings import config
-    
+
     try:
         if "://" not in url:
             url = f"http://{url}"
@@ -315,7 +317,9 @@ def parse_server_url(url: str) -> tuple[str, int]:
         return host, port
     except Exception as e:
         logger.warning(f"解析URL失败: {e}，使用默认配置")
-        default_port = config.mcp.server_url.split(':')[-1] if config.mcp.server_url else 9000
+        default_port = (
+            config.mcp.server_url.split(':')[-1] if config.mcp.server_url else 9000
+        )
         return "0.0.0.0", int(default_port) if str(default_port).isdigit() else 9000
 
 

@@ -51,7 +51,11 @@ class BaseService(ABC):
         try:
             # 缓存健康检查结果，避免频繁检查
             now = datetime.now()
-            if self._last_health_check and (now - self._last_health_check).seconds < 30:
+            if (
+                self._last_health_check
+                and (now - self._last_health_check).seconds
+                < ServiceConstants.HEALTH_CHECK_CACHE_SECONDS
+            ):
                 return self._health_status
 
             self._health_status = await self._do_health_check()
@@ -66,30 +70,14 @@ class BaseService(ABC):
 
     @abstractmethod
     async def _do_health_check(self) -> bool:
-        """
-        子类实现具体的健康检查逻辑
-
-        Returns:
-            健康状态
-        """
-        pass
+        """子类实现具体的健康检查逻辑"""
 
     def is_healthy(self) -> bool:
-        """
-        同步获取健康状态（使用缓存的结果）
-
-        Returns:
-            健康状态
-        """
+        """同步获取健康状态"""
         return self._health_status
 
     def is_initialized(self) -> bool:
-        """
-        检查服务是否已初始化
-
-        Returns:
-            初始化状态
-        """
+        """检查服务是否已初始化"""
         return self._initialized
 
     async def execute_with_timeout(
@@ -98,20 +86,7 @@ class BaseService(ABC):
         timeout: float = ServiceConstants.DEFAULT_SERVICE_TIMEOUT,
         operation_name: str = "operation",
     ) -> Any:
-        """
-        执行带超时保护的操作
-
-        Args:
-            operation: 要执行的操作（可以是协程或可调用对象）
-            timeout: 超时时间（秒）
-            operation_name: 操作名称，用于日志
-
-        Returns:
-            操作结果
-
-        Raises:
-            ServiceUnavailableError: 操作超时或失败
-        """
+        """执行带超时保护的操作"""
         try:
             if asyncio.iscoroutine(operation):
                 result = await asyncio.wait_for(operation, timeout=timeout)
@@ -140,12 +115,7 @@ class BaseService(ABC):
             )
 
     def get_service_info(self) -> Dict[str, Any]:
-        """
-        获取服务信息
-
-        Returns:
-            服务信息字典
-        """
+        """获取服务信息"""
         return {
             "name": self.service_name,
             "initialized": self._initialized,
@@ -156,21 +126,14 @@ class BaseService(ABC):
         }
 
     def _ensure_initialized(self) -> None:
-        """
-        确保服务已初始化
-
-        Raises:
-            ServiceUnavailableError: 服务未初始化
-        """
+        """确保服务已初始化"""
         if not self._initialized:
             from app.common.exceptions import PredictionError
 
             raise PredictionError("服务未初始化")
 
     async def cleanup(self) -> None:
-        """
-        清理服务资源（子类可重写）
-        """
+        """清理服务资源"""
         try:
             self._initialized = False
             self._health_status = False
@@ -181,11 +144,7 @@ class BaseService(ABC):
 
 
 class HealthCheckMixin:
-    """
-    健康检查混合类
-
-    为服务提供标准的健康检查功能
-    """
+    """健康检查混合类"""
 
     @staticmethod
     def create_health_response(
@@ -194,18 +153,7 @@ class HealthCheckMixin:
         components: Optional[Dict[str, bool]] = None,
         details: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """
-        创建标准的健康检查响应
-
-        Args:
-            service_name: 服务名称
-            is_healthy: 健康状态
-            components: 组件健康状态
-            details: 详细信息
-
-        Returns:
-            健康检查响应字典
-        """
+        """创建标准的健康检查响应"""
         response = {
             "service": service_name,
             "status": (

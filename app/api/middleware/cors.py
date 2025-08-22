@@ -21,13 +21,13 @@ def setup_cors(app: FastAPI):
     try:
         # 配置CORS中间件
         # 凭据模式不支持通配符
+        from app.config.settings import config
+
         allowed_origins = [
-            "http://localhost",
-            "http://127.0.0.1",
+            f"http://localhost:{config.port}",
+            f"http://127.0.0.1:{config.port}",
             "http://localhost:3000",
             "http://127.0.0.1:3000",
-            "http://localhost:8080",
-            "http://127.0.0.1:8080",
         ]
 
         app.add_middleware(

@@ -67,7 +67,7 @@ from .response_models import (
 __all__ = [
     # 请求模型
     "AddDocumentRequest",
-    "AutoFixRequest", 
+    "AutoFixRequest",
     "AssistantRequest",
     "DiagnoseRequest",
     "UploadKnowledgeRequest",

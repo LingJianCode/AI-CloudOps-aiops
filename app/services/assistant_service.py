@@ -211,16 +211,26 @@ class OptimizedAssistantService(BaseService):
 
             # 生成会话ID
             import uuid
+
             session_id = str(uuid.uuid4())
 
             # 如果助手支持会话创建，调用助手方法
             if self._assistant and hasattr(self._assistant, 'create_session'):
-                result = await self._assistant.create_session(session_id, {
-                    "mode": request.mode,
-                    "question": request.question if hasattr(request, 'question') else None,
-                    "chat_history": request.chat_history if hasattr(request, 'chat_history') else None,
-                    "created_time": datetime.now().isoformat(),
-                })
+                result = await self._assistant.create_session(
+                    session_id,
+                    {
+                        "mode": request.mode,
+                        "question": (
+                            request.question if hasattr(request, 'question') else None
+                        ),
+                        "chat_history": (
+                            request.chat_history
+                            if hasattr(request, 'chat_history')
+                            else None
+                        ),
+                        "created_time": datetime.now().isoformat(),
+                    },
+                )
                 return {
                     "session_id": result.get("session_id", session_id),
                     "created": True,
@@ -230,9 +240,10 @@ class OptimizedAssistantService(BaseService):
             else:
                 # 使用备用会话管理器
                 from app.core.agents.fallback_models import SessionManager
+
                 session_manager = SessionManager()
-                session = session_manager.create_session(session_id)
-                
+                session_manager.create_session(session_id)
+
                 return {
                     "session_id": session_id,
                     "created": True,
@@ -633,8 +644,11 @@ class OptimizedAssistantService(BaseService):
                 # 备用实现：记录文档信息
                 logger.warning("使用备用知识库上传实现")
                 import hashlib
-                document_id = hashlib.md5(f"{request.title}{request.content}".encode()).hexdigest()
-                
+
+                document_id = hashlib.md5(
+                    f"{request.title}{request.content}".encode()
+                ).hexdigest()
+
                 return {
                     "uploaded": True,
                     "document_id": document_id,
@@ -648,7 +662,9 @@ class OptimizedAssistantService(BaseService):
             logger.error(f"上传知识库失败: {str(e)}")
             raise AssistantError(f"上传失败: {str(e)}")
 
-    async def upload_knowledge_file(self, file, title: str = None, source: str = None) -> Dict[str, Any]:
+    async def upload_knowledge_file(
+        self, file, title: str = None, source: str = None
+    ) -> Dict[str, Any]:
         """上传知识库文件"""
         try:
             # 确保服务就绪
@@ -660,7 +676,7 @@ class OptimizedAssistantService(BaseService):
 
             # 读取文件内容
             content = await file.read()
-            
+
             # 检查文件大小（限制10MB）
             if len(content) > 10 * 1024 * 1024:
                 raise ValidationError("file", "文件大小不能超过10MB")
@@ -668,7 +684,7 @@ class OptimizedAssistantService(BaseService):
             # 根据文件类型处理内容
             filename = file.filename or "unknown"
             file_extension = filename.split('.')[-1].lower() if '.' in filename else ""
-            
+
             try:
                 if file_extension in ['txt', 'md', 'markdown']:
                     file_content = content.decode('utf-8')
@@ -682,7 +698,9 @@ class OptimizedAssistantService(BaseService):
                     # 尝试作为文本文件解码
                     file_content = content.decode('utf-8')
             except UnicodeDecodeError:
-                raise ValidationError("file", "文件编码不支持，请使用UTF-8编码的文本文件")
+                raise ValidationError(
+                    "file", "文件编码不支持，请使用UTF-8编码的文本文件"
+                )
 
             # 构建文档数据
             document_data = {
@@ -711,8 +729,11 @@ class OptimizedAssistantService(BaseService):
                 # 备用实现：记录文件信息
                 logger.warning("使用备用文件上传实现")
                 import hashlib
-                document_id = hashlib.md5(f"{filename}{file_content}".encode()).hexdigest()
-                
+
+                document_id = hashlib.md5(
+                    f"{filename}{file_content}".encode()
+                ).hexdigest()
+
                 return {
                     "uploaded": True,
                     "document_id": document_id,
@@ -741,7 +762,7 @@ class OptimizedAssistantService(BaseService):
             # 验证必要字段
             title = payload.get("title")
             content = payload.get("content")
-            
+
             if not title or not content:
                 raise ValidationError("title/content", "文档标题和内容不能为空")
 
@@ -769,8 +790,9 @@ class OptimizedAssistantService(BaseService):
                 # 备用实现：记录文档信息
                 logger.warning("使用备用文档添加实现")
                 import hashlib
+
                 document_id = hashlib.md5(f"{title}{content}".encode()).hexdigest()
-                
+
                 return {
                     "added": True,
                     "document_id": document_id,

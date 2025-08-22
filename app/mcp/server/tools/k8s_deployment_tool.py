@@ -103,7 +103,7 @@ class K8sDeploymentTool(K8sBaseTool):
         # 初始化API客户端
         clients = self._initialize_clients(config_path)
         apps_v1 = clients["apps_v1"]
-        v1 = clients["v1"]
+        clients["v1"]
 
         # 根据操作类型执行相应的方法
         if operation == "list_deployments":

@@ -24,6 +24,25 @@ import redis
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 
+# MD文档处理器导入
+try:
+    from app.core.processors.md_document_processor import (
+        MDDocumentProcessor,
+        MDEnhancedQueryProcessor,
+    )
+
+    MD_PROCESSOR_AVAILABLE = True
+except ImportError:
+    MD_PROCESSOR_AVAILABLE = False
+
+# 层次化检索器导入
+try:
+    from app.core.retrieval.hierarchical_retriever import HierarchicalRetriever
+
+    HIERARCHICAL_RETRIEVAL_AVAILABLE = True
+except ImportError:
+    HIERARCHICAL_RETRIEVAL_AVAILABLE = False
+
 logger = logging.getLogger("aiops.vector_store")
 
 
@@ -38,6 +57,18 @@ class SearchConfig:
     mmr_lambda: float = 0.5
     use_cache: bool = True
     cache_ttl: int = 3600
+
+    # MD文档特定配置
+    md_structure_weight: float = 0.15  # 结构权重
+    md_semantic_weight: float = 0.10  # MD语义权重
+    prefer_structured_content: bool = True  # 优先结构化内容
+    boost_code_blocks: bool = True  # 提升代码块权重
+    boost_titles: bool = True  # 提升标题权重
+
+    # 层次化检索配置
+    use_hierarchical_retrieval: bool = True  # 使用层次化检索
+    hierarchical_threshold: int = 100  # 文档数量阈值，超过此数量启用层次化检索
+    auto_switch_retrieval: bool = True  # 自动切换检索策略
 
 
 class EnhancedRedisVectorStore:
@@ -70,6 +101,34 @@ class EnhancedRedisVectorStore:
         # 批处理队列
         self.batch_queue = BatchQueue(max_size=50)
 
+        # MD文档处理器
+        self.md_processor = None
+        self.md_query_processor = None
+        if MD_PROCESSOR_AVAILABLE:
+            self.md_processor = MDDocumentProcessor(
+                {
+                    "max_chunk_size": 800,
+                    "chunk_overlap": 100,
+                    "preserve_structure": True,
+                }
+            )
+            self.md_query_processor = MDEnhancedQueryProcessor()
+            logger.info("MD查询处理器已启用")
+
+        # 层次化检索器
+        self.hierarchical_retriever = None
+        if HIERARCHICAL_RETRIEVAL_AVAILABLE:
+            self.hierarchical_retriever = HierarchicalRetriever(
+                vector_store=self,
+                config={
+                    "max_clusters": 50,
+                    "min_cluster_size": 3,
+                    "enable_quality_scoring": True,
+                    "dynamic_thresholds": True,
+                },
+            )
+            logger.info("层次化检索器已启用")
+
         self._initialize()
 
     def _initialize(self):
@@ -89,20 +148,161 @@ class EnhancedRedisVectorStore:
         if not documents:
             return []
 
+        # 检测和处理MD文档
+        processed_documents = await self._preprocess_documents(documents)
+
         # 批处理嵌入生成
-        embeddings = await self._batch_embed(documents)
+        embeddings = await self._batch_embed(processed_documents)
 
         # 并行存储
-        doc_ids = await self._parallel_store(documents, embeddings)
+        doc_ids = await self._parallel_store(processed_documents, embeddings)
 
         # 更新索引
         await self.index_manager.update_index(doc_ids, embeddings)
+
+        # 更新层次化检索器聚类
+        if self.hierarchical_retriever:
+            try:
+                await self.hierarchical_retriever.initialize_clusters(
+                    processed_documents, embeddings
+                )
+                logger.debug("层次化检索聚类已更新")
+            except Exception as e:
+                logger.warning(f"更新层次化检索聚类失败: {e}")
 
         # 清理相关缓存
         self.query_cache.invalidate_pattern("*")
 
         logger.info(f"成功添加 {len(doc_ids)} 个文档")
         return doc_ids
+
+    async def add_md_documents(
+        self,
+        md_contents: List[str],
+        metadata_list: Optional[List[Dict[str, Any]]] = None,
+    ) -> List[str]:
+        """专门处理MD文档的添加方法"""
+        if not md_contents:
+            return []
+
+        if not self.md_processor:
+            logger.warning("MD处理器未启用，使用普通文档处理")
+            documents = [
+                Document(page_content=content, metadata=metadata or {})
+                for content, metadata in zip(
+                    md_contents, metadata_list or [{}] * len(md_contents)
+                )
+            ]
+            return await self.add_documents(documents)
+
+        all_doc_ids = []
+
+        # 处理每个MD文档
+        for i, md_content in enumerate(md_contents):
+            metadata = (
+                metadata_list[i] if metadata_list and i < len(metadata_list) else {}
+            )
+            metadata.update({"document_type": "markdown", "is_structured": True})
+
+            logger.info(f"处理MD文档 {i+1}/{len(md_contents)}")
+
+            # 解析MD文档为结构化块
+            md_chunks = self.md_processor.parse_document(md_content, metadata)
+
+            # 转换为Document对象
+            documents = []
+            for chunk in md_chunks:
+                # 增强元数据
+                enhanced_metadata = {
+                    **chunk.metadata,
+                    "chunk_id": chunk.chunk_id,
+                    "title_hierarchy": chunk.title_hierarchy,
+                    "semantic_weight": chunk.semantic_weight,
+                    "structural_weight": chunk.structural_weight,
+                    "element_types": chunk.metadata.get("element_types", []),
+                    "has_code": chunk.metadata.get("has_code", False),
+                    "has_table": chunk.metadata.get("has_table", False),
+                    "languages": chunk.metadata.get("languages", []),
+                }
+
+                doc = Document(page_content=chunk.content, metadata=enhanced_metadata)
+                documents.append(doc)
+
+            # 添加文档
+            doc_ids = await self.add_documents(documents)
+            all_doc_ids.extend(doc_ids)
+
+        logger.info(f"MD文档处理完成，生成 {len(all_doc_ids)} 个块")
+        return all_doc_ids
+
+    async def _preprocess_documents(self, documents: List[Document]) -> List[Document]:
+        """预处理文档，检测MD文档并优化元数据"""
+        processed_docs = []
+
+        for doc in documents:
+            processed_doc = doc
+
+            # 检测是否是MD文档
+            if self._is_markdown_content(doc.page_content):
+                if not doc.metadata.get("document_type"):
+                    processed_doc.metadata["document_type"] = "markdown"
+                    processed_doc.metadata["is_structured"] = True
+
+                # 如果有MD处理器，进行轻量级结构分析
+                if self.md_processor:
+                    # 快速提取基本结构信息
+                    structure_info = self._extract_quick_structure_info(
+                        doc.page_content
+                    )
+                    processed_doc.metadata.update(structure_info)
+
+            processed_docs.append(processed_doc)
+
+        return processed_docs
+
+    def _is_markdown_content(self, content: str) -> bool:
+        """检测内容是否是Markdown格式"""
+        md_indicators = [
+            '# ',
+            '## ',
+            '### ',  # 标题
+            '```',  # 代码块
+            '- ',
+            '* ',
+            '1. ',  # 列表
+            '| ',  # 表格
+            '> ',  # 引用
+            '[',
+            '](',  # 链接
+        ]
+
+        content_lower = content.lower()
+        indicator_count = sum(
+            1 for indicator in md_indicators if indicator in content_lower
+        )
+
+        # 如果包含2个以上MD标记，认为是MD文档
+        return indicator_count >= 2
+
+    def _extract_quick_structure_info(self, content: str) -> Dict[str, Any]:
+        """快速提取结构信息"""
+        info = {
+            "has_code": "```" in content,
+            "has_table": "|" in content and "---|" in content,
+            "has_list": any(marker in content for marker in ["- ", "* ", "1. "]),
+            "title_count": content.count("# ")
+            + content.count("## ")
+            + content.count("### "),
+        }
+
+        # 提取代码块语言
+        import re
+
+        code_blocks = re.findall(r'```(\w+)', content)
+        if code_blocks:
+            info["languages"] = list(set(code_blocks))
+
+        return info
 
     async def _batch_embed(self, documents: List[Document]) -> List[np.ndarray]:
         """批量生成嵌入"""
@@ -168,7 +368,7 @@ class EnhancedRedisVectorStore:
     async def similarity_search(
         self, query: str, k: int = 5, config: Optional[SearchConfig] = None
     ) -> List[Tuple[Document, float]]:
-        """优化的相似度搜索"""
+        """优化的相似度搜索，支持智能检索策略切换"""
         config = config or SearchConfig()
 
         # 检查缓存
@@ -179,6 +379,73 @@ class EnhancedRedisVectorStore:
                 logger.debug(f"搜索缓存命中: {query[:50]}...")
                 return cached
 
+        # 智能选择检索策略
+        use_hierarchical = self._should_use_hierarchical_retrieval(config)
+
+        if use_hierarchical and self.hierarchical_retriever:
+            logger.debug(f"使用层次化检索: {query[:50]}...")
+            results = await self._hierarchical_search_with_fallback(query, k, config)
+        else:
+            logger.debug(f"使用标准检索: {query[:50]}...")
+            results = await self._standard_search(query, k, config)
+
+        # 缓存结果
+        if config.use_cache and results:
+            self.query_cache.set(cache_key, results, config.cache_ttl)
+
+        return results
+
+    def _should_use_hierarchical_retrieval(self, config: SearchConfig) -> bool:
+        """判断是否应该使用层次化检索"""
+        if not config.use_hierarchical_retrieval or not self.hierarchical_retriever:
+            return False
+
+        if not config.auto_switch_retrieval:
+            return True
+
+        # 检查文档数量阈值
+        try:
+            doc_count = self.hierarchical_retriever.stats.get("total_documents", 0)
+            if doc_count >= config.hierarchical_threshold:
+                return True
+        except:
+            pass
+
+        return False
+
+    async def _hierarchical_search_with_fallback(
+        self, query: str, k: int, config: SearchConfig
+    ) -> List[Tuple[Document, float]]:
+        """层次化搜索，带回退机制"""
+        try:
+            # 增强查询分析
+            context = {}
+            if self.md_query_processor:
+                enhanced_query_info = self.md_query_processor.enhance_query_for_md(
+                    query, context
+                )
+                context.update(enhanced_query_info)
+
+            # 执行层次化搜索
+            results = await self.hierarchical_retriever.hierarchical_search(
+                query, k, context
+            )
+
+            if results:
+                logger.debug(f"层次化检索成功，返回 {len(results)} 个结果")
+                return results
+            else:
+                logger.warning("层次化检索无结果，切换到标准检索")
+                return await self._standard_search(query, k, config)
+
+        except Exception as e:
+            logger.warning(f"层次化检索失败，切换到标准检索: {e}")
+            return await self._standard_search(query, k, config)
+
+    async def _standard_search(
+        self, query: str, k: int, config: SearchConfig
+    ) -> List[Tuple[Document, float]]:
+        """标准搜索"""
         # 生成查询向量
         query_embedding = await asyncio.to_thread(
             self.embedding_model.embed_query, query
@@ -195,10 +462,6 @@ class EnhancedRedisVectorStore:
             results = self._mmr_rerank(results, query_vector, k, config.mmr_lambda)
         else:
             results = results[:k]
-
-        # 缓存结果
-        if config.use_cache and results:
-            self.query_cache.set(cache_key, results, config.cache_ttl)
 
         return results
 
@@ -548,7 +811,7 @@ class IndexManager:
 
         # 尝试加载FAISS
         try:
-            import faiss
+            pass
 
             self.faiss_available = True
             self.faiss_index = None

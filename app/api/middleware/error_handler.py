@@ -20,7 +20,7 @@ from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.common.constants import ServiceConstants
+from app.common.constants import HttpStatusCodes, ServiceConstants
 from app.models.response_models import APIResponse
 
 logger = logging.getLogger("aiops.error_handler")
@@ -33,9 +33,9 @@ async def custom_http_exception_handler(
     try:
         # 4xx 作为可预期客户端错误，使用 WARNING；其他仍为 ERROR
         is_client_error = (
-            ServiceConstants.HTTP_CLIENT_ERROR_MIN
+            HttpStatusCodes.BAD_REQUEST
             <= exc.status_code
-            < ServiceConstants.HTTP_SERVER_ERROR_MIN
+            < HttpStatusCodes.INTERNAL_SERVER_ERROR
         )
 
         log_method = logger.warning if is_client_error else logger.error
@@ -72,13 +72,13 @@ async def validation_exception_handler(
         logger.warning(f"请求信息 - URL: {request.url}, Method: {request.method}")
 
         error_response = APIResponse(
-            code=ServiceConstants.HTTP_BAD_REQUEST,
+            code=HttpStatusCodes.BAD_REQUEST,
             message=ServiceConstants.VALIDATION_ERROR_MESSAGE,
-            data=_build_error_data(request, ServiceConstants.HTTP_BAD_REQUEST, details),
+            data=_build_error_data(request, HttpStatusCodes.BAD_REQUEST, details),
         )
 
         return JSONResponse(
-            status_code=ServiceConstants.HTTP_BAD_REQUEST, content=error_response.dict()
+            status_code=HttpStatusCodes.BAD_REQUEST, content=error_response.dict()
         )
 
     except Exception as e:
@@ -95,18 +95,18 @@ async def general_exception_handler(request: Request, exc: Exception) -> JSONRes
         logger.error(f"异常堆栈: {traceback.format_exc()}")
 
         error_data = _build_error_data(
-            request, ServiceConstants.HTTP_INTERNAL_SERVER_ERROR, str(exc)
+            request, HttpStatusCodes.INTERNAL_SERVER_ERROR, str(exc)
         )
         error_data["type"] = type(exc).__name__
 
         error_response = APIResponse(
-            code=ServiceConstants.HTTP_INTERNAL_SERVER_ERROR,
+            code=HttpStatusCodes.INTERNAL_SERVER_ERROR,
             message=ServiceConstants.INTERNAL_SERVER_ERROR_MESSAGE,
             data=error_data,
         )
 
         return JSONResponse(
-            status_code=ServiceConstants.HTTP_INTERNAL_SERVER_ERROR,
+            status_code=HttpStatusCodes.INTERNAL_SERVER_ERROR,
             content=error_response.dict(),
         )
 
@@ -140,12 +140,55 @@ def setup_error_handlers(app: FastAPI) -> None:
 
 def _extract_validation_details(exc: Exception) -> Any:
     """提取验证异常详情"""
-    if isinstance(exc, RequestValidationError):
-        return exc.errors()
-    elif isinstance(exc, ValidationError):
-        return exc.errors()
-    else:
-        return str(exc)
+    try:
+        if isinstance(exc, RequestValidationError):
+            errors = exc.errors()
+            # 处理可能包含bytes的错误信息
+            return _sanitize_error_details(errors)
+        elif isinstance(exc, ValidationError):
+            errors = exc.errors()
+            return _sanitize_error_details(errors)
+        else:
+            return str(exc)
+    except Exception as e:
+        logger.warning(f"处理验证异常详情时出错: {e}")
+        return "验证异常详情处理失败"
+
+
+def _sanitize_error_details(errors):
+    """清理错误详情，处理不可JSON序列化的对象"""
+    try:
+        import json
+
+        def sanitize_value(obj):
+            """递归清理对象中不可序列化的值"""
+            if isinstance(obj, bytes):
+                # 对于bytes对象，尝试解码或返回类型信息
+                try:
+                    if len(obj) > 200:  # 限制长度避免日志过长
+                        return f"<bytes: {len(obj)} bytes, starts with: {obj[:100].decode('utf-8', errors='ignore')}...>"
+                    return f"<bytes: {obj.decode('utf-8', errors='ignore')}>"
+                except Exception:
+                    return f"<bytes: {len(obj)} bytes>"
+            elif isinstance(obj, dict):
+                return {k: sanitize_value(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [sanitize_value(item) for item in obj]
+            elif isinstance(obj, tuple):
+                return tuple(sanitize_value(item) for item in obj)
+            else:
+                # 测试是否可以JSON序列化
+                try:
+                    json.dumps(obj)
+                    return obj
+                except (TypeError, ValueError):
+                    return str(obj)
+
+        return sanitize_value(errors)
+
+    except Exception as e:
+        logger.warning(f"清理错误详情时出错: {e}")
+        return "错误详情清理失败"
 
 
 def _build_error_data(
@@ -167,7 +210,7 @@ def _create_fallback_response(
 ) -> JSONResponse:
     """创建回退错误响应"""
     fallback_response = {
-        "code": ServiceConstants.HTTP_INTERNAL_SERVER_ERROR,
+        "code": HttpStatusCodes.INTERNAL_SERVER_ERROR,
         "message": message,
         "data": {
             "timestamp": datetime.now().isoformat(),
@@ -175,7 +218,7 @@ def _create_fallback_response(
         },
     }
     return JSONResponse(
-        status_code=ServiceConstants.HTTP_INTERNAL_SERVER_ERROR,
+        status_code=HttpStatusCodes.INTERNAL_SERVER_ERROR,
         content=fallback_response,
     )
 
@@ -183,9 +226,9 @@ def _create_fallback_response(
 def _create_critical_fallback_response() -> JSONResponse:
     """创建严重错误的回退响应"""
     return JSONResponse(
-        status_code=ServiceConstants.HTTP_INTERNAL_SERVER_ERROR,
+        status_code=HttpStatusCodes.INTERNAL_SERVER_ERROR,
         content={
-            "code": ServiceConstants.HTTP_INTERNAL_SERVER_ERROR,
+            "code": HttpStatusCodes.INTERNAL_SERVER_ERROR,
             "message": ServiceConstants.CRITICAL_ERROR_MESSAGE,
             "data": {
                 "timestamp": datetime.now().isoformat(),

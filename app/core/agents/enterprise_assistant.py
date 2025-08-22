@@ -171,7 +171,7 @@ class QueryProcessor:
 
     def analyze_and_expand(self, query: str, context: Optional[Dict] = None):
         """智能查询分析和扩展，支持上下文感知"""
-        start_time = time.time()
+        time.time()
 
         # 预处理查询
         processed_query = self._preprocess_query(query)
@@ -473,13 +473,21 @@ class DocumentRetriever:
                 f"检索配置 - initial_k: {self.strategy.initial_k}, min_similarity: {self.strategy.min_similarity}"
             )
 
-            # 使用向量存储检索
+            # 使用向量存储检索（支持层次化检索）
             from app.core.vector.redis_vector_store import SearchConfig
 
             search_config = SearchConfig(
                 similarity_threshold=self.strategy.min_similarity,
                 use_cache=True,
                 use_mmr=True,
+                # 启用层次化检索配置
+                use_hierarchical_retrieval=True,
+                hierarchical_threshold=50,  # 文档数超过50个时启用层次化检索
+                auto_switch_retrieval=True,
+                # MD文档优化配置
+                prefer_structured_content=True,
+                boost_code_blocks=True,
+                boost_titles=True,
             )
 
             results = await self.vector_store.similarity_search(
@@ -818,10 +826,8 @@ class RAGAssistant:
         return {"success": True, "session_id": session_id, "context": context}
 
     async def upload_knowledge(self, document_data: Dict[str, Any]) -> Dict[str, Any]:
-        """上传结构化知识（写入向量库）"""
+        """上传结构化知识（写入向量库），支持MD文档智能处理"""
         try:
-            from langchain_core.documents import Document
-
             content = document_data.get("content", "")
             if not content:
                 return {"success": False, "message": "内容为空"}
@@ -834,16 +840,56 @@ class RAGAssistant:
                 **document_data.get("metadata", {}),
             }
 
-            docs = [Document(page_content=content, metadata=metadata)]
-            ids = await self.vector_store.add_documents(docs)
-            return {
-                "success": True,
-                "document_id": ids[0] if ids else None,
-                "message": "知识上传成功",
-            }
+            # 检测是否是MD文档并使用专门的处理方法
+            if self._is_markdown_content(content):
+                logger.info("检测到MD文档，使用专门处理流程")
+                ids = await self.vector_store.add_md_documents([content], [metadata])
+                return {
+                    "success": True,
+                    "document_ids": ids,
+                    "chunks_count": len(ids),
+                    "message": f"MD知识上传成功，生成 {len(ids)} 个结构化块",
+                    "document_type": "markdown",
+                }
+            else:
+                # 普通文档处理
+                from langchain_core.documents import Document
+
+                docs = [Document(page_content=content, metadata=metadata)]
+                ids = await self.vector_store.add_documents(docs)
+                return {
+                    "success": True,
+                    "document_id": ids[0] if ids else None,
+                    "message": "知识上传成功",
+                    "document_type": "plain",
+                }
         except Exception as e:
             logger.error(f"上传知识失败: {e}")
             return {"success": False, "message": str(e)}
+
+    def _is_markdown_content(self, content: str) -> bool:
+        """检测内容是否是Markdown格式"""
+        md_indicators = [
+            '# ',
+            '## ',
+            '### ',  # 标题
+            '```',  # 代码块
+            '- ',
+            '* ',
+            '1. ',  # 列表
+            '| ',  # 表格
+            '> ',  # 引用
+            '[',
+            '](',  # 链接
+        ]
+
+        content_lower = content.lower()
+        indicator_count = sum(
+            1 for indicator in md_indicators if indicator in content_lower
+        )
+
+        # 如果包含2个以上MD标记，认为是MD文档
+        return indicator_count >= 2
 
     async def upload_knowledge_file(
         self, document_data: Dict[str, Any]
@@ -1028,6 +1074,24 @@ class AnswerGenerator:
         # 尝试从配置加载自定义提示模板
         return getattr(self.config.rag, "prompt_template", default_prompt)
 
+    def _load_md_prompt_template(self) -> str:
+        """MD文档专用提示模板"""
+        return """基于以下结构化文档内容回答问题，请保持原有的格式和结构。
+
+文档内容:
+{context}
+
+问题: {question}
+
+回答要求：
+1. 如果文档包含代码示例，请完整保留代码块格式
+2. 如果文档包含步骤说明，请保持列表结构
+3. 如果文档包含表格，请保持表格格式
+4. 如果是配置相关问题，请提供具体的配置示例
+5. 使用Markdown格式组织回答，包含适当的标题和结构
+
+答案:"""
+
     async def generate(
         self,
         question: str,
@@ -1058,16 +1122,24 @@ class AnswerGenerator:
                 "confidence": 0.2,  # 提供基础建议，置信度较低
             }
 
+        # 检测是否是MD文档内容
+        is_md_content = self._has_markdown_documents(docs)
+
         # 准备增强的上下文
-        enhanced_context = self._prepare_enhanced_context(docs, context)
+        enhanced_context = self._prepare_enhanced_context(docs, context, is_md_content)
 
         # 根据查询类型和上下文调整生成参数
         generation_params = self._get_generation_params(query_type, context)
 
         try:
-            prompt = self.base_prompt.format(
-                context=enhanced_context, question=question
-            )
+            # 选择合适的提示模板
+            if is_md_content:
+                prompt_template = self._load_md_prompt_template()
+                logger.debug("使用MD专用提示模板")
+            else:
+                prompt_template = self.base_prompt
+
+            prompt = prompt_template.format(context=enhanced_context, question=question)
 
             # 添加上下文提示
             if context and context.get("domain"):
@@ -1076,6 +1148,10 @@ class AnswerGenerator:
             response = await self.llm_service.generate_response(
                 messages=[{"role": "user", "content": prompt}], **generation_params
             )
+
+            # MD文档后处理
+            if is_md_content:
+                response = self._post_process_md_response(response, docs)
 
             # 计算增强的置信度
             confidence = self._calculate_enhanced_confidence(
@@ -1091,8 +1167,82 @@ class AnswerGenerator:
                 "confidence": 0.0,
             }
 
+    def _has_markdown_documents(self, docs: List[Document]) -> bool:
+        """检测文档列表是否包含MD文档"""
+        if not docs:
+            return False
+
+        md_doc_count = 0
+        for doc in docs:
+            if (
+                doc.metadata.get("document_type") == "markdown"
+                or doc.metadata.get("is_structured")
+                or doc.metadata.get("has_code")
+                or doc.metadata.get("title_hierarchy")
+            ):
+                md_doc_count += 1
+
+        # 如果超过一半的文档是MD格式，使用MD处理
+        return md_doc_count > len(docs) / 2
+
+    def _post_process_md_response(self, response: str, docs: List[Document]) -> str:
+        """MD响应后处理"""
+        # 确保代码块有正确的格式
+        response = self._ensure_code_block_formatting(response)
+
+        # 确保列表格式正确
+        response = self._ensure_list_formatting(response)
+
+        # 添加结构化标题
+        if not response.startswith('#'):
+            response = self._add_structure_headers(response, docs)
+
+        return response
+
+    def _ensure_code_block_formatting(self, text: str) -> str:
+        """确保代码块格式正确"""
+        import re
+
+        # 修复代码块格式
+        # 处理没有语言标识的代码块
+        text = re.sub(r'```\n([^`]+)\n```', r'```\n\1\n```', text)
+
+        # 确保代码块前后有空行
+        text = re.sub(r'([^\n])\n```', r'\1\n\n```', text)
+        text = re.sub(r'```\n([^\n])', r'```\n\n\1', text)
+
+        return text
+
+    def _ensure_list_formatting(self, text: str) -> str:
+        """确保列表格式正确"""
+        import re
+
+        # 确保列表项前有空行
+        text = re.sub(r'([^\n])\n(\d+\. )', r'\1\n\n\2', text)
+        text = re.sub(r'([^\n])\n(- )', r'\1\n\n\2', text)
+
+        return text
+
+    def _add_structure_headers(self, response: str, docs: List[Document]) -> str:
+        """添加结构化标题"""
+        # 根据文档内容添加合适的标题
+        has_code = any(doc.metadata.get("has_code", False) for doc in docs)
+        has_config = any(
+            "配置" in doc.page_content or "config" in doc.page_content.lower()
+            for doc in docs
+        )
+
+        if has_code and has_config:
+            return f"## 配置和代码示例\n\n{response}"
+        elif has_code:
+            return f"## 代码示例\n\n{response}"
+        elif has_config:
+            return f"## 配置说明\n\n{response}"
+        else:
+            return response
+
     def _prepare_enhanced_context(
-        self, docs: List[Document], context: Optional[Dict]
+        self, docs: List[Document], context: Optional[Dict], is_md_content: bool = False
     ) -> str:
         """准备增强的上下文"""
         max_length = getattr(self.config.rag, "max_context_length", 4000)
@@ -1102,23 +1252,45 @@ class AnswerGenerator:
         for i, doc in enumerate(docs):
             content = doc.page_content
 
-            # 添加文档元信息
-            doc_info = f"[文档{i+1}"
-            if doc.metadata.get("source"):
-                doc_info += f" - 来源: {doc.metadata['source']}"
-            if doc.metadata.get("score"):
-                doc_info += f" - 相关性: {doc.metadata['score']:.2f}"
-            doc_info += "]"
+            # 为MD文档添加更详细的元信息
+            if is_md_content:
+                doc_info = f"[文档{i+1}"
+                if doc.metadata.get("title_hierarchy"):
+                    hierarchy = " > ".join(doc.metadata["title_hierarchy"])
+                    doc_info += f" - 章节: {hierarchy}"
+                if doc.metadata.get("has_code"):
+                    languages = doc.metadata.get("languages", [])
+                    if languages:
+                        doc_info += f" - 代码: {', '.join(languages)}"
+                    else:
+                        doc_info += f" - 包含代码"
+                if doc.metadata.get("has_table"):
+                    doc_info += f" - 包含表格"
+                if doc.metadata.get("source"):
+                    doc_info += f" - 来源: {doc.metadata['source']}"
+                doc_info += "]"
+            else:
+                # 普通文档信息
+                doc_info = f"[文档{i+1}"
+                if doc.metadata.get("source"):
+                    doc_info += f" - 来源: {doc.metadata['source']}"
+                if doc.metadata.get("score"):
+                    doc_info += f" - 相关性: {doc.metadata['score']:.2f}"
+                doc_info += "]"
 
-            # 智能截断
+            # 智能截断，对MD文档保持结构完整性
             available_length = max_length - current_length - len(doc_info) - 10
             if available_length <= 200:
                 break
 
             if len(content) > available_length:
-                content = content[:available_length] + "..."
+                if is_md_content:
+                    # 对MD文档进行结构化截断
+                    content = self._smart_truncate_md_content(content, available_length)
+                else:
+                    content = content[:available_length] + "..."
 
-            full_content = f"{doc_info} {content}"
+            full_content = f"{doc_info}\n{content}"
             context_parts.append(full_content)
             current_length += len(full_content)
 
@@ -1130,6 +1302,53 @@ class AnswerGenerator:
                 context_parts.append(recent_info)
 
         return "\n\n".join(context_parts)
+
+    def _smart_truncate_md_content(self, content: str, max_length: int) -> str:
+        """智能截断MD内容，保持结构完整性"""
+        if len(content) <= max_length:
+            return content
+
+        lines = content.split('\n')
+        truncated_lines = []
+        current_length = 0
+
+        for line in lines:
+            # 为重要结构预留空间
+            if line.strip().startswith('#'):  # 标题
+                if current_length + len(line) + 50 > max_length:
+                    break
+                truncated_lines.append(line)
+                current_length += len(line) + 1
+            elif line.strip().startswith('```'):  # 代码块
+                # 尝试包含完整的代码块
+                remaining_lines = lines[len(truncated_lines) :]
+                code_block = []
+
+                for remaining_line in remaining_lines:
+                    code_block.append(remaining_line)
+                    if remaining_line.strip() == '```' and len(code_block) > 1:
+                        break
+
+                code_block_text = '\n'.join(code_block)
+                if current_length + len(code_block_text) <= max_length:
+                    truncated_lines.extend(code_block)
+                    current_length += len(code_block_text)
+                    # 跳过已处理的行
+                    for _ in range(len(code_block) - 1):
+                        if len(truncated_lines) < len(lines):
+                            lines.pop(len(truncated_lines))
+                else:
+                    break
+            else:
+                if current_length + len(line) > max_length:
+                    # 添加截断标记
+                    if current_length + 10 <= max_length:
+                        truncated_lines.append("...")
+                    break
+                truncated_lines.append(line)
+                current_length += len(line) + 1
+
+        return '\n'.join(truncated_lines)
 
     def _get_generation_params(
         self, query_type: QueryType, context: Optional[Dict]

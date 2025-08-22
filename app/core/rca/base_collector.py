@@ -59,7 +59,6 @@ class BaseDataCollector(ABC):
 
         子类必须实现此方法
         """
-        pass
 
     @abstractmethod
     async def collect(
@@ -77,7 +76,6 @@ class BaseDataCollector(ABC):
         Returns:
             收集到的数据列表
         """
-        pass
 
     @abstractmethod
     async def health_check(self) -> bool:
@@ -87,7 +85,6 @@ class BaseDataCollector(ABC):
         Returns:
             bool: 收集器是否健康
         """
-        pass
 
     def is_initialized(self) -> bool:
         """

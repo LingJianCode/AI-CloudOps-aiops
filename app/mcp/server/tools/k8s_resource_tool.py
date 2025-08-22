@@ -377,7 +377,7 @@ class K8sResourceTool(K8sBaseTool):
             if not resource.metadata.annotations:
                 resource.metadata.annotations = {}
 
-            old_annotations = resource.metadata.annotations.copy()
+            resource.metadata.annotations.copy()
             resource.metadata.annotations.update(annotations)
 
             # 应用更新

@@ -102,11 +102,13 @@ class RedisCacheManager:
         self._lock = threading.Lock()
         self._shutdown = False
 
+        from app.config.settings import config
+
         # Redis连接池
         self.connection_pool = ConnectionPool(
-            host=redis_config.get("host", "localhost"),
-            port=redis_config.get("port", 6379),
-            db=redis_config.get("db", 1),  # 使用不同的db用于缓存
+            host=redis_config.get("host", config.redis.host),
+            port=redis_config.get("port", config.redis.port),
+            db=redis_config.get("db", config.redis.db + 1),  # 使用不同的db用于缓存
             password=redis_config.get("password", ""),
             decode_responses=False,  # 处理二进制数据
             max_connections=redis_config.get("max_connections", 20),

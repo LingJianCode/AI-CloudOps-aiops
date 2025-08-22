@@ -15,6 +15,7 @@ from typing import Any, Callable, Dict
 
 from fastapi import HTTPException, Request
 
+from ..common.constants import HttpStatusCodes
 from ..common.exceptions import AIOpsException
 from ..common.response import ResponseWrapper
 
@@ -46,7 +47,8 @@ def api_response(operation_name: str = "操作"):
             except Exception as e:
                 logger.error(f"{operation_name}发生未处理异常: {str(e)}", exc_info=True)
                 raise HTTPException(
-                    status_code=500, detail=f"{operation_name}失败: 服务器内部错误"
+                    status_code=HttpStatusCodes.INTERNAL_SERVER_ERROR,
+                    detail=f"{operation_name}失败: 服务器内部错误",
                 )
 
         return wrapper
@@ -62,7 +64,8 @@ def validate_request(validator_func: Callable = None):
                 validation_result = validator_func(*args, **kwargs)
                 if validation_result is not True:
                     raise HTTPException(
-                        status_code=400, detail=f"请求验证失败: {validation_result}"
+                        status_code=HttpStatusCodes.BAD_REQUEST,
+                        detail=f"请求验证失败: {validation_result}",
                     )
 
             return await func(*args, **kwargs)
@@ -114,12 +117,12 @@ def _get_http_status_for_aiops_exception(exc: AIOpsException) -> int:
     )
 
     if isinstance(exc, ServiceUnavailableError):
-        return 503
+        return HttpStatusCodes.SERVICE_UNAVAILABLE
     elif isinstance(exc, ValidationError):
-        return 400
+        return HttpStatusCodes.BAD_REQUEST
     elif isinstance(exc, ConfigurationError):
-        return 500
+        return HttpStatusCodes.INTERNAL_SERVER_ERROR
     elif isinstance(exc, ExternalServiceError):
-        return 502
+        return HttpStatusCodes.BAD_GATEWAY
     else:
-        return 500
+        return HttpStatusCodes.INTERNAL_SERVER_ERROR

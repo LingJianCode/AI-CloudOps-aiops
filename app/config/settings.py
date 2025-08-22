@@ -233,6 +233,18 @@ class RCAConfig:
             "RCA_CORRELATION_THRESHOLD", "rca.correlation_threshold", 0.7, float
         )
     )
+    
+    max_retries: int = field(
+        default_factory=lambda: get_env_or_config(
+            "RCA_MAX_RETRIES", "rca.max_retries", 3, int
+        )
+    )
+    
+    timeout: int = field(
+        default_factory=lambda: get_env_or_config(
+            "RCA_TIMEOUT", "rca.timeout", 30, int
+        )
+    )
 
     default_metrics: List[str] = field(
         default_factory=lambda: CONFIG.get("rca", {}).get(

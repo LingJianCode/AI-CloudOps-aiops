@@ -88,20 +88,25 @@ class K8sClusterCheckTool(K8sBaseTool):
         version_api = clients["version"]
 
         # 并行执行检查任务，设置更短的超时
+        from app.common.constants import ServiceConstants
+
+        timeout_short = ServiceConstants.AUTOFIX_K8S_TIMEOUT - 22
+        timeout_long = ServiceConstants.AUTOFIX_K8S_TIMEOUT - 18
+
         tasks = [
             asyncio.wait_for(
-                self._get_cluster_info(version_api, v1), timeout=8.0  # 减少到8秒
+                self._get_cluster_info(version_api, v1), timeout=timeout_short
             ),
-            asyncio.wait_for(self._get_node_status(v1), timeout=12.0),  # 减少到12秒
+            asyncio.wait_for(self._get_node_status(v1), timeout=timeout_long),
             asyncio.wait_for(
                 self._get_recent_events(v1, time_window, namespace_filter),
-                timeout=12.0,  # 减少到12秒
+                timeout=timeout_long,
             ),
             asyncio.wait_for(
-                self._get_pod_status(v1, namespace_filter), timeout=12.0  # 减少到12秒
+                self._get_pod_status(v1, namespace_filter), timeout=timeout_long
             ),
             asyncio.wait_for(
-                self._get_error_logs(v1, namespace_filter), timeout=8.0  # 减少到8秒
+                self._get_error_logs(v1, namespace_filter), timeout=timeout_short
             ),
         ]
 

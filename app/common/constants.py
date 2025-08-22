@@ -21,10 +21,6 @@ class AppConstants:
 
     API_VERSION_V1 = "/api/v1"
 
-    DEFAULT_REQUEST_TIMEOUT = 30
-    DEFAULT_WARMUP_TIMEOUT = 60
-    DEFAULT_RETRY_DELAY = 2
-
     DEFAULT_PAGE_SIZE = 20
     MAX_PAGE_SIZE = 100
 
@@ -35,12 +31,8 @@ class ServiceConstants:
     DEFAULT_SERVICE_TIMEOUT = 60
     DEFAULT_WARMUP_TIMEOUT = 60
     DEFAULT_RETRY_DELAY = 2
-
-    HTTP_OK = 200
-    HTTP_BAD_REQUEST = 400
-    HTTP_CLIENT_ERROR_MIN = 400
-    HTTP_SERVER_ERROR_MIN = 500
-    HTTP_INTERNAL_SERVER_ERROR = 500
+    DEFAULT_REQUEST_TIMEOUT = 30
+    MAX_SHUTDOWN_WAIT = 30
 
     VALIDATION_ERROR_MESSAGE = "请求参数验证失败"
     INTERNAL_SERVER_ERROR_MESSAGE = "内部服务器错误"
@@ -92,37 +84,7 @@ class ServiceConstants:
         "very_high": 2000,
     }
 
-
-    HOUR_FACTORS = {
-        0: 0.3,
-        1: 0.2,
-        2: 0.15,
-        3: 0.1,
-        4: 0.1,
-        5: 0.2,
-        6: 0.4,
-        7: 0.6,
-        8: 0.8,
-        9: 0.9,
-        10: 1.0,
-        11: 0.95,
-        12: 0.9,
-        13: 0.95,
-        14: 1.0,
-        15: 1.0,
-        16: 0.95,
-        17: 0.9,
-        18: 0.8,
-        19: 0.7,
-        20: 0.6,
-        21: 0.5,
-        22: 0.4,
-        23: 0.3,
-    }
-
-    DAY_FACTORS = {
-        0: 0.95, 1: 1.0, 2: 1.05, 3: 1.05, 4: 0.95, 5: 0.7, 6: 0.6
-    }
+    HEALTH_CHECK_CACHE_SECONDS = 30
 
 
 class ErrorMessages:
@@ -205,8 +167,6 @@ class ApiEndpoints:
     REDOC = "/redoc"
     OPENAPI = "/openapi.json"
 
-
-
     # 预测端点
     PREDICT = f"{AppConstants.API_VERSION_V1}/predict"
     PREDICT_TREND = f"{PREDICT}/trend"
@@ -242,12 +202,7 @@ class ApiEndpoints:
 
 
 def get_api_info() -> Dict[str, Any]:
-    """
-    获取API信息
-
-    Returns:
-        包含所有API端点信息的字典
-    """
+    """获取API信息"""
     return {
         "service": AppConstants.APP_NAME,
         "version": AppConstants.APP_VERSION,

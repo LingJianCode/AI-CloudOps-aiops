@@ -30,7 +30,7 @@ class ScalingAdvisor:
     """扩缩容建议器"""
 
     def __init__(self):
-        from app.config.settings import config
+        pass
 
         # 从配置文件获取扩缩容阈值
         self.thresholds = self._init_thresholds()

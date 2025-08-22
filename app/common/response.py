@@ -15,6 +15,7 @@ from typing import Any, Dict, Optional
 from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
 
+from .constants import HttpStatusCodes
 from .exceptions import AIOpsException
 
 logger = logging.getLogger("aiops.response")
@@ -36,18 +37,7 @@ class ResponseWrapper:
         code: int = 0,
         total: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """
-        创建列表数据成功响应
-
-        Args:
-            items: 列表数据
-            message: 响应消息
-            code: 业务状态码，0表示成功
-            total: 总数量，如果不提供则使用items的长度
-
-        Returns:
-            标准化的列表响应字典
-        """
+        """创建列表数据成功响应"""
         if total is None:
             total = len(items) if items else 0
 
@@ -64,18 +54,7 @@ class ResponseWrapper:
         details: Optional[Dict[str, Any]] = None,
         error_code: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """
-        创建错误响应
-
-        Args:
-            message: 错误消息
-            code: 业务错误码
-            details: 错误详情
-            error_code: 错误类型码
-
-        Returns:
-            标准化的错误响应字典
-        """
+        """创建错误响应"""
         response_data = {"code": code, "message": message}
 
         if details:
@@ -88,16 +67,7 @@ class ResponseWrapper:
 
 
 async def handle_aiops_exception(request: Request, exc: AIOpsException) -> JSONResponse:
-    """
-    处理业务异常
-
-    Args:
-        request: FastAPI请求对象
-        exc: AIOps业务异常
-
-    Returns:
-        JSON错误响应
-    """
+    """处理业务异常"""
     logger.error(
         f"业务异常: {exc.message}, 错误码: {exc.error_code}, 详情: {exc.details}"
     )
@@ -124,16 +94,7 @@ async def handle_aiops_exception(request: Request, exc: AIOpsException) -> JSONR
 
 
 async def handle_http_exception(request: Request, exc: HTTPException) -> JSONResponse:
-    """
-    处理HTTP异常
-
-    Args:
-        request: FastAPI请求对象
-        exc: HTTP异常
-
-    Returns:
-        JSON错误响应
-    """
+    """处理HTTP异常"""
     logger.error(f"HTTP异常: {exc.detail}, 状态码: {exc.status_code}")
 
     response_data = ResponseWrapper.error(
@@ -150,41 +111,26 @@ async def handle_http_exception(request: Request, exc: HTTPException) -> JSONRes
 
 
 async def handle_general_exception(request: Request, exc: Exception) -> JSONResponse:
-    """
-    处理通用异常
-
-    Args:
-        request: FastAPI请求对象
-        exc: 通用异常
-
-    Returns:
-        JSON错误响应
-    """
+    """处理通用异常"""
     logger.error(f"未处理异常: {str(exc)}", exc_info=True)
 
     response_data = ResponseWrapper.error(
         message="服务器内部错误",
-        code=500,
+        code=HttpStatusCodes.INTERNAL_SERVER_ERROR,
         details={
             "path": str(request.url.path),
             "method": request.method,
-            "status_code": 500,
+            "status_code": HttpStatusCodes.INTERNAL_SERVER_ERROR,
         },
     )
 
-    return JSONResponse(status_code=500, content=response_data)
+    return JSONResponse(
+        status_code=HttpStatusCodes.INTERNAL_SERVER_ERROR, content=response_data
+    )
 
 
 def _get_http_status_for_exception(exc: AIOpsException) -> int:
-    """
-    根据业务异常类型返回合适的HTTP状态码
-
-    Args:
-        exc: AIOps业务异常
-
-    Returns:
-        HTTP状态码
-    """
+    """根据业务异常类型返回HTTP状态码"""
     from .exceptions import (
         ConfigurationError,
         ExternalServiceError,
@@ -193,12 +139,12 @@ def _get_http_status_for_exception(exc: AIOpsException) -> int:
     )
 
     if isinstance(exc, ServiceUnavailableError):
-        return 503
+        return HttpStatusCodes.SERVICE_UNAVAILABLE
     elif isinstance(exc, ValidationError):
-        return 400
+        return HttpStatusCodes.BAD_REQUEST
     elif isinstance(exc, ConfigurationError):
-        return 500
+        return HttpStatusCodes.INTERNAL_SERVER_ERROR
     elif isinstance(exc, ExternalServiceError):
-        return 502
+        return HttpStatusCodes.BAD_GATEWAY
     else:
-        return 500
+        return HttpStatusCodes.INTERNAL_SERVER_ERROR

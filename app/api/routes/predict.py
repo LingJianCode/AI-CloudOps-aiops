@@ -312,7 +312,7 @@ async def prediction_ready() -> Dict[str, Any]:
             ready=True,
             service="prediction",
             timestamp=datetime.now().isoformat(),
-            message="服务就绪"
+            message="服务就绪",
         )
         return ResponseWrapper.success(
             data=response.dict(),
@@ -427,7 +427,7 @@ async def prediction_info() -> Dict[str, Any]:
         capabilities=info["capabilities"],
         endpoints=info["endpoints"],
         constraints=info["constraints"],
-        status=info["service_status"]
+        status=info["service_status"],
     )
 
     return ResponseWrapper.success(data=response.dict(), message="服务信息获取成功")
@@ -440,13 +440,13 @@ async def model_info() -> Dict[str, Any]:
     try:
         await prediction_service.initialize()
         model_details = await prediction_service.get_model_info()
-        
+
         response = ModelInfoResponse(
             models=model_details.get("models", []),
             total_models=model_details.get("total_models", 0),
             loaded_models=model_details.get("loaded_models", 0),
             status=model_details.get("status", "healthy"),
-            timestamp=datetime.now().isoformat()
+            timestamp=datetime.now().isoformat(),
         )
         return ResponseWrapper.success(data=response.dict(), message="模型信息获取成功")
     except Exception as e:
@@ -457,7 +457,7 @@ async def model_info() -> Dict[str, Any]:
             total_models=0,
             loaded_models=0,
             status="error",
-            timestamp=datetime.now().isoformat()
+            timestamp=datetime.now().isoformat(),
         )
         return ResponseWrapper.success(
             data=error_response.dict(),

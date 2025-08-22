@@ -22,7 +22,6 @@ from app.common.response import ResponseWrapper
 from app.models import (
     ErrorSummaryResponse,
     EventPatternsResponse,
-    ListResponse,
     QuickDiagnosisResponse,
     ServiceConfigResponse,
     ServiceInfoResponse,
@@ -101,8 +100,6 @@ async def health_check() -> Dict[str, Any]:
 
     health_status = await rca_service.get_health_status()
 
-
-
     response = RCAHealthResponse(
         status=health_status.get("status", "healthy"),
         prometheus_connected=health_status.get("prometheus_connected", False),
@@ -132,7 +129,7 @@ async def rca_ready() -> Dict[str, Any]:
             ready=True,
             service="rca",
             timestamp=datetime.now().isoformat(),
-            message="服务就绪"
+            message="服务就绪",
         )
         return ResponseWrapper.success(
             data=response.dict(),
@@ -152,11 +149,9 @@ async def get_rca_config() -> Dict[str, Any]:
     try:
         await rca_service.initialize()
         config_info = await rca_service.get_config_info()
-        
+
         response = ServiceConfigResponse(
-            service="rca",
-            config=config_info,
-            timestamp=datetime.now().isoformat()
+            service="rca", config=config_info, timestamp=datetime.now().isoformat()
         )
         return ResponseWrapper.success(data=response.dict(), message="配置获取成功")
     except Exception as e:
@@ -171,7 +166,7 @@ async def quick_diagnosis(namespace: str) -> Dict[str, Any]:
     await rca_service.initialize()
 
     diagnosis_result = await rca_service.quick_diagnosis(namespace=namespace)
-    
+
     response = QuickDiagnosisResponse(
         namespace=namespace,
         status=diagnosis_result.get("status", "completed"),
@@ -179,7 +174,7 @@ async def quick_diagnosis(namespace: str) -> Dict[str, Any]:
         warnings=diagnosis_result.get("warnings", []),
         recommendations=diagnosis_result.get("recommendations", []),
         timestamp=datetime.now().isoformat(),
-        analysis_duration=diagnosis_result.get("analysis_duration", 0.0)
+        analysis_duration=diagnosis_result.get("analysis_duration", 0.0),
     )
 
     return ResponseWrapper.success(data=response.dict(), message="success")
@@ -197,14 +192,14 @@ async def get_event_patterns(
     patterns_result = await rca_service.get_event_patterns(
         namespace=namespace, hours=hours
     )
-    
+
     response = EventPatternsResponse(
         namespace=namespace,
         time_range_hours=hours,
         patterns=patterns_result.get("patterns", []),
         trending_events=patterns_result.get("trending_events", []),
         anomalous_events=patterns_result.get("anomalous_events", []),
-        timestamp=datetime.now().isoformat()
+        timestamp=datetime.now().isoformat(),
     )
 
     return ResponseWrapper.success(data=response.dict(), message="success")
@@ -222,7 +217,7 @@ async def get_error_summary(
     summary_result = await rca_service.get_error_summary(
         namespace=namespace, hours=hours
     )
-    
+
     response = ErrorSummaryResponse(
         namespace=namespace,
         time_range_hours=hours,
@@ -230,7 +225,7 @@ async def get_error_summary(
         error_categories=summary_result.get("error_categories", {}),
         top_errors=summary_result.get("top_errors", []),
         error_timeline=summary_result.get("error_timeline", []),
-        timestamp=datetime.now().isoformat()
+        timestamp=datetime.now().isoformat(),
     )
 
     return ResponseWrapper.success(data=response.dict(), message="success")
@@ -281,7 +276,7 @@ async def rca_info() -> Dict[str, Any]:
         capabilities=info["capabilities"],
         endpoints=info["endpoints"],
         constraints=info["constraints"],
-        status=info["status"]
+        status=info["status"],
     )
 
     return ResponseWrapper.success(data=response.dict(), message="success")

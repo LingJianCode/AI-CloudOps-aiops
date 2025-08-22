@@ -11,7 +11,7 @@ Description: AI-CloudOps应用启动服务
 
 import asyncio
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from .base import BaseService
 
@@ -175,7 +175,10 @@ class StartupService(BaseService):
         cleanup_results["total_time"] = time.time() - cleanup_results["started_at"]
         cleanup_results["success"] = all(
             result.get("success", False)
-            for result in {**cleanup_results["services"], **cleanup_results["instances"]}.values()
+            for result in {
+                **cleanup_results["services"],
+                **cleanup_results["instances"],
+            }.values()
         )
 
         self.logger.info(f"服务清理完成，总耗时: {cleanup_results['total_time']:.2f}秒")
@@ -195,9 +198,13 @@ class StartupService(BaseService):
             await service.cleanup()
             result["duration"] = time.time() - start_time
             result["success"] = True
-            self.logger.info(f"服务 {service.service_name} 清理成功，耗时: {result['duration']:.2f}秒")
+            self.logger.info(
+                f"服务 {service.service_name} 清理成功，耗时: {result['duration']:.2f}秒"
+            )
         except Exception as e:
-            result["duration"] = time.time() - start_time if "start_time" in locals() else 0
+            result["duration"] = (
+                time.time() - start_time if "start_time" in locals() else 0
+            )
             result["error"] = str(e)
             self.logger.error(f"服务 {service.service_name} 清理失败: {str(e)}")
 
@@ -214,9 +221,11 @@ class StartupService(BaseService):
 
         try:
             start_time = time.time()
-            
+
             # 尝试不同的清理方法
-            if hasattr(instance, 'shutdown') and callable(getattr(instance, 'shutdown')):
+            if hasattr(instance, 'shutdown') and callable(
+                getattr(instance, 'shutdown')
+            ):
                 if asyncio.iscoroutinefunction(instance.shutdown):
                     await instance.shutdown()
                 else:
@@ -226,19 +235,23 @@ class StartupService(BaseService):
                     await instance.close()
                 else:
                     instance.close()
-            elif hasattr(instance, 'cleanup') and callable(getattr(instance, 'cleanup')):
+            elif hasattr(instance, 'cleanup') and callable(
+                getattr(instance, 'cleanup')
+            ):
                 if asyncio.iscoroutinefunction(instance.cleanup):
                     await instance.cleanup()
                 else:
                     instance.cleanup()
             else:
                 self.logger.debug(f"实例 {name} 没有可用的清理方法")
-                
+
             result["duration"] = time.time() - start_time
             result["success"] = True
             self.logger.info(f"实例 {name} 清理成功，耗时: {result['duration']:.2f}秒")
         except Exception as e:
-            result["duration"] = time.time() - start_time if "start_time" in locals() else 0
+            result["duration"] = (
+                time.time() - start_time if "start_time" in locals() else 0
+            )
             result["error"] = str(e)
             self.logger.error(f"实例 {name} 清理失败: {str(e)}")
 
@@ -247,7 +260,7 @@ class StartupService(BaseService):
     async def get_services_status(self) -> Dict[str, Any]:
         """获取所有服务状态"""
         services_status = {}
-        
+
         # BaseService类型的服务状态
         for service in self._managed_services:
             services_status[service.service_name] = {
@@ -255,11 +268,11 @@ class StartupService(BaseService):
                 "initialized": service.is_initialized(),
                 "healthy": service.is_healthy(),
             }
-        
+
         # 其他服务实例状态
         for name, instance in self._service_instances.items():
             status = {"type": "Instance", "available": True}
-            
+
             # 尝试获取健康状态
             try:
                 if hasattr(instance, 'health_check'):
@@ -272,7 +285,7 @@ class StartupService(BaseService):
             except Exception as e:
                 status["healthy"] = False
                 status["error"] = str(e)
-                
+
             services_status[name] = status
-        
+
         return services_status

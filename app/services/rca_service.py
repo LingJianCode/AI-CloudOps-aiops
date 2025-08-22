@@ -504,7 +504,7 @@ class RCAService(BaseService, HealthCheckMixin):
 
             # 调用父类清理方法
             await super().cleanup()
-            
+
             self.logger.info("RCA服务资源清理完成")
 
         except Exception as e:

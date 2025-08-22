@@ -60,4 +60,5 @@ def register_routes(app):
     @app.get("/", tags=["root"])
     async def root():
         from ...common.constants import get_api_info
+
         return get_api_info()

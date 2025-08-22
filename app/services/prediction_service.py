@@ -863,8 +863,6 @@ class PredictionService(BaseService, HealthCheckMixin):
         self, prediction_type: PredictionType, metric_query: Optional[str], hours: int
     ) -> List[Dict[str, Any]]:
         """获取历史数据"""
-        import numpy as np
-        import pandas as pd
 
         # 首先尝试从Prometheus获取真实数据
         try:

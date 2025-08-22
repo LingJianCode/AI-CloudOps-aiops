@@ -131,14 +131,14 @@ async def autofix_health() -> Dict[str, Any]:
     await autofix_service.initialize()
 
     health_status = await autofix_service.get_service_health_info()
-    
+
     response = ServiceHealthResponse(
         status=health_status.get("status", "healthy"),
         service="autofix",
         version=health_status.get("version"),
         dependencies=health_status.get("dependencies"),
         last_check_time=datetime.now().isoformat(),
-        uptime=health_status.get("uptime")
+        uptime=health_status.get("uptime"),
     )
 
     return ResponseWrapper.success(data=response.dict(), message="success")
@@ -150,11 +150,9 @@ async def get_autofix_config() -> Dict[str, Any]:
     await autofix_service.initialize()
 
     config_info = await autofix_service.get_autofix_config()
-    
+
     response = ServiceConfigResponse(
-        service="autofix",
-        config=config_info,
-        timestamp=datetime.now().isoformat()
+        service="autofix", config=config_info, timestamp=datetime.now().isoformat()
     )
 
     return ResponseWrapper.success(data=response.dict(), message="success")
@@ -205,7 +203,7 @@ async def autofix_info() -> Dict[str, Any]:
         capabilities=info["capabilities"],
         endpoints=info["endpoints"],
         constraints=info["constraints"],
-        status=info["status"]
+        status=info["status"],
     )
 
     return ResponseWrapper.success(data=response.dict(), message="success")
