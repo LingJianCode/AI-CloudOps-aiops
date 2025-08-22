@@ -39,15 +39,6 @@ class AutoFixResponse(BaseModel):
     error_message: Optional[str] = None
 
 
-class HealthResponse(BaseModel):
-    """健康检查响应模型"""
-
-    status: str
-    components: Dict[str, bool]
-    timestamp: str
-    version: Optional[str] = None
-    uptime: Optional[float] = None
-
 
 class AssistantResponse(BaseModel):
     """智能小助手响应模型"""

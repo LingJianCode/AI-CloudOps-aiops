@@ -45,7 +45,6 @@ from .response_models import (
     AssistantResponse,
     AutoFixResponse,
     DiagnoseResponse,
-    HealthResponse,
     ListResponse,
     SessionInfoResponse,
 )
@@ -57,7 +56,6 @@ __all__ = [
     "DiagnoseRequest",
     # 响应模型
     "AutoFixResponse",
-    "HealthResponse",
     "AssistantResponse",
     "SessionInfoResponse",
     "DiagnoseResponse",

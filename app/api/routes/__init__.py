@@ -20,14 +20,6 @@ api_v1 = APIRouter(prefix="/api/v1", tags=["api_v1"])
 
 # 导入所有路由器
 try:
-    from .health import router as health_router
-
-    api_v1.include_router(health_router)
-    logger.info("已注册健康检查路由")
-except Exception as e:
-    logger.warning(f"注册健康检查路由失败: {str(e)}")
-
-try:
     from .predict import router as predict_router
 
     api_v1.include_router(predict_router, prefix="/predict")

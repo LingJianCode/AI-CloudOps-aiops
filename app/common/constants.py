@@ -227,15 +227,7 @@ class ApiEndpoints:
     REDOC = "/redoc"
     OPENAPI = "/openapi.json"
 
-    # 健康检查端点
-    HEALTH = f"{AppConstants.API_VERSION_V1}/health"
-    HEALTH_COMPONENTS = f"{HEALTH}/components"
-    HEALTH_METRICS = f"{HEALTH}/metrics"
-    HEALTH_READY = f"{HEALTH}/ready"
-    HEALTH_LIVE = f"{HEALTH}/live"
-    HEALTH_STARTUP = f"{HEALTH}/startup"
-    HEALTH_DEPENDENCIES = f"{HEALTH}/dependencies"
-    HEALTH_DETAIL = f"{HEALTH}/detail"
+
 
     # 预测端点
     PREDICT = f"{AppConstants.API_VERSION_V1}/predict"
@@ -284,16 +276,6 @@ def get_api_info() -> Dict[str, Any]:
         "status": "running",
         "description": AppConstants.APP_DESCRIPTION,
         "endpoints": {
-            "health": {
-                "main": ApiEndpoints.HEALTH,
-                "components": ApiEndpoints.HEALTH_COMPONENTS,
-                "metrics": ApiEndpoints.HEALTH_METRICS,
-                "ready": ApiEndpoints.HEALTH_READY,
-                "live": ApiEndpoints.HEALTH_LIVE,
-                "startup": ApiEndpoints.HEALTH_STARTUP,
-                "dependencies": ApiEndpoints.HEALTH_DEPENDENCIES,
-                "detail": ApiEndpoints.HEALTH_DETAIL,
-            },
             "prediction": {
                 "predict": ApiEndpoints.PREDICT,
                 "trend": ApiEndpoints.PREDICT_TREND,
