@@ -57,7 +57,6 @@ async def assistant_query(request: AssistantRequest) -> Dict[str, Any]:
         question=request.question,
         mode=request.mode,
         session_id=request.session_id,
-        max_context_docs=request.max_context_docs,
     )
 
     response = AssistantResponse(
@@ -167,7 +166,7 @@ async def assistant_ready() -> Dict[str, Any]:
         )
 
 
-@router.post("/clear_cache", summary="清除缓存")
+@router.post("/clear-cache", summary="清除缓存")
 @api_response("清除缓存")
 async def clear_cache() -> Dict[str, Any]:
     await assistant_service.initialize()
@@ -182,7 +181,7 @@ async def clear_cache() -> Dict[str, Any]:
     return ResponseWrapper.success(data=response.dict(), message="success")
 
 
-@router.post("/create_session", summary="创建会话")
+@router.post("/session", summary="创建会话")
 @api_response("创建会话")
 async def create_session(request: AssistantRequest) -> Dict[str, Any]:
     await assistant_service.initialize()

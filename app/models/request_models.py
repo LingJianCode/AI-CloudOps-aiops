@@ -35,9 +35,6 @@ class AssistantRequest(BaseModel):
         default=None, description="对话历史记录"
     )
     use_web_search: bool = Field(default=False, description="是否使用网络搜索增强回答")
-    max_context_docs: int = Field(
-        default=4, ge=1, le=10, description="最大上下文文档数量"
-    )
     session_id: Optional[str] = Field(
         default=None, description="会话ID，为空则创建新会话"
     )

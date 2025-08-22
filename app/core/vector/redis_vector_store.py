@@ -13,6 +13,8 @@ import asyncio
 import hashlib
 import logging
 import pickle
+import re
+import heapq
 from collections import defaultdict
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
@@ -31,7 +33,7 @@ class SearchConfig:
 
     semantic_weight: float = 0.6
     lexical_weight: float = 0.4
-    similarity_threshold: float = 0.5  # 提高阈值
+    similarity_threshold: float = 0.3
     use_mmr: bool = True  # 最大边际相关性
     mmr_lambda: float = 0.5
     use_cache: bool = True
@@ -152,6 +154,12 @@ class EnhancedRedisVectorStore:
             vec_key = f"{self.collection_name}:vec:{doc_id}"
             pipe.set(vec_key, embedding.tobytes())
 
+            # 更新倒排索引（限制词数，降低写放大）
+            terms = list(self._tokenize_text(doc.page_content))[:100]
+            for term in terms:
+                term_key = f"{self.collection_name}:term:{term}"
+                pipe.sadd(term_key, doc_id)
+
         # 执行批量操作
         await asyncio.to_thread(pipe.execute)
 
@@ -172,8 +180,10 @@ class EnhancedRedisVectorStore:
                 return cached
 
         # 生成查询向量
-        query_vector = await asyncio.to_thread(self.embedding_model.embed_query, query)
-        query_vector = np.array(query_vector, dtype=np.float32)
+        query_embedding = await asyncio.to_thread(
+            self.embedding_model.embed_query, query
+        )
+        query_vector = np.array(query_embedding, dtype=np.float32)
 
         # 执行混合搜索
         results = await self._hybrid_search(
@@ -216,23 +226,33 @@ class EnhancedRedisVectorStore:
     async def _semantic_search(
         self, query_vector: np.ndarray, k: int
     ) -> List[Tuple[Document, float]]:
-        """语义搜索"""
-        # 使用索引管理器执行向量搜索
-        doc_ids_scores = await self.index_manager.search_vectors(query_vector, k)
+        """语义搜索 - 优先使用 fallback 搜索"""
+        try:
+            # 尝试使用原始实现
+            doc_ids_scores = await self.index_manager.search_vectors(query_vector, k)
 
-        # 获取文档
-        results = []
-        for doc_id, score in doc_ids_scores:
-            doc = await self._get_document(doc_id)
-            if doc:
-                results.append((doc, score))
+            # 获取文档
+            results = []
+            for doc_id, score in doc_ids_scores:
+                doc = await self._get_document(doc_id)
+                if doc:
+                    results.append((doc, score))
 
-        return results
+            # 如果原始实现没有结果，使用 fallback
+            if not results:
+                logger.info("索引搜索无结果，使用fallback搜索")
+                return await self._fallback_semantic_search(query_vector, k)
+
+            return results
+        except Exception as e:
+            logger.warning(f"索引搜索失败，使用fallback搜索: {e}")
+            # 使用简单的余弦相似度搜索作为fallback
+            return await self._fallback_semantic_search(query_vector, k)
 
     async def _lexical_search(self, query: str, k: int) -> List[Tuple[Document, float]]:
         """词汇搜索 - 基于倒排索引"""
-        # 分词
-        query_terms = set(query.lower().split())
+        # 分词（与索引一致）
+        query_terms = set(self._tokenize_text(query))
 
         # 搜索倒排索引
         doc_scores = defaultdict(float)
@@ -246,15 +266,19 @@ class EnhancedRedisVectorStore:
                     doc_id = doc_id.decode()
                 doc_scores[doc_id] += 1.0 / len(query_terms)
 
-        # 排序并获取文档
-        sorted_docs = sorted(doc_scores.items(), key=lambda x: x[1], reverse=True)[:k]
+        # 排序并批量获取文档
+        top_items = sorted(doc_scores.items(), key=lambda x: x[1], reverse=True)[:k]
+        if not top_items:
+            return []
+
+        doc_ids = [doc_id for doc_id, _ in top_items]
+        docs_map = await self._get_documents_bulk(doc_ids)
 
         results = []
-        for doc_id, score in sorted_docs:
-            doc = await self._get_document(doc_id)
+        for doc_id, score in top_items:
+            doc = docs_map.get(doc_id)
             if doc:
                 results.append((doc, score))
-
         return results
 
     def _fuse_results(
@@ -302,17 +326,20 @@ class EnhancedRedisVectorStore:
         if not results:
             return []
 
-        # 提取文档向量
+        # 批量提取文档向量（减少往返）
+        doc_ids = [self._generate_doc_id(doc.page_content) for doc, _ in results]
+        vec_keys = [f"{self.collection_name}:vec:{doc_id}" for doc_id in doc_ids]
+        pipe = self.client.pipeline()
+        for key in vec_keys:
+            pipe.get(key)
+        vec_bytes_list = pipe.execute()
+
         doc_vectors = []
-        for doc, _ in results:
-            doc_id = self._generate_doc_id(doc.page_content)
-            vec_key = f"{self.collection_name}:vec:{doc_id}"
-            vec_bytes = self.client.get(vec_key)
+        for vec_bytes in vec_bytes_list:
             if vec_bytes:
-                vec = np.frombuffer(vec_bytes, dtype=np.float32)
-                doc_vectors.append(vec)
+                doc_vectors.append(np.frombuffer(vec_bytes, dtype=np.float32))
             else:
-                doc_vectors.append(np.zeros(self.vector_dim))
+                doc_vectors.append(np.zeros(self.vector_dim, dtype=np.float32))
 
         # MMR选择
         selected = []
@@ -368,6 +395,30 @@ class EnhancedRedisVectorStore:
             logger.error(f"获取文档失败 {doc_id}: {e}")
             return None
 
+    async def _get_documents_bulk(self, doc_ids: List[str]) -> Dict[str, Document]:
+        """批量获取文档，减少往返"""
+        if not doc_ids:
+            return {}
+
+        try:
+            pipe = self.client.pipeline()
+            for doc_id in doc_ids:
+                doc_key = f"{self.collection_name}:doc:{doc_id}"
+                pipe.hgetall(doc_key)
+            results = await asyncio.to_thread(pipe.execute)
+
+            docs: Dict[str, Document] = {}
+            for doc_id, data in zip(doc_ids, results):
+                if not data:
+                    continue
+                content = data.get(b"content", b"").decode()
+                metadata = pickle.loads(data.get(b"metadata", pickle.dumps({})))
+                docs[doc_id] = Document(page_content=content, metadata=metadata)
+            return docs
+        except Exception as e:
+            logger.error(f"批量获取文档失败: {e}")
+            return {}
+
     def _generate_doc_id(self, content: str) -> str:
         """生成文档ID"""
         return hashlib.md5(content.encode()).hexdigest()
@@ -383,10 +434,108 @@ class EnhancedRedisVectorStore:
 
         return float(dot / (norm1 * norm2))
 
+    async def _fallback_semantic_search(
+        self, query_vector: np.ndarray, k: int
+    ) -> List[Tuple[Document, float]]:
+        """Fallback语义搜索，使用余弦相似度，提高召回率"""
+        try:
+            logger.info("使用fallback语义搜索")
+
+            # 使用SCAN+pipeline，维护Top-K的小根堆
+            pattern = f"{self.collection_name}:vec:*"
+            cursor = 0
+            top_k = []  # (sim, doc_id)
+            threshold = 0.1
+
+            while True:
+                cursor, keys = await asyncio.to_thread(
+                    self.client.scan, cursor, match=pattern, count=500
+                )
+                if not keys:
+                    if cursor == 0:
+                        break
+                if keys:
+                    pipe = self.client.pipeline()
+                    for key in keys:
+                        pipe.get(key)
+                    values = await asyncio.to_thread(pipe.execute)
+
+                    for key, vec_bytes in zip(keys, values):
+                        if not vec_bytes:
+                            continue
+                        stored_vector = np.frombuffer(vec_bytes, dtype=np.float32)
+                        sim = self._cosine_similarity_fallback(
+                            query_vector, stored_vector
+                        )
+                        if sim <= threshold:
+                            continue
+                        # 解析doc_id
+                        kstr = (
+                            key.decode()
+                            if isinstance(key, (bytes, bytearray))
+                            else str(key)
+                        )
+                        doc_id = kstr.split(":")[-1]
+
+                        if len(top_k) < k * 5:
+                            heapq.heappush(top_k, (sim, doc_id))
+                        else:
+                            if sim > top_k[0][0]:
+                                heapq.heapreplace(top_k, (sim, doc_id))
+
+                if cursor == 0:
+                    break
+
+            if not top_k:
+                return []
+
+            # 取相似度最高的前k个并批量取文档
+            top_k.sort(key=lambda x: x[0], reverse=True)
+            selected = top_k[:k]
+            sel_ids = [doc_id for _, doc_id in selected]
+            docs_map = await self._get_documents_bulk(sel_ids)
+
+            results: List[Tuple[Document, float]] = []
+            for sim, doc_id in selected:
+                doc = docs_map.get(doc_id)
+                if doc:
+                    results.append((doc, float(sim)))
+
+            logger.info(f"Fallback搜索找到 {len(results)} 个结果")
+            return results
+
+        except Exception as e:
+            logger.error(f"Fallback搜索失败: {e}")
+            return []
+
+    def _cosine_similarity_fallback(self, vec1: np.ndarray, vec2: np.ndarray) -> float:
+        """计算余弦相似度"""
+        try:
+            # 归一化向量
+            norm1 = np.linalg.norm(vec1)
+            norm2 = np.linalg.norm(vec2)
+
+            if norm1 == 0 or norm2 == 0:
+                return 0.0
+
+            # 计算余弦相似度
+            similarity = np.dot(vec1, vec2) / (norm1 * norm2)
+            return float(similarity)
+        except Exception:
+            return 0.0
+
     def _get_search_cache_key(self, query: str, k: int, config: SearchConfig) -> str:
         """生成搜索缓存键"""
         params = f"{query}:{k}:{config.semantic_weight}:{config.lexical_weight}"
         return hashlib.md5(params.encode()).hexdigest()
+
+    def _tokenize_text(self, text: str) -> List[str]:
+        """简单分词：小写、去掉非字母数字下划线、按空白切分"""
+        if not text:
+            return []
+        lowered = text.lower()
+        cleaned = re.sub(r"[^\w\s]", " ", lowered)
+        return [t for t in cleaned.split() if t]
 
 
 class IndexManager:

@@ -14,7 +14,6 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from ..common.constants import ServiceConstants
 from ..common.exceptions import AssistantError, ValidationError
 from ..core.agents.enterprise_assistant import get_enterprise_assistant
 from ..config.settings import config
@@ -67,7 +66,6 @@ class OptimizedAssistantService(BaseService):
         question: str,
         mode: int = 1,
         session_id: Optional[str] = None,
-        max_context_docs: int = ServiceConstants.ASSISTANT_DEFAULT_CONTEXT_DOCS,
     ) -> Dict[str, Any]:
         """获取智能回答"""
         # 参数验证
@@ -78,7 +76,7 @@ class OptimizedAssistantService(BaseService):
         if mode == 2:  # MCP模式
             return await self._handle_mcp_mode(question, session_id)
         else:  # RAG模式 (mode == 1 或其他值默认为RAG)
-            return await self._handle_rag_mode(question, session_id, max_context_docs)
+            return await self._handle_rag_mode(question, session_id)
 
     async def _use_fallback_response(
         self, question: str, session_id: Optional[str], error_reason: str
@@ -178,16 +176,19 @@ class OptimizedAssistantService(BaseService):
 
             # 清除助手缓存
             cache_cleared = False
+            cleared_items = 0
             if self._assistant and hasattr(self._assistant, 'clear_cache'):
                 result = await self._assistant.clear_cache()
                 cache_cleared = result.get("success", False)
+                cleared_items = result.get("cleared_items", 0)
             else:
                 # 如果助手没有清除缓存方法，至少清理性能监控缓存
                 self._performance_monitor.reset()
                 cache_cleared = True
 
             return {
-                "cache_cleared": cache_cleared,
+                "cleared": cache_cleared,
+                "cache_keys_cleared": cleared_items,
                 "message": "缓存清除完成" if cache_cleared else "缓存清除部分完成",
                 "timestamp": datetime.now().isoformat(),
             }
@@ -450,7 +451,7 @@ class OptimizedAssistantService(BaseService):
         return enhanced
 
     async def _handle_rag_mode(
-        self, question: str, session_id: Optional[str], max_context_docs: int
+        self, question: str, session_id: Optional[str]
     ) -> Dict[str, Any]:
         """处理RAG模式请求"""
         # 确保服务就绪
