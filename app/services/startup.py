@@ -6,7 +6,7 @@ AI-CloudOps-aiops
 Author: Bamboo
 Email: bamboocloudops@gmail.com
 License: Apache 2.0
-Description: 应用启动服务
+Description: AI-CloudOps应用启动服务
 """
 
 import time
@@ -85,13 +85,13 @@ class StartupService(BaseService):
             # 动态导入避免循环依赖
             from ..core.agents.enterprise_assistant import get_enterprise_assistant
 
-            self.logger.info("正在初始化企业级智能助手...")
+            self.logger.info("正在初始化AI-CloudOps智能助手...")
 
             # 单次初始化，避免重复调用
             try:
                 agent = await get_enterprise_assistant()
             except Exception as e:
-                self.logger.warning(f"企业级智能助手初始化失败: {str(e)}")
+                self.logger.warning(f"AI-CloudOps智能助手初始化失败: {str(e)}")
                 agent = None
 
             result["duration"] = time.time() - start_time

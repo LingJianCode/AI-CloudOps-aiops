@@ -16,10 +16,10 @@ from typing import Any, Dict
 
 import psutil
 
-from app.services.prediction_service import PredictionService
 from app.services.kubernetes import KubernetesService
 from app.services.llm import LLMService
 from app.services.notification import NotificationService
+from app.services.prediction_service import PredictionService
 from app.services.prometheus import PrometheusService
 from app.services.rca_service import RCAService
 

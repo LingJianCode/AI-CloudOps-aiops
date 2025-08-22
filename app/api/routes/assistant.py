@@ -10,10 +10,19 @@ Description: 智能助手API接口
 """
 
 import logging
+from datetime import datetime
 from typing import Any, Dict
-from fastapi import APIRouter
+
+from fastapi import APIRouter, HTTPException
+
 from app.api.decorators import api_response, log_api_call
-from app.common.constants import ApiEndpoints, AppConstants, ServiceConstants
+from app.common.constants import (
+    ApiEndpoints,
+    AppConstants,
+    ErrorMessages,
+    HttpStatusCodes,
+    ServiceConstants,
+)
 from app.common.response import ResponseWrapper
 from app.models import AssistantRequest, AssistantResponse, SessionInfoResponse
 from app.services.assistant_service import OptimizedAssistantService
@@ -91,6 +100,44 @@ async def assistant_health() -> Dict[str, Any]:
     return ResponseWrapper.success(data=health_status, message="success")
 
 
+@router.get("/ready", summary="智能助手就绪检查")
+@api_response("智能助手就绪检查")
+async def assistant_ready() -> Dict[str, Any]:
+    """检查智能助手是否已就绪可以提供服务"""
+    try:
+        await assistant_service.initialize()
+        health_status = await assistant_service.get_service_health_info_with_mode()
+
+        # 检查服务是否健康
+        is_ready = (
+            health_status.get("modes", {}).get("rag", {}).get("status") == "healthy"
+            or health_status.get("modes", {}).get("mcp", {}).get("status") == "healthy"
+        )
+
+        if not is_ready:
+            raise HTTPException(
+                status_code=HttpStatusCodes.SERVICE_UNAVAILABLE,
+                detail=ErrorMessages.SERVICE_UNAVAILABLE,
+            )
+
+        return ResponseWrapper.success(
+            data={
+                "ready": True,
+                "service": "assistant",
+                "timestamp": datetime.now().isoformat(),
+            },
+            message="服务就绪",
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"就绪检查失败: {str(e)}")
+        raise HTTPException(
+            status_code=HttpStatusCodes.SERVICE_UNAVAILABLE,
+            detail=ErrorMessages.SERVICE_UNAVAILABLE,
+        )
+
+
 @router.get("/config", summary="获取智能助手配置")
 @api_response("获取智能助手配置")
 async def get_assistant_config() -> Dict[str, Any]:
@@ -101,15 +148,15 @@ async def get_assistant_config() -> Dict[str, Any]:
     return ResponseWrapper.success(data=config_info, message="success")
 
 
-@router.get("/info", summary="企业级智能助手服务信息")
-@api_response("企业级智能助手服务信息")
+@router.get("/info", summary="AI-CloudOps智能助手服务信息")
+@api_response("AI-CloudOps智能助手服务信息")
 async def assistant_info() -> Dict[str, Any]:
     info = {
-        "service": "企业级智能助手",
+        "service": "AI-CloudOps智能助手",
         "service_type": "enterprise_assistant",
         "workflow_engine": "langgraph + mcp",
         "version": AppConstants.APP_VERSION,
-        "description": "企业级智能运维助手，支持RAG和MCP双模式，提供高可用、高性能的问答服务",
+        "description": "AI-CloudOps智能运维助手，支持RAG和MCP双模式，提供高可用、高性能的问答服务",
         "supported_modes": [
             {"mode": 1, "name": "RAG", "description": "基于知识库的检索增强生成"},
             {"mode": 2, "name": "MCP", "description": "基于工具调用的模型上下文协议"},

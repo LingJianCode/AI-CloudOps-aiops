@@ -6,7 +6,7 @@ AI-CloudOps-aiops
 Author: Bamboo
 Email: bamboocloudops@gmail.com
 License: Apache 2.0
-Description: 主应用程序入口
+Description: AI-CloudOps主应用程序入口
 """
 
 import logging
@@ -58,7 +58,7 @@ async def lifespan(app: FastAPI):
     logger.info(f"  - GET  {AppConstants.API_VERSION_V1}/predict       - 负载预测")
     logger.info(f"  - POST {AppConstants.API_VERSION_V1}/rca           - 根因分析")
     logger.info(f"  - POST {AppConstants.API_VERSION_V1}/autofix       - 自动修复")
-    logger.info(f"  - POST {AppConstants.API_VERSION_V1}/assistant/query - 智能小助手")
+    logger.info(f"  - POST {AppConstants.API_VERSION_V1}/assistant/query - AI-CloudOps智能小助手")
 
     if not warmup_results["success"]:
         logger.warning("部分服务预热失败，系统仍可正常使用")

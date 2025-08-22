@@ -6,7 +6,7 @@ AI-CloudOps-aiops
 Author: Bamboo
 Email: bamboocloudops@gmail.com
 License: Apache 2.0
-Description: 智能助手服务
+Description: AI-CloudOps智能助手服务
 """
 
 import asyncio
@@ -35,7 +35,7 @@ class OptimizedAssistantService(BaseService):
             logger.info("智能助手服务初始化完成")
         except Exception as e:
             logger.warning(f"服务初始化失败: {str(e)}，将在首次使用时重试")
-            # 不抛出异常，允许服务启动，在使用时再尝试初始化
+            # 允许服务启动，延迟初始化
             self._assistant = None
 
     async def _do_health_check(self) -> bool:
@@ -276,18 +276,22 @@ class OptimizedAssistantService(BaseService):
             "model_config": {
                 "provider": config.llm.provider,
                 "model": config.llm.model,
-                "temperature": 0.3,  # 降低温度提高准确性
+                "temperature": config.rag.temperature,
                 "max_tokens": config.llm.max_tokens,
             },
             "retrieval_config": {
                 "strategy": "hybrid",
                 "semantic_weight": 0.6,
                 "lexical_weight": 0.4,
-                "similarity_threshold": 0.5,  # 提高阈值
-                "max_candidates": 20,
-                "rerank_top_k": 5,
+                "similarity_threshold": config.rag.similarity_threshold,
+                "max_candidates": config.rag.max_docs_per_query * 2,
+                "rerank_top_k": config.rag.top_k,
             },
-            "cache_config": {"enabled": True, "ttl": 3600, "min_confidence": 0.6},
+            "cache_config": {
+                "enabled": True,
+                "ttl": config.rag.cache_expiry,
+                "min_confidence": 0.6,
+            },
             "performance_targets": {
                 "p50_latency_ms": 500,
                 "p95_latency_ms": 2000,
@@ -305,8 +309,10 @@ class OptimizedAssistantService(BaseService):
         if not question:
             raise ValidationError("question", "问题内容不能为空")
 
-        if len(question) > 1000:
-            raise ValidationError("question", "问题长度不能超过1000字符")
+        if len(question) > config.rag.max_context_length:
+            raise ValidationError(
+                "question", f"问题长度不能超过{config.rag.max_context_length}字符"
+            )
 
     async def _ensure_ready(self) -> None:
         """确保服务就绪"""

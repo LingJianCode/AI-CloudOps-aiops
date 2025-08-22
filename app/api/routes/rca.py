@@ -6,19 +6,28 @@ AI-CloudOps-aiops
 Author: Bamboo
 Email: bamboocloudops@gmail.com
 License: Apache 2.0
-Description: 根因分析API接口
+Description: AI-CloudOps智能根因分析API接口
 """
 
 import logging
+import uuid
+from datetime import datetime
 from typing import Any, Dict
-from fastapi import APIRouter, BackgroundTasks, Query
+
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
+
 from app.api.decorators import api_response, log_api_call
-from app.common.constants import AppConstants, ServiceConstants
+from app.common.constants import (
+    AppConstants,
+    ErrorMessages,
+    HttpStatusCodes,
+    ServiceConstants,
+)
 from app.common.response import ResponseWrapper
 from app.models import ListResponse
 from app.models.rca_models import (
-    RCAAnalyzeRequest,
     RCAAnalysisResponse,
+    RCAAnalyzeRequest,
     RCAHealthResponse,
 )
 from app.services.rca_service import RCAService
@@ -29,8 +38,8 @@ router = APIRouter(tags=["rca"])
 rca_service = RCAService()
 
 
-@router.post("/analyze", summary="执行根因分析")
-@api_response("执行根因分析")
+@router.post("/analyze", summary="AI-CloudOps执行根因分析")
+@api_response("AI-CloudOps执行根因分析")
 @log_api_call(log_request=True)
 async def analyze_root_cause(
     request: RCAAnalyzeRequest, background_tasks: BackgroundTasks
@@ -48,9 +57,6 @@ async def analyze_root_cause(
     background_tasks.add_task(rca_service.cache_analysis_result, analysis_result)
 
     # 使用统一的响应模型
-    from datetime import datetime
-    import uuid
-
     response = RCAAnalysisResponse(
         namespace=request.namespace,
         analysis_id=str(uuid.uuid4()),
@@ -67,12 +73,10 @@ async def analyze_root_cause(
     return ResponseWrapper.success(data=response.dict(), message="success")
 
 
-@router.get("/metrics", summary="获取所有可用的Prometheus指标")
-@api_response("获取所有可用的Prometheus指标")
+@router.get("/metrics", summary="AI-CloudOps获取所有可用的Prometheus指标")
+@api_response("AI-CloudOps获取所有可用的Prometheus指标")
 async def get_all_prometheus_metrics() -> Dict[str, Any]:
     """获取Prometheus指标"""
-    from datetime import datetime
-
     await rca_service.initialize()
 
     try:
@@ -89,11 +93,14 @@ async def get_all_prometheus_metrics() -> Dict[str, Any]:
         )
     except Exception as e:
         logger.error(f"获取Prometheus指标失败: {str(e)}")
-        return ResponseWrapper.error(message=f"获取指标失败: {str(e)}")
+        raise HTTPException(
+            status_code=HttpStatusCodes.INTERNAL_SERVER_ERROR,
+            detail=ErrorMessages.RCA_SERVICE_ERROR,
+        )
 
 
-@router.get("/health", summary="健康检查")
-@api_response("健康检查")
+@router.get("/health", summary="AI-CloudOps健康检查")
+@api_response("AI-CloudOps健康检查")
 async def health_check() -> Dict[str, Any]:
     """检查RCA服务及其依赖的健康状态"""
     await rca_service.initialize()
@@ -115,8 +122,49 @@ async def health_check() -> Dict[str, Any]:
     return ResponseWrapper.success(data=response.dict(), message="success")
 
 
-@router.get("/quick-diagnosis", summary="快速诊断")
-@api_response("快速诊断")
+@router.get("/ready", summary="AI-CloudOps RCA服务就绪检查")
+@api_response("AI-CloudOps RCA服务就绪检查")
+async def rca_ready() -> Dict[str, Any]:
+    """检查RCA服务是否已就绪可以提供服务"""
+    try:
+        await rca_service.initialize()
+        health_status = await rca_service.get_health_status()
+
+        is_ready = health_status.get("status") == "healthy"
+
+        if not is_ready:
+            raise HTTPException(status_code=503, detail="RCA服务未就绪")
+
+        return ResponseWrapper.success(
+            data={
+                "ready": True,
+                "service": "rca",
+                "timestamp": datetime.now().isoformat(),
+            },
+            message="服务就绪",
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"就绪检查失败: {str(e)}")
+        raise HTTPException(status_code=503, detail="RCA就绪检查失败")
+
+
+@router.get("/config", summary="AI-CloudOps获取RCA配置")
+@api_response("AI-CloudOps获取RCA配置")
+async def get_rca_config() -> Dict[str, Any]:
+    """获取RCA服务的配置信息"""
+    try:
+        await rca_service.initialize()
+        config_info = await rca_service.get_config_info()
+        return ResponseWrapper.success(data=config_info, message="配置获取成功")
+    except Exception as e:
+        logger.error(f"获取RCA配置失败: {str(e)}")
+        return ResponseWrapper.error(message=f"配置获取失败: {str(e)}")
+
+
+@router.get("/quick-diagnosis", summary="AI-CloudOps快速诊断")
+@api_response("AI-CloudOps快速诊断")
 async def quick_diagnosis(namespace: str) -> Dict[str, Any]:
     """快速问题诊断，返回最近1小时内的关键问题"""
     await rca_service.initialize()
@@ -126,8 +174,8 @@ async def quick_diagnosis(namespace: str) -> Dict[str, Any]:
     return ResponseWrapper.success(data=diagnosis_result, message="success")
 
 
-@router.get("/event-patterns", summary="事件模式分析")
-@api_response("事件模式分析")
+@router.get("/event-patterns", summary="AI-CloudOps事件模式分析")
+@api_response("AI-CloudOps事件模式分析")
 async def get_event_patterns(
     namespace: str,
     hours: float = Query(1.0, ge=0.1, le=24, description="分析时间范围（小时）"),
@@ -142,8 +190,8 @@ async def get_event_patterns(
     return ResponseWrapper.success(data=patterns_result, message="success")
 
 
-@router.get("/error-summary", summary="错误摘要")
-@api_response("错误摘要")
+@router.get("/error-summary", summary="AI-CloudOps错误摘要")
+@api_response("AI-CloudOps错误摘要")
 async def get_error_summary(
     namespace: str,
     hours: float = Query(1.0, ge=0.1, le=24, description="分析时间范围（小时）"),
@@ -158,8 +206,8 @@ async def get_error_summary(
     return ResponseWrapper.success(data=summary_result, message="success")
 
 
-@router.get("/info", summary="RCA服务信息")
-@api_response("RCA服务信息")
+@router.get("/info", summary="AI-CloudOps RCA服务信息")
+@api_response("AI-CloudOps RCA服务信息")
 async def rca_info() -> Dict[str, Any]:
     """获取RCA服务的详细信息"""
     info = {

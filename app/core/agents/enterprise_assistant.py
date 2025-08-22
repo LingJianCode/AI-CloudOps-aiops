@@ -6,7 +6,7 @@ AI-CloudOps-aiops
 Author: Bamboo
 Email: bamboocloudops@gmail.com
 License: Apache 2.0
-Description: 企业级智能助手
+Description: AI-CloudOps智能助手
 """
 
 import asyncio
@@ -243,6 +243,7 @@ class DocumentReranker:
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0,
                 max_tokens=10,
+                use_task_model=True,  # 简单操作：计算相关性分数，使用task_model
             )
 
             # 解析分数
@@ -321,8 +322,9 @@ class AnswerGenerator:
             # 生成答案
             response = await self.llm_service.generate_response(
                 messages=[{"role": "user", "content": prompt}],
-                temperature=0.3,  # 降低温度提高准确性
+                temperature=0.3,
                 max_tokens=1500,
+                use_task_model=False,  # 复杂操作：智能问答，使用主模型
             )
 
             return {"answer": response, "confidence": self._calculate_confidence(docs)}
@@ -332,7 +334,6 @@ class AnswerGenerator:
             try:
                 from app.core.agents.fallback_models import (
                     ResponseContext,
-                    SessionData,
                     generate_fallback_answer,
                 )
 
@@ -665,10 +666,7 @@ class OptimizedRAGAssistant:
         # 检查备用实现的可用性
         fallback_available = False
         try:
-            from app.core.agents.fallback_models import (
-                FallbackChatModel,
-                FallbackEmbeddings,
-            )
+
 
             fallback_available = True
         except Exception:
@@ -729,7 +727,7 @@ async def get_enterprise_assistant() -> OptimizedRAGAssistant:
                     from app.core.cache.redis_cache_manager import RedisCacheManager
                     from app.services.llm import LLMService
 
-                    logger.info("正在初始化企业级智能助手...")
+                    logger.info("正在初始化AI-CloudOps智能助手...")
 
                     # 创建LLM服务
                     logger.debug("创建LLM服务...")
@@ -788,10 +786,10 @@ async def get_enterprise_assistant() -> OptimizedRAGAssistant:
                         cache_manager=cache_manager,
                     )
 
-                    logger.info("企业级RAG助手初始化完成")
+                    logger.info("AI-CloudOps RAG助手初始化完成")
 
                 except Exception as e:
-                    logger.error(f"企业级RAG助手初始化失败: {str(e)}")
+                    logger.error(f"AI-CloudOps RAG助手初始化失败: {str(e)}")
                     # 确保失败时实例为None，以便重试
                     _assistant_instance = None
                     raise

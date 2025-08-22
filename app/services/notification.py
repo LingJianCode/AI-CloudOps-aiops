@@ -6,7 +6,7 @@ AI-CloudOps-aiops
 Author: Bamboo
 Email: bamboocloudops@gmail.com
 License: Apache 2.0
-Description: 通知服务
+Description: AI-CloudOps智能通知服务
 """
 
 import json
@@ -16,16 +16,44 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
+from app.common.constants import ServiceConstants
 from app.config.settings import config
+from app.services.base import BaseService
 
 logger = logging.getLogger("aiops.notification")
 
 
-class NotificationService:
-    def __init__(self):
+class NotificationService(BaseService):
+    """AI-CloudOps智能通知服务 - 支持多种通知渠道"""
+
+    # 通知颜色映射
+    COLOR_MAP = {
+        "info": "blue",
+        "success": "green",
+        "warning": "orange",
+        "error": "red",
+        "critical": "red",
+    }
+
+    # 默认超时时间
+    DEFAULT_REQUEST_TIMEOUT = 10
+
+    def __init__(self) -> None:
+        super().__init__("notification")
         self.feishu_webhook = config.notification.feishu_webhook
         self.enabled = config.notification.enabled
-        logger.info(f"通知服务初始化完成, 启用状态: {self.enabled}")
+        logger.info(f"AI-CloudOps通知服务初始化完成, 启用状态: {self.enabled}")
+
+    async def _do_initialize(self) -> None:
+        """初始化通知服务"""
+        if self.enabled and not self.feishu_webhook:
+            logger.warning("通知服务已启用但未配置Webhook")
+
+    async def _do_health_check(self) -> bool:
+        """健康检查"""
+        if not self.enabled:
+            return True  # 服务未启用视为健康
+        return bool(self.feishu_webhook)
 
     async def send_feishu_message(
         self, message: str, title: str = "AIOps通知", color: str = "blue"
@@ -66,20 +94,10 @@ class NotificationService:
                 self.feishu_webhook,
                 headers=headers,
                 data=json.dumps(card_data),
-                timeout=10,
+                timeout=self.DEFAULT_REQUEST_TIMEOUT,
             )
 
-            if response.status_code == 200:
-                response_data = response.json()
-                if response_data.get("code") == 0:
-                    logger.info("飞书消息发送成功")
-                    return True
-                else:
-                    logger.error(f"飞书消息发送失败: {response_data}")
-                    return False
-            else:
-                logger.error(f"飞书消息发送失败，状态码：{response.status_code}")
-                return False
+            return self._handle_response(response)
 
         except Exception as e:
             logger.error(f"发送飞书消息失败：{str(e)}")
@@ -273,15 +291,7 @@ class NotificationService:
         """通用通知发送方法"""
         try:
             # 根据通知类型选择颜色
-            color_map = {
-                "info": "blue",
-                "success": "green",
-                "warning": "orange",
-                "error": "red",
-                "critical": "red",
-            }
-
-            color = color_map.get(notification_type, "blue")
+            color = self.COLOR_MAP.get(notification_type, "blue")
 
             logger.info(f"发送通知: {title}, 类型: {notification_type}")
 
@@ -292,9 +302,30 @@ class NotificationService:
             logger.error(f"发送通知失败: {str(e)}")
             return False
 
-    def is_healthy(self) -> bool:
-        """检查通知服务健康状态"""
-        if not self.enabled:
-            return True  # 服务未启用视为健康
+    def _handle_response(self, response: requests.Response) -> bool:
+        """处理HTTP响应"""
+        try:
+            if response.status_code == ServiceConstants.HTTP_OK:
+                response_data = response.json()
+                if response_data.get("code") == 0:
+                    logger.info("飞书消息发送成功")
+                    return True
+                else:
+                    logger.error(f"飞书消息发送失败: {response_data}")
+                    return False
+            else:
+                logger.error(f"飞书消息发送失败，状态码：{response.status_code}")
+                return False
+        except Exception as e:
+            logger.error(f"处理响应失败: {str(e)}")
+            return False
 
-        return bool(self.feishu_webhook)
+    async def get_service_info(self) -> Dict[str, Any]:
+        """获取服务信息"""
+        return {
+            "service_name": self.service_name,
+            "enabled": self.enabled,
+            "webhook_configured": bool(self.feishu_webhook),
+            "supported_channels": ["feishu"],
+            "notification_types": list(self.COLOR_MAP.keys()),
+        }

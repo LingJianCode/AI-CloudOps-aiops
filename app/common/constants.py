@@ -16,9 +16,9 @@ class AppConstants:
     """应用级常量"""
 
     # 应用信息
-    APP_NAME = "AIOps Platform"
+    APP_NAME = "AI-CloudOps Platform"
     APP_VERSION = "1.0.0"
-    APP_DESCRIPTION = "智能云原生运维平台"
+    APP_DESCRIPTION = "AI-CloudOps智能云原生运维平台"
 
     # API版本
     API_VERSION_V1 = "/api/v1"
@@ -40,6 +40,18 @@ class ServiceConstants:
     DEFAULT_SERVICE_TIMEOUT = 60
     DEFAULT_WARMUP_TIMEOUT = 60
     DEFAULT_RETRY_DELAY = 2
+
+    # HTTP状态码常量
+    HTTP_OK = 200
+    HTTP_BAD_REQUEST = 400
+    HTTP_CLIENT_ERROR_MIN = 400
+    HTTP_SERVER_ERROR_MIN = 500
+    HTTP_INTERNAL_SERVER_ERROR = 500
+
+    # 错误消息常量
+    VALIDATION_ERROR_MESSAGE = "请求参数验证失败"
+    INTERNAL_SERVER_ERROR_MESSAGE = "内部服务器错误"
+    CRITICAL_ERROR_MESSAGE = "严重内部错误"
 
     # LLM服务常量
     LLM_MAX_RETRIES = 3
@@ -84,7 +96,7 @@ class ServiceConstants:
     ASSISTANT_TIMEOUT = 360  # 6分钟
     ASSISTANT_SESSION_TIMEOUT = 3600  # 1小时
 
-    # 预测服务常量  
+    # 预测服务常量
     LOW_QPS_THRESHOLD = 5.0
     PREDICTION_VARIATION_FACTOR = 0.1  # 10%波动
 

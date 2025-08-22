@@ -11,7 +11,9 @@ Description: 健康检查API接口
 
 import logging
 from typing import Any, Dict
+
 from fastapi import APIRouter, HTTPException
+
 from app.api.decorators import api_response, log_api_call
 from app.common.response import ResponseWrapper
 from app.models import HealthResponse

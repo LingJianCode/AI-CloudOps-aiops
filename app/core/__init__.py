@@ -11,6 +11,4 @@ Description: 模块初始化文件
 
 from .rca import RCAAnalysisEngine
 
-__all__ = [
-    "RCAAnalysisEngine"
-]
+__all__ = ["RCAAnalysisEngine"]

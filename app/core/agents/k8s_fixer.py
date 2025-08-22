@@ -384,7 +384,7 @@ class K8sFixerAgent:
                         time.sleep(self.retry_delay)
 
                 if not analysis:
-                    # 如果LLM分析失败，但有明确的错误描述，尝试使用直接修复方案
+                    # LLM分析失败，尝试直接修复
                     if (
                         "健康检查" in error_description
                         or "readinessProbe" in error_description

@@ -20,7 +20,7 @@ logger = logging.getLogger("aiops.cors")
 def setup_cors(app: FastAPI):
     try:
         # 配置CORS中间件
-        # 在允许凭据的情况下不能使用通配 *，改为常见本地来源，避免浏览器报错
+        # 凭据模式不支持通配符
         allowed_origins = [
             "http://localhost",
             "http://127.0.0.1",

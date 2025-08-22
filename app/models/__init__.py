@@ -10,6 +10,32 @@ Description: 模块初始化文件
 """
 
 from .data_models import AgentState, AnomalyResult, CorrelationResult, MetricData
+from .predict_models import (  # 枚举类型; 基础数据模型; 请求模型; 基础响应模型; AI增强响应模型
+    AIAnalysisContext,
+    AICapabilitiesResponse,
+    AIEnhancedPredictionResponse,
+    AIPredictionInterpretation,
+    AIReport,
+    AnomalyPrediction,
+    BasePredictionRequest,
+    CostAnalysis,
+    CpuPredictionRequest,
+    DiskPredictionRequest,
+    MemoryPredictionRequest,
+    ModelInfo,
+    MultiDimensionPredictionResponse,
+    PredictionDataPoint,
+    PredictionGranularity,
+    PredictionReportResponse,
+    PredictionResponse,
+    PredictionServiceHealthResponse,
+    PredictionType,
+    QpsPredictionRequest,
+    ResourceConstraints,
+    ResourceUtilization,
+    ScalingAction,
+    ScalingRecommendation,
+)
 from .request_models import (
     AssistantRequest,
     AutoFixRequest,
@@ -25,29 +51,6 @@ from .response_models import (
     ListResponse,
     RCAResponse,
     SessionInfoResponse,
-)
-from .predict_models import (
-    # 枚举类型
-    PredictionType,
-    PredictionGranularity,
-    ScalingAction,
-    # 基础数据模型
-    ResourceConstraints,
-    PredictionDataPoint,
-    ResourceUtilization,
-    ScalingRecommendation,
-    CostAnalysis,
-    AnomalyPrediction,
-    ModelInfo,
-    # 请求模型
-    BasePredictionRequest,
-    QpsPredictionRequest,
-    CpuPredictionRequest,
-    MemoryPredictionRequest,
-    DiskPredictionRequest,
-    # 响应模型
-    PredictionResponse,
-    PredictionServiceHealthResponse,
 )
 
 __all__ = [
@@ -88,7 +91,15 @@ __all__ = [
     "CpuPredictionRequest",
     "MemoryPredictionRequest",
     "DiskPredictionRequest",
-    # 预测响应模型
+    # 基础预测响应模型
     "PredictionResponse",
     "PredictionServiceHealthResponse",
+    # AI增强响应模型
+    "AIAnalysisContext",
+    "AIPredictionInterpretation",
+    "AIReport",
+    "AIEnhancedPredictionResponse",
+    "MultiDimensionPredictionResponse",
+    "PredictionReportResponse",
+    "AICapabilitiesResponse",
 ]

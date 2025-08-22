@@ -6,7 +6,7 @@ AI-CloudOps-aiops
 Author: Bamboo
 Email: bamboocloudops@gmail.com
 License: Apache 2.0
-Description: 监督代理
+Description: AI-CloudOps监督代理
 """
 
 import logging
@@ -85,12 +85,12 @@ class SupervisorAgent:
     async def route_next_action(self, state: AgentState) -> Dict[str, Any]:
         """Intelligent routing decision - decide next agent to execute"""
         try:
-            # 检查迭代次数限制，防止无限循环消耗资源
+            # 检查迭代次数限制
             if state.iteration_count >= state.max_iterations:
                 logger.warning(f"达到最大迭代次数限制: {state.max_iterations}")
                 return {"next": "FINISH", "reasoning": "达到最大迭代次数限制"}
 
-            # 构建消息历史文本，只保留最近的消息以避免上下文过长
+            # 构建消息历史文本
             message_history = ""
             for msg in state.messages[-10:]:  # 只保留最近10条消息，避免Token超限
                 if isinstance(msg, dict):
@@ -107,7 +107,9 @@ class SupervisorAgent:
 
             # 调用LLM服务进行智能路由决策
             messages = [{"role": "user", "content": full_prompt}]
-            response_text = await self.llm_service.generate_response(messages)
+            response_text = await self.llm_service.generate_response(
+                messages, use_task_model=True  # 简单操作：路由决策，使用task_model
+            )
 
             if not response_text:
                 logger.error("LLM响应为空")
@@ -223,7 +225,9 @@ class SupervisorAgent:
                 }
             ]
 
-            response = await self.llm_service.generate_response(messages)
+            response = await self.llm_service.generate_response(
+                messages, use_task_model=False  # 复杂操作：问题分析，使用主模型
+            )
 
             try:
                 import json

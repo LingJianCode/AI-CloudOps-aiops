@@ -6,7 +6,7 @@ AI-CloudOps-aiops
 Author: Bamboo
 Email: bamboocloudops@gmail.com
 License: Apache 2.0
-Description: 回退模型管理器
+Description: AI-CloudOps回退模型管理器
 """
 
 import hashlib
@@ -46,9 +46,10 @@ class ErrorCode(Enum):
     SERVICE_UNAVAILABLE = "SERVICE_UNAVAILABLE"
 
 
-# 配置常量 - 从配置文件中读取，提供默认值作为降级选项
+from app.config.settings import config
+
 DEFAULT_EMBEDDING_DIMENSION = 384
-MAX_INPUT_LENGTH = 10000
+MAX_INPUT_LENGTH = config.rag.max_context_length
 MAX_HISTORY_ITEMS = 5
 SESSION_ID_MIN_LENGTH = 3
 SESSION_ID_MAX_LENGTH = 128

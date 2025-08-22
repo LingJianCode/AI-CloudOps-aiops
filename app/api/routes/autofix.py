@@ -6,12 +6,14 @@ AI-CloudOps-aiops
 Author: Bamboo
 Email: bamboocloudops@gmail.com
 License: Apache 2.0
-Description: 自动修复API接口
+Description: AI-CloudOps智能自动修复API接口
 """
 
 import logging
 from typing import Any, Dict
+
 from fastapi import APIRouter, BackgroundTasks
+
 from app.api.decorators import api_response, log_api_call
 from app.common.constants import ApiEndpoints, AppConstants, ServiceConstants
 from app.common.response import ResponseWrapper
@@ -36,8 +38,8 @@ async def send_fix_notification(
 ):
     try:
         await notification_service.send_notification(
-            title=f"自动修复完成: {deployment}",
-            message=f"命名空间 {namespace} 中的部署 {deployment} 修复状态: {status}",
+            title=f"AI-CloudOps自动修复完成: {deployment}",
+            message=f"AI-CloudOps在命名空间 {namespace} 中的部署 {deployment} 修复状态: {status}",
             severity="info" if status == "completed" else "warning",
             metadata={
                 "deployment": deployment,
@@ -50,8 +52,8 @@ async def send_fix_notification(
         logger.error(f"发送修复通知失败: {str(e)}")
 
 
-@router.post("/autofix", summary="Kubernetes自动修复")
-@api_response("Kubernetes自动修复")
+@router.post("/repair", summary="AI-CloudOps Kubernetes自动修复")
+@api_response("AI-CloudOps Kubernetes自动修复")
 @log_api_call(log_request=True)
 async def autofix_k8s(
     request: AutoFixRequest, background_tasks: BackgroundTasks
@@ -90,8 +92,8 @@ async def autofix_k8s(
     return ResponseWrapper.success(data=response.dict(), message="success")
 
 
-@router.post("/autofix/diagnose", summary="Kubernetes问题诊断")
-@api_response("Kubernetes问题诊断")
+@router.post("/diagnose", summary="AI-CloudOps Kubernetes问题诊断")
+@api_response("AI-CloudOps Kubernetes问题诊断")
 @log_api_call(log_request=True)
 async def diagnose_k8s(request: DiagnoseRequest) -> Dict[str, Any]:
     await autofix_service.initialize()
@@ -104,7 +106,6 @@ async def diagnose_k8s(request: DiagnoseRequest) -> Dict[str, Any]:
         include_events=request.include_events,
     )
 
-    # 使用统一的响应模型
     from datetime import datetime
 
     response = DiagnoseResponse(
@@ -122,8 +123,8 @@ async def diagnose_k8s(request: DiagnoseRequest) -> Dict[str, Any]:
     return ResponseWrapper.success(data=response.dict(), message="success")
 
 
-@router.get("/autofix/health", summary="自动修复服务健康检查")
-@api_response("自动修复服务健康检查")
+@router.get("/health", summary="AI-CloudOps自动修复服务健康检查")
+@api_response("AI-CloudOps自动修复服务健康检查")
 async def autofix_health() -> Dict[str, Any]:
     await autofix_service.initialize()
 
@@ -132,8 +133,8 @@ async def autofix_health() -> Dict[str, Any]:
     return ResponseWrapper.success(data=health_status, message="success")
 
 
-@router.get("/autofix/config", summary="获取自动修复配置")
-@api_response("获取自动修复配置")
+@router.get("/config", summary="AI-CloudOps获取自动修复配置")
+@api_response("AI-CloudOps获取自动修复配置")
 async def get_autofix_config() -> Dict[str, Any]:
     await autofix_service.initialize()
 
@@ -142,8 +143,8 @@ async def get_autofix_config() -> Dict[str, Any]:
     return ResponseWrapper.success(data=config_info, message="success")
 
 
-@router.get("/autofix/info", summary="自动修复服务信息")
-@api_response("自动修复服务信息")
+@router.get("/info", summary="AI-CloudOps自动修复服务信息")
+@api_response("AI-CloudOps自动修复服务信息")
 async def autofix_info() -> Dict[str, Any]:
     info = {
         "service": "自动修复",

@@ -6,7 +6,7 @@ AI-CloudOps-aiops
 Author: Bamboo
 Email: bamboocloudops@gmail.com
 License: Apache 2.0
-Description: 根因分析引擎
+Description: AI-CloudOps智能根因分析引擎
 """
 
 import asyncio
@@ -711,7 +711,8 @@ class RCAAnalysisEngine:
                 messages=[{"role": "user", "content": user_prompt}],
                 system_prompt=system_prompt,
                 temperature=0.7,
-                max_tokens=300,  # 控制响应长度
+                max_tokens=300,
+                use_task_model=True,  # 简单操作：生成建议列表，使用task_model
             )
 
             if response:
@@ -1081,7 +1082,8 @@ class RCAAnalysisEngine:
                 messages=[{"role": "user", "content": user_prompt}],
                 system_prompt=system_prompt,
                 temperature=0.3,
-                max_tokens=300,  # 控制报告长度，避免过长
+                max_tokens=300,
+                use_task_model=False,  # 复杂操作：生成分析总结，使用主模型
             )
 
             if llm_summary:

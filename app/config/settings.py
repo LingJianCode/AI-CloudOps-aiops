@@ -261,7 +261,7 @@ class PredictionConfig:
             "PREDICTION_MODEL_BASE_PATH", "prediction.model_base_path", "data/models"
         )
     )
-    
+
     # 实例配置
     max_instances: int = field(
         default_factory=lambda: get_env_or_config(
@@ -273,16 +273,16 @@ class PredictionConfig:
             "PREDICTION_MIN_INSTANCES", "prediction.min_instances", 1, int
         )
     )
-    
-    # Prometheus查询配置
+
+    # Prometheus查询配置 - 使用node_exporter标准指标
     prometheus_query: str = field(
         default_factory=lambda: get_env_or_config(
             "PREDICTION_PROMETHEUS_QUERY",
             "prediction.prometheus_query",
-            'rate(nginx_ingress_controller_nginx_process_requests_total{service="ingress-nginx-controller-metrics"}[10m])',
+            'rate(node_network_receive_bytes_total{device!="lo"}[10m])',
         )
     )
-    
+
     # 预测参数
     default_prediction_hours: int = field(
         default_factory=lambda: get_env_or_config(
@@ -306,35 +306,41 @@ class PredictionConfig:
     )
     default_target_utilization: float = field(
         default_factory=lambda: get_env_or_config(
-            "PREDICTION_DEFAULT_TARGET_UTILIZATION", "prediction.default_target_utilization", 0.7, float
+            "PREDICTION_DEFAULT_TARGET_UTILIZATION",
+            "prediction.default_target_utilization",
+            0.7,
+            float,
         )
     )
     default_sensitivity: float = field(
         default_factory=lambda: get_env_or_config(
-            "PREDICTION_DEFAULT_SENSITIVITY", "prediction.default_sensitivity", 0.8, float
+            "PREDICTION_DEFAULT_SENSITIVITY",
+            "prediction.default_sensitivity",
+            0.8,
+            float,
         )
     )
-    
+
     @property
     def model_paths(self) -> Dict[str, Dict[str, str]]:
         """获取模型路径配置"""
         return CONFIG.get("prediction", {}).get("model_paths", {})
-    
+
     @property
     def scaling_thresholds(self) -> Dict[str, Dict[str, float]]:
         """获取扩缩容阈值配置"""
         return CONFIG.get("prediction", {}).get("scaling_thresholds", {})
-    
+
     @property
     def cooldown_periods(self) -> Dict[str, int]:
         """获取冷却时间配置"""
         return CONFIG.get("prediction", {}).get("cooldown_periods", {})
-    
+
     @property
     def cost_analysis_config(self) -> Dict[str, Any]:
         """获取成本分析配置"""
         return CONFIG.get("prediction", {}).get("cost_analysis", {})
-    
+
     @property
     def anomaly_detection_config(self) -> Dict[str, Any]:
         """获取异常检测配置"""

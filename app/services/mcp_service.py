@@ -6,7 +6,7 @@ AI-CloudOps-aiops
 Author: Bamboo
 Email: bamboocloudops@gmail.com
 License: Apache 2.0
-Description: MCP协议服务
+Description: AI-CloudOps MCP协议服务
 """
 
 import asyncio
@@ -22,13 +22,15 @@ logger = logging.getLogger("aiops.services.mcp")
 
 
 class MCPService(BaseService):
-    """MCP服务 - 封装MCP助手功能"""
+    """AI-CloudOps MCP服务 - 封装MCP助手功能"""
 
     def __init__(self) -> None:
         super().__init__("mcp")
         self._mcp_assistant = None
         self._health_cache = {"healthy": False, "last_check": None}
-        self._cache_timeout = 30  # 健康状态缓存30秒
+        from app.config.settings import config
+
+        self._cache_timeout = config.mcp.health_check_interval
 
     async def _do_initialize(self) -> None:
         """初始化服务"""
@@ -37,7 +39,7 @@ class MCPService(BaseService):
             logger.info("MCP服务初始化完成")
         except Exception as e:
             logger.warning(f"MCP服务初始化失败: {str(e)}，将在首次使用时重试")
-            # 不抛出异常，允许服务启动，在使用时再尝试初始化
+            # 允许服务启动，延迟初始化
             self._mcp_assistant = None
 
     async def _do_health_check(self) -> bool:
@@ -97,7 +99,7 @@ class MCPService(BaseService):
 
         try:
             # 设置超时
-            timeout = self._calculate_timeout(question)
+            timeout = config.mcp.timeout
 
             # 调用MCP助手
             start_time = datetime.now()
@@ -262,30 +264,6 @@ class MCPService(BaseService):
             except Exception as e:
                 logger.error(f"无法初始化MCP助手: {str(e)}")
                 raise AssistantError(f"MCP服务暂未就绪: {str(e)}")
-
-    def _calculate_timeout(self, question: str) -> float:
-        """智能计算超时时间"""
-        base_timeout = 30.0  # MCP基础超时时间
-
-        # 根据问题长度调整
-        length_factor = min(len(question) / 100, 2.0)
-
-        # 根据问题类型调整
-        question_lower = question.lower()
-        if any(
-            keyword in question_lower
-            for keyword in ["k8s", "kubernetes", "pod", "deployment"]
-        ):
-            type_factor = 2.0  # K8s操作需要更多时间
-        elif any(
-            keyword in question_lower for keyword in ["计算", "加", "减", "乘", "除"]
-        ):
-            type_factor = 0.5  # 数学计算很快
-        else:
-            type_factor = 1.0
-
-        timeout = base_timeout * (1 + length_factor * 0.2) * type_factor
-        return min(timeout, 120.0)  # 最大120秒
 
 
 __all__ = ["MCPService"]

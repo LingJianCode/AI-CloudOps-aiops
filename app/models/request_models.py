@@ -11,7 +11,9 @@ Description: 请求模型定义
 
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
+
 from pydantic import BaseModel, Field, field_validator
+
 from app.config.settings import config
 
 
@@ -64,7 +66,6 @@ class AutoFixRequest(BaseModel):
     event: str = Field(..., min_length=1)
     force: bool = Field(default=False)
     auto_restart: bool = Field(default=True)
-
 
 
 class AssistantRequest(BaseModel):

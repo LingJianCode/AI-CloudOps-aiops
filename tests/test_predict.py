@@ -159,8 +159,7 @@ class TestNewPredictAPI:
         
         url = f"{self.api_base_url}/predict/qps"
         payload = {
-            "prediction_type": "qps",
-            "current_value": 150.5,
+            "current_qps": 150.5,
             "prediction_hours": 12,
             "granularity": "hour",
             "include_confidence": True,
@@ -213,8 +212,7 @@ class TestNewPredictAPI:
         
         url = f"{self.api_base_url}/predict/cpu"
         payload = {
-            "prediction_type": "cpu",
-            "current_value": 75.2,
+            "current_cpu_percent": 75.2,
             "prediction_hours": 24,
             "granularity": "hour",
             "resource_constraints": {
@@ -256,8 +254,7 @@ class TestNewPredictAPI:
         
         url = f"{self.api_base_url}/predict/memory"
         payload = {
-            "prediction_type": "memory",
-            "current_value": 68.5,
+            "current_memory_percent": 68.5,
             "prediction_hours": 48,
             "granularity": "hour",
             "resource_constraints": {
@@ -296,8 +293,7 @@ class TestNewPredictAPI:
         
         url = f"{self.api_base_url}/predict/disk"
         payload = {
-            "prediction_type": "disk",
-            "current_value": 82.3,
+            "current_disk_percent": 82.3,
             "prediction_hours": 72,
             "granularity": "day",
             "resource_constraints": {
@@ -336,8 +332,8 @@ class TestNewPredictAPI:
         # 测试无效的预测类型
         url = f"{self.api_base_url}/predict/qps"
         invalid_payload = {
-            "prediction_type": "invalid_type",
-            "current_value": 100
+            "current_qps": 100,
+            "prediction_type_invalid": "invalid_type"
         }
         
         response = make_request("post", url, json_data=invalid_payload, logger=logger)
@@ -346,8 +342,7 @@ class TestNewPredictAPI:
         
         # 测试无效的QPS值
         invalid_qps_payload = {
-            "prediction_type": "qps",
-            "current_value": -10  # 负数QPS
+            "current_qps": -10  # 负数QPS
         }
         
         response = make_request("post", url, json_data=invalid_qps_payload, logger=logger)
@@ -356,8 +351,7 @@ class TestNewPredictAPI:
         
         # 测试无效的预测时长
         invalid_hours_payload = {
-            "prediction_type": "qps",
-            "current_value": 100,
+            "current_qps": 100,
             "prediction_hours": 0  # 无效时长
         }
         
@@ -379,8 +373,7 @@ class TestNewPredictAPI:
         
         url = f"{self.api_base_url}/predict/qps"
         payload = {
-            "prediction_type": "qps",
-            "current_value": 200,
+            "current_qps": 200,
             "prediction_hours": 24,
             "consider_historical_pattern": True,
             "include_confidence": True

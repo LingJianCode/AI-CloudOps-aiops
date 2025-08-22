@@ -6,7 +6,7 @@ AI-CloudOps-aiops
 Author: Bamboo
 Email: bamboocloudops@gmail.com
 License: Apache 2.0
-Description: 大语言模型服务
+Description: AI-CloudOps大语言模型服务
 """
 
 import asyncio
@@ -34,7 +34,7 @@ logger = logging.getLogger("aiops.llm")
 
 
 class LLMService:
-    """LLM服务"""
+    """AI-CloudOps LLM智能服务"""
 
     def __init__(self):
         # 初始化错误处理器和基本配置
@@ -55,7 +55,8 @@ class LLMService:
             if config.llm.provider
             else "openai"
         )
-        self.model = config.llm.effective_model
+        self.model = config.llm.model
+        self.task_model = config.llm.task_model
         self.temperature = self._validate_temperature(config.llm.temperature)
         self.max_tokens = config.llm.max_tokens
 
@@ -123,29 +124,8 @@ class LLMService:
             logger.warning(f"备用OpenAI初始化失败: {str(e)}")
 
     def _validate_temperature(self, temperature: float) -> float:
-        """
-        验证温度参数的有效性 - 模型生成参数验证方法
+        """验证温度参数有效性"""
 
-        温度参数控制着语言模型生成文本的随机性和创造性。较低的温度值
-        会使生成的文本更加确定性和一致性，而较高的温度值会增加随机性和创造性。
-
-        Args:
-            temperature (float): 输入的温度值
-
-        Returns:
-            float: 验证后的温度值，范围在[ServiceConstants.LLM_TEMPERATURE_MIN, ServiceConstants.LLM_TEMPERATURE_MAX]之内
-
-        验证规则：
-        - 温度必须在配置的最小值和最大值之间
-        - 如果超出范围，会使用0.7作为默认值
-        - 默认值0.7是一个平衡的选择，既保证了一定的创造性又保持了输出的稳定性
-
-        常用温度值参考：
-        - 0.0-0.3: 非常确定性的输出，适合事实性问答
-        - 0.4-0.7: 平衡的输出，适合大多数应用场景
-        - 0.8-1.0: 富有创造性的输出，适合文学创作等
-        """
-        # 检查温度值是否在允许的范围内
         if not (
             ServiceConstants.LLM_TEMPERATURE_MIN
             <= temperature
@@ -154,7 +134,7 @@ class LLMService:
             logger.warning(
                 f"温度参数 {temperature} 超出范围 [{ServiceConstants.LLM_TEMPERATURE_MIN}, ServiceConstants.LLM_TEMPERATURE_MAX]，使用默认值"
             )
-            return ServiceConstants.LLM_DEFAULT_TEMPERATURE  # 返回平衡的默认温度值
+            return ServiceConstants.LLM_DEFAULT_TEMPERATURE
         return temperature
 
     def _validate_generate_params(
@@ -163,50 +143,18 @@ class LLMService:
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """
-        验证生成参数的有效性 - 请求参数验证和标准化方法
+        """验证生成参数"""
 
-        在调用LLM API之前，验证所有输入参数的格式和有效性，确保请求能够成功执行。
-        该方法会检查消息格式、参数范围等，并提供合理的默认值。
-
-        Args:
-            messages (List[Dict[str, str]]): 对话消息列表，每个消息包含role和content
-            temperature (Optional[float]): 生成温度参数，如果为None则使用实例默认值
-            max_tokens (Optional[int]): 最大令牌数，如果为None则使用实例默认值
-
-        Returns:
-            Dict[str, Any]: 验证后的参数字典，包含：
-                - messages: 验证后的消息列表
-                - temperature: 有效的温度值
-                - max_tokens: 有效的最大令牌数
-
-        Raises:
-            ValidationError: 当参数格式无效时抛出
-
-        验证项目：
-        1. 消息列表不能为空
-        2. 每个消息必须包含role和content字段
-        3. 温度参数必须在有效范围内
-        4. 令牌数必须为正数
-
-        消息格式要求：
-        - role: 消息角色，通常为"user"、"assistant"或"system"
-        - content: 消息内容，不能为空字符串
-        """
-        # 验证消息列表不能为空
         if not messages:
             raise ValidationError("消息列表不能为空")
 
-        # 验证每个消息的格式
         for i, msg in enumerate(messages):
             if not isinstance(msg, dict) or "role" not in msg or "content" not in msg:
                 raise ValidationError(f"消息 {i} 格式无效，需要包含 role 和 content")
 
-        # 设置有效的温度和令牌数参数
         effective_temp = temperature or self.temperature
         effective_max_tokens = max_tokens or self.max_tokens
 
-        # 验证温度范围
         if temperature is not None:
             validate_field_range(
                 {"temperature": temperature},
@@ -215,7 +163,6 @@ class LLMService:
                 ServiceConstants.LLM_TEMPERATURE_MAX,
             )
 
-        # 返回验证后的参数字典
         return {
             "messages": messages,
             "temperature": effective_temp,
@@ -230,54 +177,37 @@ class LLMService:
         temperature: Optional[float] = None,
         stream: bool = False,
         max_tokens: Optional[int] = None,
+        use_task_model: bool = False,
     ) -> Union[str, Dict[str, Any]]:
-        """
-        生成LLM响应 - 主要的API接口方法
-
-        这是LLM服务的主要方法，用于向语言模型发送请求并获取响应。
-        该方法支持系统提示、消息历史、响应格式控制等高级功能。
+        """生成LLM响应
 
         Args:
-            messages: 对话消息列表，每个消息包含role和content
-            system_prompt: 可选的系统指令，用于控制模型行为
-            response_format: 可选的响应格式控制，如{"type": "json_object"}
-            temperature: 生成温度参数，控制随机性
-            stream: 是否使用流式响应
-            max_tokens: 最大生成令牌数
-
-        Returns:
-            Union[str, Dict[str, Any]]: 模型生成的响应文本或结构化数据
-
-        Raises:
-            ServiceError: 当生成过程失败时
-            ValidationError: 当输入参数无效时
+            use_task_model: True使用task_model(简单操作), False使用model(复杂操作)
         """
         try:
-            # 验证并预处理消息和参数
+
             if system_prompt:
-                # 添加系统提示到消息列表的开头
                 messages = [{"role": "system", "content": system_prompt}] + messages
 
-            # 验证并标准化参数
             params = self._validate_generate_params(
                 messages=messages, temperature=temperature, max_tokens=max_tokens
             )
 
-            # 使用主要提供商生成响应，自动故障转移到备用提供商
             response = await self._execute_generation_with_fallback(
                 messages=params["messages"],
                 response_format=response_format,
                 temperature=params["temperature"],
                 max_tokens=params["max_tokens"],
                 stream=stream,
+                use_task_model=use_task_model,
             )
 
             return response
         except ValidationError as e:
-            # 参数验证错误，直接向上传递
+
             raise e
         except Exception as e:
-            # 记录错误并抛出服务错误
+
             error_msg, details = self.error_handler.log_and_return_error(
                 e, "LLM响应生成失败"
             )
@@ -295,46 +225,34 @@ class LLMService:
         temperature: float,
         max_tokens: int,
         stream: bool = False,
+        use_task_model: bool = False,
     ) -> Union[str, Dict[str, Any]]:
         """
         执行生成并提供故障转移机制 - 内部方法
-
-        尝试使用主要提供商生成响应，如果失败则自动切换到备用提供商。
-        这个方法实现了系统的高可用性和容错能力。
-
-        Args:
-            messages: 对话消息列表
-            response_format: 响应格式控制
-            temperature: 生成温度参数
-            max_tokens: 最大令牌数
-            stream: 是否使用流式响应
-
-        Returns:
-            Union[str, Dict[str, Any]]: 生成的响应
-
-        Raises:
-            ExternalServiceError: 当所有提供商都失败时
         """
         # 使用主要提供商
         try:
-            logger.info(f"使用主要提供商({self.provider})生成响应")
+            selected_model = self.task_model if use_task_model else self.model
+            logger.info(
+                f"使用主要提供商({self.provider})生成响应，模型: {selected_model}"
+            )
 
             if self.provider.lower() == "openai":
-                # 调用OpenAI API
                 response = await self._call_openai_api(
                     messages=messages,
                     response_format=response_format,
                     temperature=temperature,
                     max_tokens=max_tokens,
                     stream=stream,
+                    model=selected_model,
                 )
             elif self.provider.lower() == "ollama":
-                # 调用Ollama API
                 response = await self._call_ollama_api(
                     messages=messages,
                     temperature=temperature,
                     max_tokens=max_tokens,
                     stream=stream,
+                    model=selected_model,
                 )
             else:
                 raise ValidationError(f"不支持的提供商: {self.provider}")
@@ -368,6 +286,7 @@ class LLMService:
                         temperature=temperature,
                         max_tokens=max_tokens,
                         stream=stream,
+                        model=selected_model,
                     )
                 elif self.backup_provider.lower() == "ollama":
                     backup_response = await self._call_ollama_api(
@@ -375,6 +294,7 @@ class LLMService:
                         temperature=temperature,
                         max_tokens=max_tokens,
                         stream=stream,
+                        model=selected_model,
                     )
             except Exception as backup_e:
                 # 备用提供商也失败，尝试使用最终的备用聊天模型
@@ -433,11 +353,12 @@ class LLMService:
         temperature: float,
         max_tokens: int,
         stream: bool = False,
+        model: Optional[str] = None,
     ) -> Optional[str]:
         """调用OpenAI兼容API生成响应"""
         try:
             kwargs = {
-                "model": config.llm.model,  # 确保使用正确的模型名称
+                "model": model or config.llm.model,
                 "messages": messages,
                 "temperature": temperature,
                 "max_tokens": max_tokens,
@@ -489,6 +410,7 @@ class LLMService:
         temperature: float,
         max_tokens: int,
         stream: bool = False,
+        model: Optional[str] = None,
     ) -> Optional[str]:
         """调用Ollama API生成响应"""
         try:
@@ -502,12 +424,13 @@ class LLMService:
             ]
             options = {"temperature": temperature, "num_predict": max_tokens}
 
+            used_model = model or config.llm.ollama_model
             if stream:
-                # 流式处理 - 使用 asyncio.to_thread 避免阻塞
+
                 def _sync_stream_call():
                     response = ""
                     for chunk in ollama.chat(
-                        model=config.llm.ollama_model,
+                        model=used_model,
                         messages=formatted_messages,
                         stream=True,
                         options=options,
@@ -521,7 +444,7 @@ class LLMService:
                 # 常规响应 - 使用 asyncio.to_thread 避免阻塞
                 def _sync_call():
                     return ollama.chat(
-                        model=config.llm.ollama_model,
+                        model=used_model,
                         messages=formatted_messages,
                         options=options,
                     )
@@ -589,6 +512,7 @@ class LLMService:
                 system_prompt=system_prompt,
                 response_format=response_format,
                 temperature=0.1,
+                use_task_model=False,  # 复杂操作：K8s问题分析，使用主模型
             )
 
             if response:
@@ -601,7 +525,10 @@ class LLMService:
                     logger.error(f"解析K8s分析JSON失败: {str(json_error)}")
                     # 尝试再次调用，但不指定JSON响应格式
                     alternative_response = await self.generate_response(
-                        messages=messages, system_prompt=system_prompt, temperature=0.1
+                        messages=messages,
+                        system_prompt=system_prompt,
+                        temperature=0.1,
+                        use_task_model=False,  # 复杂操作：K8s问题分析，使用主模型
                     )
 
                     if alternative_response:
@@ -671,6 +598,7 @@ class LLMService:
                 messages=fix_messages,
                 temperature=0.1,
                 response_format={"type": "json_object"},
+                use_task_model=False,  # 复杂操作：JSON格式修复，使用主模型
             )
 
             if fixed_response:
@@ -732,7 +660,10 @@ class LLMService:
 
             # 生成根因分析总结
             response = await self.generate_response(
-                messages=messages, system_prompt=system_prompt, temperature=0.3
+                messages=messages,
+                system_prompt=system_prompt,
+                temperature=0.3,
+                use_task_model=False,  # 复杂操作：RCA总结生成，使用主模型
             )
 
             return response
@@ -766,7 +697,10 @@ class LLMService:
 
             # 生成修复说明
             response = await self.generate_response(
-                messages=messages, system_prompt=system_prompt, temperature=0.3
+                messages=messages,
+                system_prompt=system_prompt,
+                temperature=0.3,
+                use_task_model=False,  # 复杂操作：修复说明生成，使用主模型
             )
 
             return response
@@ -776,34 +710,7 @@ class LLMService:
             return None
 
     async def is_healthy(self) -> bool:
-        """
-        检查LLM服务是否健康 - 综合服务健康状态检查方法
-
-        检查所有配置的LLM提供商的健康状态，确保至少有一个提供商可用。
-        该方法会先检查主要提供商，如果不可用则检查备用提供商。
-
-        Returns:
-            bool: True表示服务健康，False表示所有提供商都不可用
-
-        检查策略：
-        1. 优先检查主要提供商的健康状态
-        2. 如果主要提供商健康，直接返回True
-        3. 如果主要提供商不健康，检查备用提供商
-        4. 如果备用提供商健康，返回True
-        5. 如果所有提供商都不健康，返回False
-
-        健康检查项目：
-        - 服务连接性测试
-        - API密钥有效性验证
-        - 简单请求响应测试
-        - 模型可用性检查
-
-        应用场景：
-        - 服务启动时的健康检查
-        - 定期服务状态监控
-        - 故障转移决策依据
-        - 系统诊断和运维
-        """
+        """检查LLM服务是否健康"""""
         try:
             logger.info("检查LLM服务健康状态")
 
@@ -834,31 +741,7 @@ class LLMService:
 
     async def _check_provider_health(self, provider: str) -> bool:
         """
-        检查特定提供商的健康状态 - 单个提供商健康检查方法
-
-        针对指定的LLM提供商执行健康检查，验证其服务可用性和响应能力。
-        该方法会根据不同的提供商类型调用相应的健康检查逻辑。
-
-        Args:
-            provider (str): 要检查的提供商名称，支持"openai"和"ollama"
-
-        Returns:
-            bool: True表示提供商健康，False表示不可用
-
-        检查流程：
-        1. 识别提供商类型
-        2. 调用对应的健康检查方法
-        3. 处理检查过程中的异常
-        4. 返回健康状态结果
-
-        支持的提供商：
-        - openai: 检查OpenAI API的连接性和可用性
-        - ollama: 检查本地Ollama服务的状态
-
-        异常处理：
-        - 不支持的提供商类型会记录警告
-        - 检查过程中的异常会被捕获并记录
-        - 任何异常都会导致健康检查失败
+        检查特定提供商的健康状态
         """
         try:
             if provider.lower() == "openai":

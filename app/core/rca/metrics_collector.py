@@ -6,7 +6,7 @@ AI-CloudOps-aiops
 Author: Bamboo
 Email: bamboocloudops@gmail.com
 License: Apache 2.0
-Description: 指标数据收集器
+Description: AI-CloudOps指标数据收集器
 """
 
 import asyncio

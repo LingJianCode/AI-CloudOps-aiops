@@ -302,6 +302,10 @@ class TestResult:
         """设置环境设置状态"""
         self.results["environment_setup"] = success
 
+    def get_summary(self) -> Dict[str, Any]:
+        """获取测试结果摘要"""
+        return calculate_test_summary(self.results)
+
     def finalize(self) -> Dict[str, Any]:
         """完成测试并返回最终结果"""
         duration = time.time() - self.start_time

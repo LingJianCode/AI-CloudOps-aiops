@@ -164,6 +164,7 @@ class BaseService(ABC):
         """
         if not self._initialized:
             from app.common.exceptions import PredictionError
+
             raise PredictionError("服务未初始化")
 
 

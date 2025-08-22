@@ -6,7 +6,7 @@ AI-CloudOps-aiops
 Author: Bamboo
 Email: bamboocloudops@gmail.com
 License: Apache 2.0
-Description: 自动修复服务
+Description: AI-CloudOps智能自动修复服务
 """
 
 import logging

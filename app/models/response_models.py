@@ -10,6 +10,7 @@ Description: 响应模型定义
 """
 
 from typing import Any, Dict, Generic, List, Optional, TypeVar
+
 from pydantic import BaseModel
 
 T = TypeVar("T")

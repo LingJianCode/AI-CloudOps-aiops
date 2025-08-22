@@ -41,20 +41,9 @@ except ImportError:
         logging.error(f"导入模块失败: {e}")
         sys.exit(1)
 
-# 确保日志目录存在
-log_dir = "logs"
-if not os.path.exists(log_dir):
-    os.makedirs(log_dir)
+from app.config.logging import setup_logging
 
-# 配置日志
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler(os.path.join(log_dir, "mcp_server.log"), encoding="utf-8"),
-    ],
-)
+setup_logging()
 logger = logging.getLogger("aiops.mcp.main")
 
 # 全局变量
@@ -353,27 +342,13 @@ def main():
         # 启动服务
         logger.info("正在启动MCP服务端...")
 
-        # 确定服务器配置
-        if args.host:
-            server_host = args.host
-        else:
-            server_host = getattr(config, "host", "0.0.0.0")
-
+        server_host = args.host or config.host
         if args.port:
             server_port = args.port
         else:
-            # 从MCP服务器URL中提取端口
-            server_url = getattr(config.mcp, "server_url", "http://0.0.0.0:9000")
-            _, server_port = parse_server_url(server_url)
-
-        # 确定日志级别
-        if args.log_level:
-            log_level = args.log_level.lower()
-        else:
-            log_level = getattr(config, "log_level", "INFO").lower()
-
-        # 确定是否启用重载
-        reload_enabled = args.reload or getattr(config, "debug", False)
+            _, server_port = parse_server_url(config.mcp.server_url)
+        log_level = (args.log_level or config.log_level).lower()
+        reload_enabled = args.reload or config.debug
 
         logger.info(f"服务器将在 {server_host}:{server_port} 启动")
         logger.info(f"启动命令: python -m app.mcp.main")

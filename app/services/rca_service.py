@@ -6,7 +6,7 @@ AI-CloudOps-aiops
 Author: Bamboo
 Email: bamboocloudops@gmail.com
 License: Apache 2.0
-Description: 根因分析服务
+Description: AI-CloudOps智能根因分析服务
 """
 
 import logging
@@ -460,5 +460,5 @@ class RCAService(BaseService, HealthCheckMixin):
                 "kubernetes_pod_cpu_usage_seconds_total",
                 "kubernetes_pod_memory_usage_bytes",
                 "container_cpu_usage_seconds_total",
-                "container_memory_usage_bytes"
+                "container_memory_usage_bytes",
             ]
