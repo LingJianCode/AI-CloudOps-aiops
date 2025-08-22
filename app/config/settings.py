@@ -487,6 +487,16 @@ class RAGConfig:
             "RAG_TIMEOUT", "rag.timeout", 360, int
         )
     )
+    max_docs_per_query: int = field(
+        default_factory=lambda: get_env_or_config(
+            "RAG_MAX_DOCS_PER_QUERY", "rag.max_docs_per_query", 10, int
+        )
+    )
+    cache_expiry: int = field(
+        default_factory=lambda: get_env_or_config(
+            "RAG_CACHE_EXPIRY", "rag.cache_expiry", 3600, int
+        )
+    )
 
     @property
     def effective_embedding_model(self) -> str:

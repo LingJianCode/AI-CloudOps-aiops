@@ -17,6 +17,7 @@ from typing import Any, Dict, Optional
 from ..common.constants import ServiceConstants
 from ..common.exceptions import AssistantError, ValidationError
 from ..core.agents.enterprise_assistant import get_enterprise_assistant
+from ..config.settings import config
 from .base import BaseService
 
 logger = logging.getLogger("aiops.services.assistant")
@@ -28,6 +29,7 @@ class OptimizedAssistantService(BaseService):
     def __init__(self) -> None:
         super().__init__("assistant")
         self._assistant = None
+        self._performance_monitor = PerformanceMonitor()
 
     async def _do_initialize(self) -> None:
         try:
@@ -261,8 +263,6 @@ class OptimizedAssistantService(BaseService):
 
     async def get_assistant_config(self) -> Dict[str, Any]:
         """获取配置信息"""
-        from ..config.settings import config
-
         return {
             "service_type": "optimized_rag",
             "workflow_engine": "langgraph",
