@@ -196,8 +196,3 @@ python3 train_all_models.py test
 - 作者：Bamboo
 - 邮箱：bamboocloudops@gmail.com
 - License：Apache 2.0
-
-## 更新日志
-
-- v2.0 (2024-01): 支持四种预测模型的统一训练框架
-- v1.0 (2023-12): 初始版本，仅支持QPS预测

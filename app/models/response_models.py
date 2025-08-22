@@ -24,55 +24,6 @@ class APIResponse(BaseModel, Generic[T]):
     data: Optional[T] = None
 
 
-class AnomalyInfo(BaseModel):
-    """异常信息模型"""
-
-    count: int
-    first_occurrence: str
-    last_occurrence: str
-    max_score: float
-    avg_score: float
-    detection_methods: Dict[str, Any]
-
-
-class RootCauseCandidate(BaseModel):
-    """根因候选模型"""
-
-    metric: str
-    confidence: float
-    first_occurrence: str
-    anomaly_count: int
-    related_metrics: List[tuple]
-    description: Optional[str] = None
-
-
-class RCAResponse(BaseModel):
-    """根因分析响应模型"""
-
-    status: str
-    anomalies: Dict[str, AnomalyInfo]
-    correlations: Dict[str, List[tuple]]
-    root_cause_candidates: List[RootCauseCandidate]
-    analysis_time: str
-    time_range: Dict[str, str]
-    metrics_analyzed: List[str]
-    summary: Optional[str] = None
-
-
-class PredictionResponse(BaseModel):
-    """负载预测响应模型"""
-
-    service_name: str
-    prediction_hours: int
-    instances: int
-    current_qps: Optional[float] = None
-    timestamp: str
-    confidence: Optional[float] = None
-    model_version: Optional[str] = None
-    prediction_type: Optional[str] = None
-    features: Optional[Dict[str, float]] = None
-
-
 class AutoFixResponse(BaseModel):
     """自动修复响应模型"""
 
@@ -138,14 +89,4 @@ class DiagnoseResponse(BaseModel):
     pods_status: Optional[Dict[str, Any]] = None
     logs_summary: Optional[Dict[str, Any]] = None
     events_summary: Optional[Dict[str, Any]] = None
-    timestamp: str
-
-
-class PredictTrendResponse(BaseModel):
-    """趋势预测响应模型"""
-
-    service_name: Optional[str] = None
-    prediction_hours: int
-    trend_data: List[Dict[str, Any]]
-    insights: List[str] = []
     timestamp: str

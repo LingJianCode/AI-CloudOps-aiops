@@ -9,53 +9,9 @@ License: Apache 2.0
 Description: 请求模型定义
 """
 
-from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 
-from pydantic import BaseModel, Field, field_validator
-
-from app.config.settings import config
-
-
-class RCARequest(BaseModel):
-    """根因分析请求模型"""
-
-    start_time: Optional[datetime] = None
-    end_time: Optional[datetime] = None
-    metrics: Optional[List[str]] = None
-    time_range_minutes: Optional[int] = Field(None, ge=1, le=config.rca.max_time_range)
-
-    @field_validator("start_time", "end_time", mode="before")
-    @classmethod
-    def parse_datetime(cls, v):
-        if isinstance(v, str):
-            try:
-                return datetime.fromisoformat(v.replace("Z", "+00:00"))
-            except ValueError:
-                return datetime.fromisoformat(v)
-        return v
-
-    def __init__(self, **data):
-        super().__init__(**data)
-
-        # 设置默认时间范围
-        if not self.start_time or not self.end_time:
-            tz = timezone.utc
-            now = datetime.now(tz)
-            if self.time_range_minutes:
-                self.end_time = now
-                self.start_time = self.end_time - timedelta(
-                    minutes=self.time_range_minutes
-                )
-            else:
-                self.end_time = now
-                self.start_time = self.end_time - timedelta(
-                    minutes=config.rca.default_time_range
-                )
-
-        # 设置默认指标
-        if not self.metrics:
-            self.metrics = config.rca.default_metrics
+from pydantic import BaseModel, Field
 
 
 class AutoFixRequest(BaseModel):
@@ -87,12 +43,6 @@ class AssistantRequest(BaseModel):
     )
 
 
-class SessionRequest(BaseModel):
-    """会话请求模型"""
-
-    session_id: str = Field(..., description="会话ID")
-
-
 class DiagnoseRequest(BaseModel):
     """K8s问题诊断请求模型"""
 
@@ -103,8 +53,4 @@ class DiagnoseRequest(BaseModel):
     include_events: bool = Field(True, description="是否包含事件信息")
 
 
-class PredictTrendRequest(BaseModel):
-    """负载趋势预测请求模型"""
 
-    service_name: Optional[str] = Field(None, description="服务名称")
-    hours: int = Field(24, description="预测小时数", ge=1, le=168)

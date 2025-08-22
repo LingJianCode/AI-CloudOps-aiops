@@ -1,68 +1,67 @@
 # 应用基础配置
 app:
-  debug: true  # 开发环境下启用调试模式和热重载
-  host: 0.0.0.0
-  port: 8080
-  log_level: INFO
+  debug: true  # 是否启用调试模式（开发环境建议为true，生产环境建议为false）
+  host: 0.0.0.0  # 应用监听的主机地址
+  port: 8080  # 应用监听的端口号
+  log_level: INFO  # 日志级别（可选：DEBUG/INFO/WARNING/ERROR）
 
 # Prometheus配置
 prometheus:
-  host: 127.0.0.1:9090
-  timeout: 30
+  host: 127.0.0.1:9090  # Prometheus服务地址
+  timeout: 30  # Prometheus请求超时时间（秒）
 
 # LLM模型配置
 llm:
-  provider: openai # 可选值: openai, ollama - 设置主要的LLM提供商
-  model: Qwen/Qwen3-14B # 使用OpenAI提供商时的模型名称
-  task_model: Qwen/Qwen2.5-14B-Instruct
-  temperature: 0.7
-  max_tokens: 2048
-  request_timeout: 360 # LLM请求超时时间(秒)
-  # 备用Ollama模型配置
-  ollama_model: qwen2.5:3b # Ollama本地模型名称
+  provider: openai # LLM主提供商（可选：openai, ollama）
+  model: Qwen/Qwen3-14B # 主模型名称（OpenAI时使用）
+  task_model: Qwen/Qwen2.5-14B-Instruct # 任务专用模型名称
+  temperature: 0.7 # 生成温度，值越大结果越随机
+  max_tokens: 2048 # 最大生成Token数
+  request_timeout: 360 # LLM请求超时时间（秒）
+  ollama_model: qwen2.5:3b # Ollama本地模型名称（备用）
   ollama_base_url: http://127.0.0.1:11434/v1 # Ollama API基础URL
 
 # 测试配置
 testing:
-  skip_llm_tests: false # 设置为true可跳过依赖LLM的测试
+  skip_llm_tests: false # 是否跳过依赖LLM的测试（true跳过，false不跳过）
 
 # Kubernetes配置
 kubernetes:
-  in_cluster: false
-  config_path: ./deploy/kubernetes/config
-  namespace: default
+  in_cluster: false # 是否在K8s集群内部运行
+  config_path: ./deploy/kubernetes/config # K8s配置文件路径（仅in_cluster为false时需要）
+  namespace: default # 默认命名空间
 
 # 根因分析配置
 rca:
-  default_time_range: 30
-  max_time_range: 1440
-  anomaly_threshold: 0.65
-  correlation_threshold: 0.7
-  
+  default_time_range: 30 # 默认分析时间范围（分钟）
+  max_time_range: 1440 # 最大分析时间范围（分钟）
+  anomaly_threshold: 0.65 # 异常检测阈值
+  correlation_threshold: 0.7 # 相关性阈值
+
   # 指标收集器配置
   metrics:
-    step_interval: "1m"
-    concurrent_limit: 3
-    cache_size: 100
-    cache_ttl: 60 # 缓存过期时间(秒)
-    anomaly_cache_size: 500
-    thresholds: # 阈值配置
+    step_interval: "1m" # 指标采样步长
+    concurrent_limit: 3 # 并发采集限制
+    cache_size: 100 # 指标缓存大小
+    cache_ttl: 60 # 缓存过期时间（秒）
+    anomaly_cache_size: 500 # 异常缓存大小
+    thresholds: # 指标阈值配置
       cpu_usage:
-        warning: 0.7
-        critical: 0.9
+        warning: 0.7 # CPU使用率预警阈值
+        critical: 0.9 # CPU使用率严重阈值
       memory_usage:
-        warning: 0.8
-        critical: 0.95
+        warning: 0.8 # 内存使用率预警阈值
+        critical: 0.95 # 内存使用率严重阈值
       disk_usage:
-        warning: 0.75
-        critical: 0.9
+        warning: 0.75 # 磁盘使用率预警阈值
+        critical: 0.9 # 磁盘使用率严重阈值
       error_rate:
-        warning: 0.01
-        critical: 0.05
+        warning: 0.01 # 错误率预警阈值
+        critical: 0.05 # 错误率严重阈值
       restart_count:
-        warning: 3
-        critical: 10
-    default_metrics:
+        warning: 3 # 重启次数预警阈值
+        critical: 10 # 重启次数严重阈值
+    default_metrics: # 默认监控指标列表
       - container_cpu_usage_seconds_total
       - container_memory_working_set_bytes
       - kube_pod_container_status_restarts_total
@@ -74,154 +73,143 @@ rca:
 
   # 事件收集器配置
   events:
-    default_event_types: ["Warning", "Normal"]
-    batch_size: 100
-    max_events_limit: 1000
-    concurrent_limit: 5
-    
+    default_event_types: ["Warning", "Normal"] # 默认收集的事件类型
+    batch_size: 100 # 事件批量处理大小
+    max_events_limit: 1000 # 最大事件数量限制
+    concurrent_limit: 5 # 并发事件收集限制
+
   # 日志收集器配置  
   logs:
-    max_lines: 500
-    error_lines: 200
-    concurrent_limit: 5
-    cache_size: 1000
-    dedup_cache_size: 10000
-    max_message_length: 1000
-    max_stack_trace_lines: 20
-    default_error_only: true
-    
+    max_lines: 500 # 单次收集最大日志行数
+    error_lines: 200 # 单次收集最大错误日志行数
+    concurrent_limit: 5 # 并发日志收集限制
+    cache_size: 1000 # 日志缓存大小
+    dedup_cache_size: 10000 # 日志去重缓存大小
+    max_message_length: 1000 # 单条日志最大长度
+    max_stack_trace_lines: 20 # 堆栈跟踪最大行数
+    default_error_only: true # 默认只收集错误日志
+
   # 通用配置
-  max_retries: 3
-  timeout: 30
+  max_retries: 3 # 最大重试次数
+  timeout: 30 # 请求超时时间（秒）
 
 # 预测配置
 prediction:
-  # 模型路径配置
-  model_base_path: data/models
-  model_paths:
+  model_base_path: data/models # 预测模型基础路径
+  model_paths: # 各类预测模型及其相关文件路径
     qps:
-      model: data/models/qps_prediction_model.pkl
-      scaler: data/models/qps_prediction_scaler.pkl
-      metadata: data/models/qps_prediction_model_metadata.json
+      model: data/models/qps_prediction_model.pkl # QPS预测模型文件
+      scaler: data/models/qps_prediction_scaler.pkl # QPS归一化器文件
+      metadata: data/models/qps_prediction_model_metadata.json # QPS模型元数据
     cpu:
-      model: data/models/cpu_prediction_model.pkl
-      scaler: data/models/cpu_prediction_scaler.pkl
-      metadata: data/models/cpu_prediction_model_metadata.json
+      model: data/models/cpu_prediction_model.pkl # CPU预测模型文件
+      scaler: data/models/cpu_prediction_scaler.pkl # CPU归一化器文件
+      metadata: data/models/cpu_prediction_model_metadata.json # CPU模型元数据
     memory:
-      model: data/models/memory_prediction_model.pkl
-      scaler: data/models/memory_prediction_scaler.pkl
-      metadata: data/models/memory_prediction_model_metadata.json
+      model: data/models/memory_prediction_model.pkl # 内存预测模型文件
+      scaler: data/models/memory_prediction_scaler.pkl # 内存归一化器文件
+      metadata: data/models/memory_prediction_model_metadata.json # 内存模型元数据
     disk:
-      model: data/models/disk_prediction_model.pkl
-      scaler: data/models/disk_prediction_scaler.pkl
-      metadata: data/models/disk_prediction_model_metadata.json
-  
-  # 实例配置
-  max_instances: 20
-  min_instances: 1
-  
-  # Prometheus查询配置
-  prometheus_query: 'rate(nginx_ingress_controller_nginx_process_requests_total{service="ingress-nginx-controller-metrics"}[10m])'
-  
-  # 预测参数
-  default_prediction_hours: 24
-  max_prediction_hours: 168
-  min_prediction_hours: 1
-  default_granularity: hour
-  default_target_utilization: 0.7
-  default_sensitivity: 0.8
-  
-  # 扩缩容阈值
-  scaling_thresholds:
+      model: data/models/disk_prediction_model.pkl # 磁盘预测模型文件
+      scaler: data/models/disk_prediction_scaler.pkl # 磁盘归一化器文件
+      metadata: data/models/disk_prediction_model_metadata.json # 磁盘模型元数据
+
+  max_instances: 20 # 最大实例数
+  min_instances: 1 # 最小实例数
+
+  prometheus_query: 'rate(nginx_ingress_controller_nginx_process_requests_total{service="ingress-nginx-controller-metrics"}[10m])' # 默认Prometheus查询语句
+
+  default_prediction_hours: 24 # 默认预测时长（小时）
+  max_prediction_hours: 168 # 最大预测时长（小时）
+  min_prediction_hours: 1 # 最小预测时长（小时）
+  default_granularity: hour # 默认预测粒度
+  default_target_utilization: 0.7 # 默认目标利用率
+  default_sensitivity: 0.8 # 默认灵敏度
+
+  scaling_thresholds: # 扩缩容阈值配置
     qps:
-      scale_up: 1000
-      scale_down: 200
-      per_instance: 500
+      scale_up: 1000 # QPS扩容阈值
+      scale_down: 200 # QPS缩容阈值
+      per_instance: 500 # 单实例QPS阈值
     cpu:
-      scale_up: 80
-      scale_down: 30
-      optimal: 60
+      scale_up: 80 # CPU扩容阈值（百分比）
+      scale_down: 30 # CPU缩容阈值（百分比）
+      optimal: 60 # CPU最优利用率（百分比）
     memory:
-      scale_up: 85
-      scale_down: 40
-      optimal: 70
+      scale_up: 85 # 内存扩容阈值（百分比）
+      scale_down: 40 # 内存缩容阈值（百分比）
+      optimal: 70 # 内存最优利用率（百分比）
     disk:
-      scale_up: 90
-      scale_down: 50
-      optimal: 75
-  
-  # 冷却时间（分钟）
-  cooldown_periods:
-    scale_up: 5
-    scale_down: 15
-  
-  # 成本分析配置
-  cost_analysis:
-    enabled: true
-    default_pricing:
+      scale_up: 90 # 磁盘扩容阈值（百分比）
+      scale_down: 50 # 磁盘缩容阈值（百分比）
+      optimal: 75 # 磁盘最优利用率（百分比）
+
+  cooldown_periods: # 扩缩容冷却时间（分钟）
+    scale_up: 5 # 扩容冷却时间
+    scale_down: 15 # 缩容冷却时间
+
+  cost_analysis: # 成本分析配置
+    enabled: true # 是否启用成本分析
+    default_pricing: # 默认定价（单位：元/小时）
       instance:
-        small: 0.02
-        medium: 0.04
-        large: 0.08
-        xlarge: 0.16
-      cpu_per_core: 0.02
-      memory_per_gb: 0.005
-      disk_per_gb: 0.0001
-      bandwidth_per_gb: 0.01
-  
-  # 异常检测配置
-  anomaly_detection:
-    default_method: zscore
-    default_sensitivity: 0.8
-    enabled_methods:
+        small: 0.02 # 小型实例价格
+        medium: 0.04 # 中型实例价格
+        large: 0.08 # 大型实例价格
+        xlarge: 0.16 # 超大型实例价格
+      cpu_per_core: 0.02 # 每核CPU价格
+      memory_per_gb: 0.005 # 每GB内存价格
+      disk_per_gb: 0.0001 # 每GB磁盘价格
+      bandwidth_per_gb: 0.01 # 每GB带宽价格
+
+  anomaly_detection: # 异常检测配置
+    default_method: zscore # 默认异常检测方法
+    default_sensitivity: 0.8 # 默认异常检测灵敏度
+    enabled_methods: # 启用的异常检测方法
       - zscore
       - iqr
       - mad
 
 # 通知配置
 notification:
-  enabled: true
+  enabled: true # 是否启用通知
 
 # Tavily搜索配置
 tavily:
-  max_results: 5
+  max_results: 5 # Tavily搜索最大返回结果数
 
 # Redis配置 - 用于向量数据缓存和元数据存储
 redis:
-  host: localhost
-  port: 6379
-  db: 0
-  password: "v6SxhWHyZC7S"
-  connection_timeout: 5
-  socket_timeout: 5
-  max_connections: 10
-  decode_responses: true
+  host: localhost # Redis主机地址
+  port: 6379 # Redis端口
+  db: 0 # Redis数据库编号
+  password: "v6SxhWHyZC7S" # Redis密码
+  connection_timeout: 5 # 连接超时时间（秒）
+  socket_timeout: 5 # Socket超时时间（秒）
+  max_connections: 10 # 最大连接数
+  decode_responses: true # 是否自动解码响应为字符串
 
 # 小助手配置
 rag:
-  vector_db_path: data/vector_db
-  collection_name: aiops-assistant
-  knowledge_base_path: data/knowledge_base
-  chunk_size: 1000
-  chunk_overlap: 200
-  top_k: 8  # 增加检索数量，提高召回率
-  similarity_threshold: 0.3  # 降低相似度阈值，提高召回率
-  openai_embedding_model: Pro/BAAI/bge-m3
-  ollama_embedding_model: nomic-embed-text
-  max_context_length: 4000
-  temperature: 0.1
-  # 超时设置
-  timeout: 360 # 智能助手调用超时时间(秒) - 确保足够时间进行复杂推理
-  # 缓存设置
-  cache_expiry: 3600 # 缓存过期时间(秒)
-  # 文档处理设置
-  max_docs_per_query: 8 # 每次查询最多处理的文档数
+  vector_db_path: data/vector_db # 向量数据库路径
+  collection_name: aiops-assistant # 向量集合名称
+  knowledge_base_path: data/knowledge_base # 知识库路径
+  chunk_size: 1000 # 文档分块大小
+  chunk_overlap: 200 # 分块重叠大小
+  top_k: 8  # 检索返回文档数量
+  similarity_threshold: 0.3  # 相似度阈值
+  openai_embedding_model: Pro/BAAI/bge-m3 # OpenAI嵌入模型名称
+  ollama_embedding_model: nomic-embed-text # Ollama嵌入模型名称
+  max_context_length: 4000 # 最大上下文长度
+  temperature: 0.1 # 生成温度
+  timeout: 360 # 智能助手调用超时时间（秒）
+  cache_expiry: 3600 # 缓存过期时间（秒）
+  max_docs_per_query: 8 # 每次查询最大文档数
   use_enhanced_retrieval: true # 是否使用增强检索
   use_document_compressor: true # 是否使用文档压缩
 
 # MCP配置
 mcp:
   server_url: http://localhost:9000 # MCP服务端地址
-  timeout: 30 # 请求超时时间(秒)
+  timeout: 30 # 请求超时时间（秒）
   max_retries: 3 # 最大重试次数
-  health_check_interval: 30 # 健康检查间隔(秒)
+  health_check_interval: 30 # 健康检查间隔（秒）

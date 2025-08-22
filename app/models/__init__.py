@@ -40,8 +40,6 @@ from .request_models import (
     AssistantRequest,
     AutoFixRequest,
     DiagnoseRequest,
-    RCARequest,
-    SessionRequest,
 )
 from .response_models import (
     AssistantResponse,
@@ -49,19 +47,15 @@ from .response_models import (
     DiagnoseResponse,
     HealthResponse,
     ListResponse,
-    RCAResponse,
     SessionInfoResponse,
 )
 
 __all__ = [
     # 请求模型
-    "RCARequest",
-    "AutoFixRequest",
+    "AutoFixRequest", 
     "AssistantRequest",
-    "SessionRequest",
     "DiagnoseRequest",
     # 响应模型
-    "RCAResponse",
     "AutoFixResponse",
     "HealthResponse",
     "AssistantResponse",

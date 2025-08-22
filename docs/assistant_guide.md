@@ -154,5 +154,5 @@ A: 提供明确的问题，扩充专业领域的知识库，根据场景适当�
 
 如有任何问题或需求，请联系 AIOps 平台管理团队：
 
-- 邮箱：13664854532@163.com
+- 邮箱：bamboocloudops@gmail.com
 - 问题追踪：https://github.com/GoSimplicity/AI-CloudOps/issues

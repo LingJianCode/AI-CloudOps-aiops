@@ -14,9 +14,9 @@ prometheus:
 llm:
   provider: openai # 可选值: openai, ollama - 设置主要的LLM提供商
   model: Qwen/Qwen3-14B # 使用OpenAI提供商时的模型名称
-  task_model: Qwen/Qwen3-14B-Instruct
-  temperature: 0.3
-  max_tokens: 4096
+  task_model: Qwen/Qwen2.5-14B-Instruct
+  temperature: 0.7
+  max_tokens: 2048
   request_timeout: 360 # LLM请求超时时间(秒)
   # 备用Ollama模型配置
   ollama_model: qwen2.5:3b # Ollama本地模型名称
@@ -36,17 +36,63 @@ kubernetes:
 rca:
   default_time_range: 30
   max_time_range: 1440
-  anomaly_threshold: 0.7
-  correlation_threshold: 0.75
-  default_metrics:
-    - container_cpu_usage_seconds_total
-    - container_memory_working_set_bytes
-    - kube_pod_container_status_restarts_total
-    - kube_pod_status_phase
-    - node_cpu_seconds_total
-    - node_memory_MemFree_bytes
-    - kubelet_http_requests_duration_seconds_count
-    - kubelet_http_requests_duration_seconds_sum
+  anomaly_threshold: 0.65
+  correlation_threshold: 0.7
+
+  # 指标收集器配置
+  metrics:
+    step_interval: "1m"
+    concurrent_limit: 3
+    cache_size: 100
+    cache_ttl: 60 # 缓存过期时间(秒)
+    anomaly_cache_size: 500
+    thresholds: # 阈值配置
+      cpu_usage:
+        warning: 0.7
+        critical: 0.9
+      memory_usage:
+        warning: 0.8
+        critical: 0.95
+      disk_usage:
+        warning: 0.75
+        critical: 0.9
+      error_rate:
+        warning: 0.01
+        critical: 0.05
+      restart_count:
+        warning: 3
+        critical: 10
+    default_metrics:
+      - container_cpu_usage_seconds_total
+      - container_memory_working_set_bytes
+      - kube_pod_container_status_restarts_total
+      - kube_pod_status_phase
+      - node_cpu_seconds_total
+      - node_memory_MemFree_bytes
+      - kubelet_http_requests_duration_seconds_count
+      - kubelet_http_requests_duration_seconds_sum
+
+  # 事件收集器配置
+  events:
+    default_event_types: ["Warning", "Normal"]
+    batch_size: 100
+    max_events_limit: 1000
+    concurrent_limit: 5
+
+  # 日志收集器配置  
+  logs:
+    max_lines: 500
+    error_lines: 200
+    concurrent_limit: 5
+    cache_size: 1000
+    dedup_cache_size: 10000
+    max_message_length: 1000
+    max_stack_trace_lines: 20
+    default_error_only: true
+
+  # 通用配置
+  max_retries: 3
+  timeout: 30
 
 # 预测配置
 prediction:
@@ -69,9 +115,68 @@ prediction:
       model: /app/data/models/disk_prediction_model.pkl
       scaler: /app/data/models/disk_prediction_scaler.pkl
       metadata: /app/data/models/disk_prediction_model_metadata.json
+
+  # 实例配置
   max_instances: 20
   min_instances: 1
+
+  # Prometheus查询配置
   prometheus_query: 'rate(nginx_ingress_controller_nginx_process_requests_total{service="ingress-nginx-controller-metrics"}[10m])'
+
+  # 预测参数
+  default_prediction_hours: 24
+  max_prediction_hours: 168
+  min_prediction_hours: 1
+  default_granularity: hour
+  default_target_utilization: 0.7
+  default_sensitivity: 0.8
+
+  # 扩缩容阈值
+  scaling_thresholds:
+    qps:
+      scale_up: 1000
+      scale_down: 200
+      per_instance: 500
+    cpu:
+      scale_up: 80
+      scale_down: 30
+      optimal: 60
+    memory:
+      scale_up: 85
+      scale_down: 40
+      optimal: 70
+    disk:
+      scale_up: 90
+      scale_down: 50
+      optimal: 75
+
+  # 冷却时间（分钟）
+  cooldown_periods:
+    scale_up: 5
+    scale_down: 15
+
+  # 成本分析配置
+  cost_analysis:
+    enabled: true
+    default_pricing:
+      instance:
+        small: 0.02
+        medium: 0.04
+        large: 0.08
+        xlarge: 0.16
+      cpu_per_core: 0.02
+      memory_per_gb: 0.005
+      disk_per_gb: 0.0001
+      bandwidth_per_gb: 0.01
+
+  # 异常检测配置
+  anomaly_detection:
+    default_method: zscore
+    default_sensitivity: 0.8
+    enabled_methods:
+      - zscore
+      - iqr
+      - mad
 
 # 通知配置
 notification:
@@ -86,7 +191,7 @@ redis:
   host: localhost
   port: 6379
   db: 0
-  password: ""
+  password: "v6SxhWHyZC7S"
   connection_timeout: 5
   socket_timeout: 5
   max_connections: 10
@@ -95,18 +200,21 @@ redis:
 # 小助手配置
 rag:
   vector_db_path: /app/data/vector_db
-  collection_name: aiops-assistant-prod
+  collection_name: aiops-assistant
   knowledge_base_path: /app/data/knowledge_base
   chunk_size: 1000
   chunk_overlap: 200
-  top_k: 10  # 生产环境增加更多检索数量
-  similarity_threshold: 0.25  # 生产环境降低相似度阈值
+  top_k: 8  # 增加检索数量，提高召回率
+  similarity_threshold: 0.3  # 降低相似度阈值，提高召回率
   openai_embedding_model: Pro/BAAI/bge-m3
   ollama_embedding_model: nomic-embed-text
-  max_context_length: 6000
+  max_context_length: 4000
   temperature: 0.1
+  # 超时设置
   timeout: 360 # 智能助手调用超时时间(秒) - 确保足够时间进行复杂推理
+  # 缓存设置
   cache_expiry: 3600 # 缓存过期时间(秒)
+  # 文档处理设置
   max_docs_per_query: 8 # 每次查询最多处理的文档数
   use_enhanced_retrieval: true # 是否使用增强检索
   use_document_compressor: true # 是否使用文档压缩
