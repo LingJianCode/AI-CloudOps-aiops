@@ -49,21 +49,24 @@ class TestRCAAPI:
         
         data = validation["data"]["data"]
         assert "status" in data, "响应数据缺少status字段"
-        assert "healthy" in data, "响应数据缺少healthy字段"
-        assert "components" in data, "响应数据缺少components字段"
+        assert "prometheus_connected" in data, "响应数据缺少prometheus_connected字段"
+        assert "kubernetes_connected" in data, "响应数据缺少kubernetes_connected字段"
+        assert "redis_connected" in data, "响应数据缺少redis_connected字段"
+        assert "last_check_time" in data, "响应数据缺少last_check_time字段"
         
-        # 验证组件状态
-        components = data["components"]
-        expected_components = ["prometheus", "llm", "detector", "correlator"]
-        for component in expected_components:
-            assert component in components, f"缺少组件: {component}"
+        # 验证连接状态字段类型
+        assert isinstance(data["prometheus_connected"], bool), "prometheus_connected应该是布尔值"
+        assert isinstance(data["kubernetes_connected"], bool), "kubernetes_connected应该是布尔值"
+        assert isinstance(data["redis_connected"], bool), "redis_connected应该是布尔值"
         
         self.test_result.add_test_result(
             "rca_health_check", 
             True, 
             status_code=response.status_code,
-            healthy=data.get("healthy"),
-            prometheus_healthy=components.get("prometheus")
+            status=data.get("status"),
+            prometheus_connected=data.get("prometheus_connected"),
+            kubernetes_connected=data.get("kubernetes_connected"),
+            redis_connected=data.get("redis_connected")
         )
         
     def test_rca_ready_check(self):

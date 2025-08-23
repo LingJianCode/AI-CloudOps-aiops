@@ -153,7 +153,7 @@ class K8sClusterCheckTool(K8sBaseTool):
             loop = asyncio.get_event_loop()
 
             # 并行获取信息，严格限制数量
-            version_task = loop.run_in_executor(self._executor, version_api.get_version)
+            version_task = loop.run_in_executor(self._executor, version_api.get_code)
             namespaces_task = loop.run_in_executor(
                 self._executor, lambda: v1.list_namespace(limit=50)
             )  # 进一步限制

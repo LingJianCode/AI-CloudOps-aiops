@@ -332,13 +332,31 @@ class RCAService(BaseService, HealthCheckMixin):
             # 检查各组件健康状态
             collectors_health = await self._gather_health_checks()
 
+            # 映射到API期望的字段名称
+            prometheus_connected = collectors_health.get("metrics", False)
+            kubernetes_connected = collectors_health.get("events", False) or collectors_health.get("logs", False)
+            
+            # 检查Redis连接
+            redis_connected = False
+            if self._cache_manager:
+                try:
+                    # 使用缓存管理器的health_check方法
+                    cache_health = self._cache_manager.health_check()
+                    redis_connected = cache_health.get("status") == "healthy" if isinstance(cache_health, dict) else cache_health
+                except Exception as e:
+                    self.logger.warning(f"Redis健康检查失败: {str(e)}")
+                    redis_connected = False
+
             # 判断总体状态
-            all_healthy = all(collectors_health.values())
+            all_healthy = prometheus_connected and kubernetes_connected and redis_connected
             status = "healthy" if all_healthy else "degraded"
 
             return {
                 "status": status,
-                "collectors": collectors_health,
+                "prometheus_connected": prometheus_connected,
+                "kubernetes_connected": kubernetes_connected,
+                "redis_connected": redis_connected,
+                "collectors": collectors_health,  # 保留原始信息用于调试
                 "timestamp": datetime.now(timezone.utc),
             }
 
@@ -346,6 +364,9 @@ class RCAService(BaseService, HealthCheckMixin):
             self.logger.error(f"健康检查失败: {str(e)}")
             return {
                 "status": "unhealthy",
+                "prometheus_connected": False,
+                "kubernetes_connected": False,
+                "redis_connected": False,
                 "collectors": {"metrics": False, "events": False, "logs": False},
                 "timestamp": datetime.now(timezone.utc),
             }
