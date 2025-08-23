@@ -10,11 +10,10 @@ Description: 智能助手API接口
 """
 
 import logging
+import uuid
 from datetime import datetime
 from typing import Any, Dict
-
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
-
+from fastapi import APIRouter, File, HTTPException, UploadFile
 from app.api.decorators import api_response, log_api_call
 from app.common.constants import (
     ApiEndpoints,
@@ -25,14 +24,12 @@ from app.common.constants import (
 )
 from app.common.response import ResponseWrapper
 from app.config.settings import config
-from app.models import (
+from app.models.assistant_models import (
     AddDocumentRequest,
     AddDocumentResponse,
     AssistantRequest,
     AssistantResponse,
     ClearCacheResponse,
-    CreateSessionRequest,
-    CreateSessionResponse,
     RefreshKnowledgeResponse,
     ServiceConfigResponse,
     ServiceHealthResponse,
@@ -55,11 +52,17 @@ assistant_service = OptimizedAssistantService()
 async def assistant_query(request: AssistantRequest) -> Dict[str, Any]:
     await assistant_service.initialize()
 
+    session_id = request.session_id or str(uuid.uuid4())
+    if not request.session_id:
+        logger.info(f"为用户创建新会话: {session_id}")
+
     answer_result = await assistant_service.get_answer(
         question=request.question,
         mode=request.mode,
-        session_id=request.session_id,
+        session_id=session_id,
     )
+
+    answer_result.setdefault("session_id", session_id)
 
     response = AssistantResponse(
         answer=answer_result.get("answer", ""),
@@ -137,8 +140,10 @@ async def assistant_ready() -> Dict[str, Any]:
         health_status = await assistant_service.get_service_health_info_with_mode()
 
         is_ready = (
-            health_status.get("modes", {}).get("rag", {}).get("status") == ServiceConstants.STATUS_HEALTHY
-            or health_status.get("modes", {}).get("mcp", {}).get("status") == ServiceConstants.STATUS_HEALTHY
+            health_status.get("modes", {}).get("rag", {}).get("status")
+            == ServiceConstants.STATUS_HEALTHY
+            or health_status.get("modes", {}).get("mcp", {}).get("status")
+            == ServiceConstants.STATUS_HEALTHY
         )
 
         if not is_ready:
@@ -182,25 +187,7 @@ async def clear_cache() -> Dict[str, Any]:
     return ResponseWrapper.success(data=response.dict(), message="操作成功")
 
 
-@router.post("/session", summary="创建或获取用户会话")
-@api_response("创建或获取用户会话")
-async def create_session(request: CreateSessionRequest) -> Dict[str, Any]:
-    await assistant_service.initialize()
-    session_result = await assistant_service.create_or_get_session(request.user_id, request.mode)
-
-    response = CreateSessionResponse(
-        session_id=session_result.get("session_id", ""),
-        mode=request.mode,
-        created_time=session_result.get("created_time", datetime.now().isoformat()),
-        status=session_result.get("status", "active"),
-    )
-    return ResponseWrapper.success(data=response.dict(), message="操作成功")
-
-
-
-
-
-@router.post("/upload_knowledge_file", summary="上传知识库文件")
+@router.post("/upload-knowledge-file", summary="上传知识库文件")
 @api_response("上传知识库文件")
 async def upload_knowledge_file(
     file: UploadFile = File(...),
@@ -290,7 +277,6 @@ async def assistant_info() -> Dict[str, Any]:
         ],
         "endpoints": {
             "query": ApiEndpoints.ASSISTANT_QUERY,
-            "session": ApiEndpoints.ASSISTANT_SESSION,
             "refresh": ApiEndpoints.ASSISTANT_REFRESH,
             "health": ApiEndpoints.ASSISTANT_HEALTH,
             "config": "/assistant/config",
@@ -326,13 +312,14 @@ async def assistant_info() -> Dict[str, Any]:
             "timeout": ServiceConstants.ASSISTANT_TIMEOUT,
             "session_timeout": ServiceConstants.ASSISTANT_SESSION_TIMEOUT,
             "max_retries": config.mcp.max_retries,
-            "quality_threshold": 0.7,
+            "quality_threshold": config.rag.similarity_threshold,
         },
-        "performance": {"caching_enabled": True, "parallel_processing": True},
+        "performance": {
+            "caching_enabled": bool(config.rag.cache_expiry > 0),
+            "parallel_processing": True
+        },
         "status": "available" if assistant_service else "unavailable",
-        "initialized": (
-            assistant_service.is_initialized() if assistant_service else False
-        ),
+        "initialized": assistant_service.is_initialized() if assistant_service else False,
     }
 
     response = ServiceInfoResponse(

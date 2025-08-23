@@ -21,7 +21,7 @@ from pydantic import ValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.common.constants import HttpStatusCodes, ServiceConstants
-from app.models.response_models import APIResponse
+from app.models import APIResponse
 
 logger = logging.getLogger("aiops.error_handler")
 

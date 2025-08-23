@@ -167,14 +167,25 @@ async def quick_diagnosis(namespace: str) -> Dict[str, Any]:
 
     diagnosis_result = await rca_service.quick_diagnosis(namespace=namespace)
 
+    # 计算分析时长（如果服务未提供）
+    analysis_duration = diagnosis_result.get("analysis_duration", 0.0)
+    if analysis_duration == 0.0 and "diagnosis_time" in diagnosis_result:
+        # 使用当前时间与诊断时间的差值估算
+        try:
+            diagnosis_dt = datetime.fromisoformat(diagnosis_result["diagnosis_time"].replace('Z', '+00:00'))
+            current_dt = datetime.now(diagnosis_dt.tzinfo)
+            analysis_duration = (current_dt - diagnosis_dt).total_seconds()
+        except:
+            analysis_duration = 0.0
+    
     response = QuickDiagnosisResponse(
         namespace=namespace,
         status=diagnosis_result.get("status", "completed"),
         critical_issues=diagnosis_result.get("critical_issues", []),
         warnings=diagnosis_result.get("warnings", []),
         recommendations=diagnosis_result.get("recommendations", []),
-        timestamp=datetime.now().isoformat(),
-        analysis_duration=diagnosis_result.get("analysis_duration", 0.0),
+        timestamp=diagnosis_result.get("diagnosis_time", datetime.now().isoformat()),
+        analysis_duration=analysis_duration,
     )
 
     return ResponseWrapper.success(data=response.dict(), message="success")

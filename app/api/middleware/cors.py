@@ -30,6 +30,15 @@ def setup_cors(app: FastAPI):
             f"http://127.0.0.1:{config.port}",
             f"http://localhost:{frontend_port}",
             f"http://127.0.0.1:{frontend_port}",
+            # 添加常见的前端开发端口
+            "http://localhost:5666",
+            "http://127.0.0.1:5666",
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+            "http://localhost:5173",  # Vite默认端口
+            "http://127.0.0.1:5173",
+            "http://localhost:8081",  # 其他常见端口
+            "http://127.0.0.1:8081",
         ]
 
         app.add_middleware(

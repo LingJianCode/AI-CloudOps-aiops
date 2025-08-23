@@ -9,6 +9,7 @@ License: Apache 2.0
 Description: AI-CloudOps智能预测服务 - 提供四种资源预测能力
 """
 
+import hashlib
 import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
@@ -58,12 +59,37 @@ class PredictionService(BaseService, HealthCheckMixin):
         self._prediction_analyzer: Optional[PredictionAnalyzer] = None
         self._report_generator: Optional[IntelligentReportGenerator] = None
 
+        # Redis缓存管理器
+        self._cache_manager = None
+
         self._initialized = False
 
     async def _do_initialize(self) -> None:
         """初始化预测服务组件"""
         try:
             from app.core.prediction import ModelManager
+            from app.core.cache.redis_cache_manager import RedisCacheManager
+            from app.config.settings import config
+
+            # 初始化Redis缓存管理器
+            try:
+                redis_config = {
+                    "host": config.redis.host,
+                    "port": config.redis.port,
+                    "db": config.redis.db + 2,  # 使用单独的db用于预测缓存
+                    "password": config.redis.password if hasattr(config.redis, 'password') else "",
+                }
+                self._cache_manager = RedisCacheManager(
+                    redis_config=redis_config,
+                    cache_prefix="predict_cache:",
+                    default_ttl=3600,  # 1小时缓存
+                    max_cache_size=5000,
+                    enable_compression=True,
+                )
+                self.logger.info("预测服务Redis缓存管理器初始化成功")
+            except Exception as cache_e:
+                self.logger.warning(f"Redis缓存管理器初始化失败: {str(cache_e)}，将在无缓存模式下运行")
+                self._cache_manager = None
 
             self._model_manager = ModelManager()
             await self._model_manager.initialize()
@@ -164,6 +190,28 @@ class PredictionService(BaseService, HealthCheckMixin):
             # 验证参数
             self._validate_qps_params(current_qps, prediction_hours)
 
+            # 生成缓存键
+            cache_key = self._generate_prediction_cache_key(
+                prediction_type="qps",
+                current_value=current_qps,
+                metric_query=metric_query,
+                prediction_hours=prediction_hours,
+                granularity=granularity,
+                resource_constraints=resource_constraints,
+                ai_enhanced=False,
+                target_utilization=target_utilization,
+                sensitivity=sensitivity,
+                include_confidence=include_confidence,
+                include_anomaly_detection=include_anomaly_detection,
+                consider_historical_pattern=consider_historical_pattern,
+            )
+
+            # 尝试从缓存获取结果
+            cached_result = await self._get_from_cache(cache_key)
+            if cached_result:
+                self.logger.info(f"QPS预测缓存命中，直接返回结果")
+                return cached_result
+
             # 获取历史数据
             historical_data = await self._fetch_historical_data(
                 PredictionType.QPS, metric_query, hours=48
@@ -210,7 +258,7 @@ class PredictionService(BaseService, HealthCheckMixin):
                 )
 
             # 构建响应
-            return self._build_prediction_response(
+            result = self._build_prediction_response(
                 prediction_type=PredictionType.QPS,
                 current_value=current_qps,
                 predictions=predictions,
@@ -221,6 +269,11 @@ class PredictionService(BaseService, HealthCheckMixin):
                 granularity=granularity,
                 include_confidence=include_confidence,
             )
+
+            # 保存到缓存
+            await self._save_to_cache(cache_key, result, ttl=3600)  # 1小时缓存
+
+            return result
 
         except ValidationError:
             # 参数验证错误直接透传
@@ -247,6 +300,28 @@ class PredictionService(BaseService, HealthCheckMixin):
             self._ensure_initialized()
             # 验证参数
             self._validate_utilization_params(current_cpu_percent, prediction_hours)
+
+            # 生成缓存键
+            cache_key = self._generate_prediction_cache_key(
+                prediction_type="cpu",
+                current_value=current_cpu_percent,
+                metric_query=metric_query,
+                prediction_hours=prediction_hours,
+                granularity=granularity,
+                resource_constraints=resource_constraints,
+                ai_enhanced=False,
+                target_utilization=target_utilization,
+                sensitivity=sensitivity,
+                include_confidence=include_confidence,
+                include_anomaly_detection=include_anomaly_detection,
+                consider_historical_pattern=consider_historical_pattern,
+            )
+
+            # 尝试从缓存获取结果
+            cached_result = await self._get_from_cache(cache_key)
+            if cached_result:
+                self.logger.info(f"CPU预测缓存命中，直接返回结果")
+                return cached_result
 
             # 获取历史数据
             historical_data = await self._fetch_historical_data(
@@ -294,7 +369,7 @@ class PredictionService(BaseService, HealthCheckMixin):
                 )
 
             # 构建响应
-            return self._build_prediction_response(
+            result = self._build_prediction_response(
                 prediction_type=PredictionType.CPU,
                 current_value=current_cpu_percent,
                 predictions=predictions,
@@ -305,6 +380,11 @@ class PredictionService(BaseService, HealthCheckMixin):
                 granularity=granularity,
                 include_confidence=include_confidence,
             )
+
+            # 保存到缓存
+            await self._save_to_cache(cache_key, result, ttl=3600)  # 1小时缓存
+
+            return result
 
         except ValidationError:
             raise
@@ -330,6 +410,28 @@ class PredictionService(BaseService, HealthCheckMixin):
             self._ensure_initialized()
             # 验证参数
             self._validate_utilization_params(current_memory_percent, prediction_hours)
+
+            # 生成缓存键
+            cache_key = self._generate_prediction_cache_key(
+                prediction_type="memory",
+                current_value=current_memory_percent,
+                metric_query=metric_query,
+                prediction_hours=prediction_hours,
+                granularity=granularity,
+                resource_constraints=resource_constraints,
+                ai_enhanced=False,
+                target_utilization=target_utilization,
+                sensitivity=sensitivity,
+                include_confidence=include_confidence,
+                include_anomaly_detection=include_anomaly_detection,
+                consider_historical_pattern=consider_historical_pattern,
+            )
+
+            # 尝试从缓存获取结果
+            cached_result = await self._get_from_cache(cache_key)
+            if cached_result:
+                self.logger.info(f"内存预测缓存命中，直接返回结果")
+                return cached_result
 
             # 获取历史数据
             historical_data = await self._fetch_historical_data(
@@ -377,7 +479,7 @@ class PredictionService(BaseService, HealthCheckMixin):
                 )
 
             # 构建响应
-            return self._build_prediction_response(
+            result = self._build_prediction_response(
                 prediction_type=PredictionType.MEMORY,
                 current_value=current_memory_percent,
                 predictions=predictions,
@@ -388,6 +490,11 @@ class PredictionService(BaseService, HealthCheckMixin):
                 granularity=granularity,
                 include_confidence=include_confidence,
             )
+
+            # 保存到缓存
+            await self._save_to_cache(cache_key, result, ttl=3600)  # 1小时缓存
+
+            return result
 
         except ValidationError:
             raise
@@ -413,6 +520,28 @@ class PredictionService(BaseService, HealthCheckMixin):
             self._ensure_initialized()
             # 验证参数
             self._validate_utilization_params(current_disk_percent, prediction_hours)
+
+            # 生成缓存键
+            cache_key = self._generate_prediction_cache_key(
+                prediction_type="disk",
+                current_value=current_disk_percent,
+                metric_query=metric_query,
+                prediction_hours=prediction_hours,
+                granularity=granularity,
+                resource_constraints=resource_constraints,
+                ai_enhanced=False,
+                target_utilization=target_utilization,
+                sensitivity=sensitivity,
+                include_confidence=include_confidence,
+                include_anomaly_detection=include_anomaly_detection,
+                consider_historical_pattern=consider_historical_pattern,
+            )
+
+            # 尝试从缓存获取结果
+            cached_result = await self._get_from_cache(cache_key)
+            if cached_result:
+                self.logger.info(f"磁盘预测缓存命中，直接返回结果")
+                return cached_result
 
             # 获取历史数据
             historical_data = await self._fetch_historical_data(
@@ -460,7 +589,7 @@ class PredictionService(BaseService, HealthCheckMixin):
                 )
 
             # 构建响应
-            return self._build_prediction_response(
+            result = self._build_prediction_response(
                 prediction_type=PredictionType.DISK,
                 current_value=current_disk_percent,
                 predictions=predictions,
@@ -471,6 +600,11 @@ class PredictionService(BaseService, HealthCheckMixin):
                 granularity=granularity,
                 include_confidence=include_confidence,
             )
+
+            # 保存到缓存
+            await self._save_to_cache(cache_key, result, ttl=3600)  # 1小时缓存
+
+            return result
 
         except ValidationError:
             raise
@@ -503,6 +637,27 @@ class PredictionService(BaseService, HealthCheckMixin):
                 self._validate_qps_params(current_value, prediction_hours)
             else:
                 self._validate_utilization_params(current_value, prediction_hours)
+
+            # 生成缓存键 - AI增强预测使用更高的缓存过期时间
+            cache_key = self._generate_prediction_cache_key(
+                prediction_type=prediction_type,
+                current_value=current_value,
+                metric_query=metric_query,
+                prediction_hours=prediction_hours,
+                granularity=granularity,
+                resource_constraints=resource_constraints,
+                ai_enhanced=True,
+                enable_ai_insights=enable_ai_insights,
+                report_style=report_style,
+                target_utilization=target_utilization,
+                sensitivity=sensitivity,
+            )
+
+            # 尝试从缓存获取结果
+            cached_result = await self._get_from_cache(cache_key)
+            if cached_result:
+                self.logger.info(f"AI增强预测缓存命中，直接返回结果")
+                return cached_result
 
             # 检查AI增强组件是否可用
             if not self._intelligent_predictor:
@@ -541,6 +696,9 @@ class PredictionService(BaseService, HealthCheckMixin):
             enhanced_result = await self._enhance_ai_prediction_result(
                 ai_prediction_result, resource_constraints, target_utilization
             )
+
+            # 保存到缓存（AI增强预测缓存2小时，因为计算更加耗时）
+            await self._save_to_cache(cache_key, enhanced_result, ttl=7200)
 
             return enhanced_result
 
@@ -1176,6 +1334,95 @@ class PredictionService(BaseService, HealthCheckMixin):
         # 这里应该获取实际的资源使用情况
         return {"cpu_percent": 15.0, "memory_percent": 25.0, "disk_percent": 10.0}
 
+    def _generate_prediction_cache_key(
+        self,
+        prediction_type: str,
+        current_value: float,
+        metric_query: Optional[str] = None,
+        prediction_hours: int = 24,
+        granularity: str = "hour",
+        resource_constraints: Optional[Dict] = None,
+        ai_enhanced: bool = False,
+        **kwargs
+    ) -> str:
+        """生成预测缓存键"""
+        try:
+            # 构建缓存输入参数
+            cache_params = {
+                "type": prediction_type,
+                "current": round(current_value, 2),  # 避免浮点数精度问题
+                "query": metric_query or "default",
+                "hours": prediction_hours,
+                "granularity": granularity,
+                "ai": ai_enhanced,
+            }
+            
+            # 添加资源约束（如果有）
+            if resource_constraints:
+                # 对约束参数进行排序确保一致性
+                sorted_constraints = dict(sorted(resource_constraints.items()))
+                cache_params["constraints"] = str(sorted_constraints)
+            
+            # 添加其他重要参数
+            for key, value in kwargs.items():
+                if key in ["target_utilization", "sensitivity", "report_style"]:
+                    cache_params[key] = value
+            
+            # 生成缓存键字符串
+            cache_input = "|".join([f"{k}:{v}" for k, v in sorted(cache_params.items())])
+            
+            # 生成哈希
+            cache_hash = hashlib.sha256(cache_input.encode('utf-8')).hexdigest()[:16]
+            
+            return f"prediction:{prediction_type}:{cache_hash}"
+            
+        except Exception as e:
+            self.logger.error(f"生成缓存键失败: {str(e)}")
+            # 降级到简单键
+            return f"prediction:{prediction_type}:{int(current_value)}:{prediction_hours}"
+
+    async def _get_from_cache(self, cache_key: str) -> Optional[Dict[str, Any]]:
+        """从缓存获取预测结果"""
+        if not self._cache_manager:
+            return None
+        
+        try:
+            cached_result = self._cache_manager.get(cache_key)
+            if cached_result:
+                self.logger.debug(f"缓存命中: {cache_key}")
+                # 添加缓存标识
+                cached_result["from_cache"] = True
+                cached_result["cache_timestamp"] = datetime.now()
+                return cached_result
+        except Exception as e:
+            self.logger.warning(f"从缓存获取数据失败: {str(e)}")
+        
+        return None
+
+    async def _save_to_cache(self, cache_key: str, result: Dict[str, Any], ttl: int = 3600) -> None:
+        """保存预测结果到缓存"""
+        if not self._cache_manager:
+            return
+        
+        try:
+            # 移除不需要缓存的临时数据
+            cache_result = result.copy()
+            cache_result.pop("from_cache", None)
+            cache_result.pop("cache_timestamp", None)
+            
+            # 添加缓存元数据
+            cache_result["cached_at"] = datetime.now().isoformat()
+            cache_result["cache_ttl"] = ttl
+            
+            self._cache_manager.set(
+                question=cache_key,
+                response_data=cache_result,
+                ttl=ttl
+            )
+            self.logger.debug(f"结果已缓存: {cache_key}")
+        except Exception as e:
+            self.logger.warning(f"保存到缓存失败: {str(e)}")
+
     def is_initialized(self) -> bool:
         """检查服务是否已初始化"""
         return self._initialized
@@ -1184,6 +1431,15 @@ class PredictionService(BaseService, HealthCheckMixin):
         """清理资源"""
         try:
             self._initialized = False
+            
+            # 清理缓存管理器
+            if self._cache_manager:
+                try:
+                    self._cache_manager.shutdown()
+                except Exception as e:
+                    self.logger.warning(f"关闭缓存管理器失败: {str(e)}")
+                self._cache_manager = None
+            
             self._predictor = None
             self._feature_extractor = None
             self._anomaly_detector = None

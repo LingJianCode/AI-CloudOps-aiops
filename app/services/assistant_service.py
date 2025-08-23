@@ -84,7 +84,7 @@ class OptimizedAssistantService(BaseService):
         self, question: str, session_id: Optional[str], error_reason: str
     ) -> Dict[str, Any]:
         try:
-            logger.warning(f"使用备用实现处理请求，原因: {error_reason}")
+            logger.warning(f"使用备用实现: {error_reason}")
 
             from app.core.agents.fallback_models import (
                 ResponseContext,
@@ -93,10 +93,7 @@ class OptimizedAssistantService(BaseService):
                 sanitize_input,
             )
 
-            # 清理输入
             cleaned_question = sanitize_input(question)
-
-            # 创建或获取会话
             session_manager = SessionManager()
             session = None
             if session_id:
@@ -104,7 +101,6 @@ class OptimizedAssistantService(BaseService):
                 if not session:
                     session = session_manager.create_session(session_id)
 
-            # 创建响应上下文
             context = ResponseContext(
                 user_input=cleaned_question,
                 session=session,
@@ -114,20 +110,17 @@ class OptimizedAssistantService(BaseService):
                 },
             )
 
-            # 生成备用答案
             fallback_answer = generate_fallback_answer(context)
 
-            # 更新会话历史
             if session:
                 session_manager.update_session(session_id, cleaned_question)
 
-            # 构建响应
             return {
                 "answer": fallback_answer,
-                "confidence_score": 0.3,  # 备用实现的置信度较低
+                "confidence_score": config.rag.similarity_threshold * 0.4,
                 "source_documents": [],
                 "cache_hit": False,
-                "processing_time": 0.1,  # 快速响应时间
+                "processing_time": 0.1,
                 "session_id": session_id,
                 "success": True,
                 "fallback_used": True,
@@ -136,8 +129,7 @@ class OptimizedAssistantService(BaseService):
             }
 
         except Exception as fallback_e:
-            logger.error(f"备用实现也失败: {fallback_e}")
-            # 返回最基础的错误响应
+            logger.error(f"备用实现失败: {fallback_e}")
             return {
                 "answer": "抱歉，当前服务不可用，请稍后重试或联系技术支持。",
                 "confidence_score": 0.0,
@@ -151,13 +143,10 @@ class OptimizedAssistantService(BaseService):
             }
 
     async def refresh_knowledge_base(self) -> Dict[str, Any]:
-        """刷新知识库"""
         self._ensure_initialized()
 
         try:
             result = await self._assistant.refresh_knowledge_base()
-
-            # 清理性能统计
             self._performance_monitor.reset()
 
             return {
@@ -171,12 +160,9 @@ class OptimizedAssistantService(BaseService):
             raise AssistantError(f"刷新失败: {str(e)}")
 
     async def clear_cache(self) -> Dict[str, Any]:
-        """清除缓存"""
         try:
-            # 确保服务就绪
             await self._ensure_ready()
 
-            # 清除助手缓存
             cache_cleared = False
             cleared_items = 0
             if self._assistant and hasattr(self._assistant, "clear_cache"):
@@ -184,7 +170,6 @@ class OptimizedAssistantService(BaseService):
                 cache_cleared = result.get("success", False)
                 cleared_items = result.get("cleared_items", 0)
             else:
-                # 如果助手没有清除缓存方法，至少清理性能监控缓存
                 self._performance_monitor.reset()
                 cache_cleared = True
 
@@ -197,7 +182,6 @@ class OptimizedAssistantService(BaseService):
 
         except Exception as e:
             logger.error(f"清除缓存失败: {str(e)}")
-            # 即使清除失败，也尝试重置性能监控
             self._performance_monitor.reset()
             return {
                 "cache_cleared": False,
@@ -210,9 +194,6 @@ class OptimizedAssistantService(BaseService):
         try:
             # 确保服务就绪
             await self._ensure_ready()
-
-            # 生成会话ID
-            import uuid
 
             session_id = str(uuid.uuid4())
 
@@ -469,8 +450,8 @@ class OptimizedAssistantService(BaseService):
             },
             "retrieval_config": {
                 "strategy": "hybrid",
-                "semantic_weight": 0.6,
-                "lexical_weight": 0.4,
+                "semantic_weight": config.rag.similarity_threshold + 0.1,
+                "lexical_weight": 1.0 - (config.rag.similarity_threshold + 0.1),
                 "similarity_threshold": config.rag.similarity_threshold,
                 "max_candidates": config.rag.max_docs_per_query * 2,
                 "rerank_top_k": config.rag.top_k,
@@ -478,13 +459,13 @@ class OptimizedAssistantService(BaseService):
             "cache_config": {
                 "enabled": True,
                 "ttl": config.rag.cache_expiry,
-                "min_confidence": 0.6,
+                "min_confidence": config.rag.similarity_threshold,
             },
             "performance_targets": {
                 "p50_latency_ms": 500,  # 目标P50延迟
                 "p95_latency_ms": 2000,  # 目标P95延迟
                 "p99_latency_ms": 5000,  # 目标P99延迟
-                "target_accuracy": 0.85,  # 目标准确率
+                "target_accuracy": config.rag.similarity_threshold + 0.15,
             },
         }
 
@@ -553,7 +534,7 @@ class OptimizedAssistantService(BaseService):
                 "question": question,
                 "session_id": session_id,
                 "timestamp": datetime.now().isoformat(),
-                "service_version": "2.0.0",
+                "service_version": config.app.version if hasattr(config, 'app') else "1.0.0",
             }
         )
 
@@ -663,7 +644,7 @@ class OptimizedAssistantService(BaseService):
 
         return {
             "answer": fallback_answer,
-            "confidence_score": 0.3,
+            "confidence_score": config.rag.similarity_threshold * 0.4,
             "source_documents": [],
             "cache_hit": False,
             "processing_time": 0.1,

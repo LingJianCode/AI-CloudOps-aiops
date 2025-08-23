@@ -37,18 +37,12 @@ class QueryType(Enum):
 
 @dataclass
 class RetrievalStrategy:
-
-    # 核心参数
     base_similarity: float = 0.5
     min_similarity: float = 0.3
     initial_k: int = 20
     final_k: int = 5
-
-    # 缓存参数
     enable_cache: bool = True
     cache_ttl: int = 3600
-
-    # 过滤参数
     diversity_threshold: float = 0.7
 
 
@@ -136,24 +130,15 @@ class QueryProcessor:
             },
             QueryType.CONCEPTUAL: {
                 "keywords": {
-                    "什么是",
-                    "概念",
-                    "原理",
-                    "what is",
-                    "concept",
-                    "principle",
+                    "什么是", "概念", "原理",
+                    "what is", "concept", "principle",
                 },
                 "weight": 0.9,
             },
             QueryType.FACTUAL: {
                 "keywords": {
-                    "多少",
-                    "几个",
-                    "数量",
-                    "统计",
-                    "count",
-                    "number",
-                    "statistics",
+                    "多少", "几个", "数量", "统计",
+                    "count", "number", "statistics",
                 },
                 "weight": 0.8,
             },
@@ -163,34 +148,19 @@ class QueryProcessor:
 
     def analyze_and_expand(self, query: str, context: Optional[Dict] = None):
         """查询分析和扩展"""
-        # 预处理查询
         processed_query = self._preprocess_query(query)
-
-        # 多维度意图分析
         intent_scores = self.intent_classifier.classify_intent(processed_query, context)
         query_type = max(intent_scores.items(), key=lambda x: x[1])[0]
         confidence = intent_scores[query_type]
-
-        # 计算动态权重
         weight = self._calculate_dynamic_weight(query_type, confidence, context)
-
-        # 智能查询扩展
         expanded = self._generate_query_expansions(processed_query, query_type, context)
-
-        # 记录查询历史用于学习
         self._record_query_for_learning(query, query_type, weight)
-
-        # 移除性能统计（简化）
-
         return query_type, expanded, weight, intent_scores
 
     def _preprocess_query(self, query: str) -> str:
-        """查询预处理"""
         import re
-
         query = re.sub(r"[^\w\s\u4e00-\u9fff]", " ", query)
-        query = " ".join(query.split())
-        return query.strip()
+        return " ".join(query.split()).strip()
 
     def _calculate_dynamic_weight(
         self, query_type: QueryType, confidence: float, context: Optional[Dict]
@@ -198,14 +168,10 @@ class QueryProcessor:
         """计算动态权重"""
         base_weight = self.query_patterns.get(query_type, {}).get("weight", 1.0)
 
-        # 根据置信度调整
         confidence_factor = 1.0 + (confidence - 0.5) * 0.4
-
-        # 根据上下文调整
         context_factor = 1.0
-        if context and context.get("recent_failures"):
-            if query_type == QueryType.TROUBLESHOOTING:
-                context_factor = 1.2
+        if context and context.get("recent_failures") and query_type == QueryType.TROUBLESHOOTING:
+            context_factor = 1.2
 
         return base_weight * confidence_factor * context_factor
 
@@ -430,7 +396,6 @@ class DocumentRetriever:
         return selected
 
     def _calculate_document_similarity(self, doc1: Document, doc2: Document) -> float:
-        """计算文档相似度"""
         word_limit = getattr(self.config, "similarity_word_limit", 50)
         content1 = set(doc1.page_content.lower().split()[:word_limit])
         content2 = set(doc2.page_content.lower().split()[:word_limit])
@@ -450,25 +415,18 @@ class DocumentRetriever:
                 return []
 
             query_preview_length = 50
-            logger.info(
-                f"执行向量检索 - 查询: {query[:query_preview_length]}, 权重: {weight}"
-            )
-            logger.info(
-                f"检索配置 - initial_k: {self.strategy.initial_k}, min_similarity: {self.strategy.min_similarity}"
-            )
+            logger.info(f"向量检索: {query[:query_preview_length]}, 权重: {weight}")
+            logger.info(f"配置: k={self.strategy.initial_k}, sim={self.strategy.min_similarity}")
 
-            # 使用向量存储检索（支持层次化检索）
             from app.core.vector.redis_vector_store import SearchConfig
 
             search_config = SearchConfig(
                 similarity_threshold=self.strategy.min_similarity,
                 use_cache=True,
                 use_mmr=True,
-                # 启用层次化检索配置
                 use_hierarchical_retrieval=True,
-                hierarchical_threshold=50,  # 文档数阈值
+                hierarchical_threshold=50,
                 auto_switch_retrieval=True,
-                # MD文档优化配置
                 prefer_structured_content=True,
                 boost_code_blocks=True,
                 boost_titles=True,
@@ -480,24 +438,19 @@ class DocumentRetriever:
                 config=search_config,
             )
 
-            logger.info(f"向量存储返回结果数量: {len(results) if results else 0}")
+            logger.info(f"返回结果: {len(results) if results else 0}")
 
-            # 将分数存储在元数据中
             docs = []
             for doc, score in results:
                 doc.metadata = doc.metadata or {}
                 doc.metadata["score"] = score
                 docs.append(doc)
-                content_preview_length = 50
-                logger.debug(
-                    f"文档得分: {score:.3f}, 内容预览: {doc.page_content[:content_preview_length]}"
-                )
+                logger.debug(f"文档得分: {score:.3f}, 内容: {doc.page_content[:50]}")
 
             return docs
 
         except Exception as e:
             logger.error(f"检索失败: {e}")
-            # 避免在生产环境中打印详细堆栈信息
             logger.debug(f"错误详情: {str(e)}")
             return []
 
@@ -540,7 +493,7 @@ class RAGAssistant:
         min_similarity = getattr(self.config.rag, "min_similarity", 0.3)
         similarity_threshold = getattr(self.config.rag, "similarity_threshold", 0.2)
         if min_similarity > similarity_threshold:
-            logger.info(f"降低相似度阈值从 {min_similarity} 到 0.1 以提高召回率")
+            logger.info(f"调整相似度阈值: {min_similarity} -> 0.1")
             min_similarity = 0.1
 
         return RetrievalStrategy(
@@ -584,44 +537,29 @@ class RAGAssistant:
         return state
 
     async def _retrieve(self, state: EnhancedRAGState) -> EnhancedRAGState:
-        """检索和重排序"""
-        logger.info(f"开始检索阶段 - 问题: {state.question}")
+        logger.info(f"检索阶段 - 问题: {state.question}")
         logger.info(f"扩展查询: {state.expanded_queries}")
 
-        # 获取上下文
         context = self.context_manager.get_context(state.session_id)
-
-        # 检索
         docs = await self.retriever.retrieve(
             state.expanded_queries, state.weight or 1.0, context
         )
 
-        logger.info(f"检索到文档数量: {len(docs) if docs else 0}")
+        logger.info(f"检索文档: {len(docs) if docs else 0}")
         if docs:
-            doc_preview_length = 100
-            preview_doc_count = 2
-            logger.info(
-                f"文档预览: {[doc.page_content[:doc_preview_length] for doc in docs[:preview_doc_count]]}"
-            )
-
-        if docs:
+            logger.info(f"文档预览: {[doc.page_content[:100] for doc in docs[:2]]}")
             docs = await self.reranker.rerank(
                 state.question, docs, context=context, top_k=self.strategy.final_k
             )
-            logger.info(f"重排序后文档数量: {len(docs)}")
+            logger.info(f"重排序后: {len(docs)}")
 
         state.documents = docs
-
         return state
 
     async def _generate(self, state: EnhancedRAGState) -> EnhancedRAGState:
-        """生成答案"""
-        logger.info(
-            f"生成阶段 - 接收到文档数量: {len(state.documents) if state.documents else 0}"
-        )
+        logger.info(f"生成阶段 - 文档: {len(state.documents) if state.documents else 0}")
 
         context = self.context_manager.get_context(state.session_id)
-
         result = await self.generator.generate(
             state.question,
             state.documents or [],
@@ -631,23 +569,17 @@ class RAGAssistant:
 
         state.answer = result["answer"]
         state.confidence = result["confidence"]
-
-        logger.info(
-            f"生成结果 - 答案长度: {len(result['answer'])}, 置信度: {result['confidence']}"
-        )
+        logger.info(f"结果 - 长度: {len(result['answer'])}, 置信度: {result['confidence']}")
 
         sources = []
         max_source_docs = getattr(self.config, "max_source_docs", 3)
         max_source_content = getattr(self.config, "max_source_content", 200)
         for doc in (state.documents or [])[:max_source_docs]:
-            sources.append(
-                {
-                    "content": doc.page_content[:max_source_content] + "...",
-                    "score": doc.metadata.get("score", 0),
-                }
-            )
+            sources.append({
+                "content": doc.page_content[:max_source_content] + "...",
+                "score": doc.metadata.get("score", 0),
+            })
         state.sources = sources
-
         return state
 
     async def get_answer(
@@ -704,7 +636,6 @@ class RAGAssistant:
                     ttl=self.strategy.cache_ttl,
                 )
 
-            # 记录助手回复到会话历史
             if session_id:
                 self.context_manager.update_context(
                     session_id, {"assistant_response": answer}
@@ -740,43 +671,28 @@ class RAGAssistant:
         }
 
     async def clear_cache(self) -> Dict[str, Any]:
-        """清理检索/重排/查询缓存"""
         try:
             cleared_items = 0
-            # 检索缓存
             if hasattr(self.retriever, "_cache"):
                 cleared_items += len(getattr(self.retriever, "_cache", {}))
                 self.retriever._cache.clear()
 
-            # 重排缓存
             if hasattr(self.reranker, "_rerank_cache"):
                 cleared_items += len(getattr(self.reranker, "_rerank_cache", {}))
                 self.reranker._rerank_cache.clear()
 
-            # 向量存储查询缓存
-            if getattr(self, "vector_store", None) and hasattr(
-                self.vector_store, "query_cache"
-            ):
+            if getattr(self, "vector_store", None) and hasattr(self.vector_store, "query_cache"):
                 try:
-                    # 尝试估算将要清理的键数量
-                    # 不严格统计，尽可能减少开销
-                    try:
-                        cursor = 0
-                        count = 0
-                        prefix = getattr(
-                            self.vector_store.query_cache, "prefix", "query_cache:"
+                    prefix = getattr(self.vector_store.query_cache, "prefix", "query_cache:")
+                    cursor, count = 0, 0
+                    while True:
+                        cursor, keys = self.vector_store.client.scan(
+                            cursor, match=prefix + "*", count=100
                         )
-                        while True:
-                            cursor, keys = self.vector_store.client.scan(
-                                cursor, match=prefix + "*", count=100
-                            )
-                            count += len(keys or [])
-                            if cursor == 0:
-                                break
-                        cleared_items += count
-                    except Exception:
-                        pass
-
+                        count += len(keys or [])
+                        if cursor == 0:
+                            break
+                    cleared_items += count
                     await self.vector_store.query_cache.invalidate_pattern("*")
                 except Exception:
                     pass
@@ -907,78 +823,67 @@ class ContextManager:
         }
 
     def get_context(self, session_id: Optional[str] = None) -> Dict[str, Any]:
-        """获取会话上下文"""
         context = self.global_context.copy()
-
         if session_id and session_id in self.session_contexts:
-            session_context = self.session_contexts[session_id]
-            context.update(session_context)
-
+            context.update(self.session_contexts[session_id])
         return context
 
     def update_context(self, session_id: Optional[str], updates: Dict[str, Any]):
-        """更新上下文"""
-        if session_id:
-            if session_id not in self.session_contexts:
-                max_recent_queries = 10
-                current_time = datetime.now()
-                self.session_contexts[session_id] = {
-                    "created_at": current_time,
-                    "last_activity": current_time,
-                    "query_count": 0,
-                    "message_count": 0,
-                    "recent_queries": deque(maxlen=max_recent_queries),
-                    "conversation_history": [],
-                    "user_preferences": [],
-                    "domain": None,
-                    "mode": updates.get("mode", 1),
-                    "status": "active",
-                }
-
-            # 更新最后活动时间
-            self.session_contexts[session_id]["last_activity"] = datetime.now()
-
-            # 处理recent_queries更新
-            if "recent_queries" in updates:
-                for query in updates["recent_queries"]:
-                    self.session_contexts[session_id]["recent_queries"].append(query)
-                    # 同时增加查询计数
-                    self.session_contexts[session_id]["query_count"] += 1
-                    self.session_contexts[session_id]["message_count"] += 1
-                    
-                    # 添加到对话历史
-                    conversation_entry = {
-                        "type": "user",
-                        "content": query,
-                        "timestamp": datetime.now().isoformat()
-                    }
-                    self.session_contexts[session_id]["conversation_history"].append(conversation_entry)
-                    
-                    # 保持对话历史在合理范围内
-                    if len(self.session_contexts[session_id]["conversation_history"]) > 50:
-                        self.session_contexts[session_id]["conversation_history"] = self.session_contexts[session_id]["conversation_history"][-50:]
-                
-                updates.pop("recent_queries")
+        if not session_id:
+            return
             
-            # 处理助手回复更新
-            if "assistant_response" in updates:
-                response = updates["assistant_response"]
+        if session_id not in self.session_contexts:
+            current_time = datetime.now()
+            self.session_contexts[session_id] = {
+                "created_at": current_time,
+                "last_activity": current_time,
+                "query_count": 0,
+                "message_count": 0,
+                "recent_queries": deque(maxlen=10),
+                "conversation_history": [],
+                "user_preferences": [],
+                "domain": None,
+                "mode": updates.get("mode", 1),
+                "status": "active",
+            }
+
+        self.session_contexts[session_id]["last_activity"] = datetime.now()
+
+        if "recent_queries" in updates:
+            for query in updates["recent_queries"]:
+                self.session_contexts[session_id]["recent_queries"].append(query)
+                self.session_contexts[session_id]["query_count"] += 1
+                self.session_contexts[session_id]["message_count"] += 1
+                
                 conversation_entry = {
-                    "type": "assistant", 
-                    "content": response,
+                    "type": "user",
+                    "content": query,
                     "timestamp": datetime.now().isoformat()
                 }
                 self.session_contexts[session_id]["conversation_history"].append(conversation_entry)
-                self.session_contexts[session_id]["message_count"] += 1
-                updates.pop("assistant_response")
+                
+                if len(self.session_contexts[session_id]["conversation_history"]) > 50:
+                    self.session_contexts[session_id]["conversation_history"] = \
+                        self.session_contexts[session_id]["conversation_history"][-50:]
+            
+            updates.pop("recent_queries")
+        
+        if "assistant_response" in updates:
+            response = updates["assistant_response"]
+            conversation_entry = {
+                "type": "assistant", 
+                "content": response,
+                "timestamp": datetime.now().isoformat()
+            }
+            self.session_contexts[session_id]["conversation_history"].append(conversation_entry)
+            self.session_contexts[session_id]["message_count"] += 1
+            updates.pop("assistant_response")
 
-            # 更新其他字段
-            for key, value in updates.items():
-                if key not in ["recent_queries", "assistant_response"]:
-                    self.session_contexts[session_id][key] = value
+        for key, value in updates.items():
+            if key not in ["recent_queries", "assistant_response"]:
+                self.session_contexts[session_id][key] = value
 
     def get_session_details(self, session_id: str) -> Dict[str, Any]:
-        """获取会话详细信息"""
         if session_id not in self.session_contexts:
             return {
                 "created_time": "",
@@ -1127,7 +1032,6 @@ class AnswerGenerator:
         return getattr(self.config.rag, "prompt_template", default_prompt)
 
     def _load_md_prompt_template(self) -> str:
-        """MD文档专用提示模板"""
         return """基于以下结构化文档回答问题，保持原有格式：
 
 文档内容:
@@ -1149,7 +1053,7 @@ class AnswerGenerator:
             logger.warning(f"未找到相关文档进行回答：{question}")
             return {
                 "answer": f"针对您的问题「{question}」，我暂时没有找到匹配的资料。建议使用更具体的关键词重新提问。",
-                "confidence": 0.2,
+                "confidence": self.config.rag.similarity_threshold * 0.3,
             }
 
         is_md_content = self._has_markdown_documents(docs)
@@ -1157,11 +1061,7 @@ class AnswerGenerator:
         generation_params = self._get_generation_params(query_type, context)
 
         try:
-            if is_md_content:
-                prompt_template = self._load_md_prompt_template()
-                logger.debug("使用MD专用提示模板")
-            else:
-                prompt_template = self.base_prompt
+            prompt_template = self._load_md_prompt_template() if is_md_content else self.base_prompt
 
             prompt = prompt_template.format(context=enhanced_context, question=question)
 

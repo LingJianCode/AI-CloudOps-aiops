@@ -304,3 +304,38 @@ class RCAHealthResponse(BaseModel):
     redis_connected: bool
     last_check_time: str
     version: Optional[str] = None
+
+
+class QuickDiagnosisResponse(BaseModel):
+    """快速诊断响应模型"""
+
+    namespace: str
+    status: str
+    critical_issues: List[Dict[str, Any]]
+    warnings: List[Dict[str, Any]]
+    recommendations: List[str]
+    timestamp: str
+    analysis_duration: float
+
+
+class EventPatternsResponse(BaseModel):
+    """事件模式响应模型"""
+
+    namespace: str
+    time_range_hours: float
+    patterns: List[Dict[str, Any]]
+    trending_events: List[str]
+    anomalous_events: List[str]
+    timestamp: str
+
+
+class ErrorSummaryResponse(BaseModel):
+    """错误摘要响应模型"""
+
+    namespace: str
+    time_range_hours: float
+    total_errors: int
+    error_categories: Dict[str, int]
+    top_errors: List[Dict[str, Any]]
+    error_timeline: List[Dict[str, Any]]
+    timestamp: str

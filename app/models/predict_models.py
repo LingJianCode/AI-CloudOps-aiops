@@ -441,6 +441,16 @@ class AICapabilitiesResponse(BaseModel):
     service_info: Dict[str, Any] = Field(default_factory=dict, description="服务信息")
 
 
+class ModelInfoResponse(BaseModel):
+    """模型信息响应模型"""
+
+    models: List[Dict[str, Any]]
+    total_models: int
+    loaded_models: int
+    status: str
+    timestamp: str
+
+
 __all__ = [
     "PredictionType",
     "PredictionGranularity",
@@ -466,4 +476,5 @@ __all__ = [
     "MultiDimensionPredictionResponse",
     "PredictionReportResponse",
     "AICapabilitiesResponse",
+    "ModelInfoResponse",
 ]

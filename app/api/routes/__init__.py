@@ -51,6 +51,14 @@ try:
 except Exception as e:
     logger.warning(f"注册智能助手路由失败: {str(e)}")
 
+try:
+    from .cache import router as cache_router
+
+    api_v1.include_router(cache_router, prefix="/cache")
+    logger.info("已注册缓存管理路由")
+except Exception as e:
+    logger.warning(f"注册缓存管理路由失败: {str(e)}")
+
 
 def register_routes(app):
     # 注册API v1路由
