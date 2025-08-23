@@ -42,7 +42,6 @@ from .request_models import (
     AutoFixRequest,
     CreateSessionRequest,
     DiagnoseRequest,
-    UploadKnowledgeRequest,
 )
 from .response_models import (
     AddDocumentResponse,
@@ -72,7 +71,6 @@ __all__ = [
     "AssistantRequest",
     "CreateSessionRequest",
     "DiagnoseRequest",
-    "UploadKnowledgeRequest",
     # 响应模型
     "AddDocumentResponse",
     "AutoFixResponse",

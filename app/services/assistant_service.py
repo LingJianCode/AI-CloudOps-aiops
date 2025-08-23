@@ -11,6 +11,8 @@ Description: AI-CloudOps智能助手服务
 
 import asyncio
 import logging
+import os
+import uuid
 from datetime import datetime
 from typing import Any, Dict, Optional
 
@@ -255,7 +257,9 @@ class OptimizedAssistantService(BaseService):
             logger.error(f"创建会话失败: {str(e)}")
             raise AssistantError(f"创建会话失败: {str(e)}")
 
-    async def create_or_get_session(self, user_id: str, mode: int = 1) -> Dict[str, Any]:
+    async def create_or_get_session(
+        self, user_id: str, mode: int = 1
+    ) -> Dict[str, Any]:
         """根据用户ID创建或获取会话"""
         try:
             # 确保服务就绪
@@ -263,6 +267,7 @@ class OptimizedAssistantService(BaseService):
 
             # 生成基于用户ID的会话ID
             import hashlib
+
             session_id = f"user_{user_id}_{hashlib.md5(f'{user_id}_{mode}'.encode()).hexdigest()[:8]}"
 
             # 检查是否已存在会话
@@ -273,12 +278,19 @@ class OptimizedAssistantService(BaseService):
                     if session_info.get("success") and session_info.get("session_id"):
                         # 会话已存在，更新最后活动时间
                         if hasattr(self._assistant, "context_manager"):
-                            self._assistant.context_manager.update_context(session_id, {
-                                "mode": mode,
-                                "last_access": datetime.now().isoformat()
-                            })
-                        
-                        session_details = self._assistant.context_manager.get_session_details(session_id)
+                            self._assistant.context_manager.update_context(
+                                session_id,
+                                {
+                                    "mode": mode,
+                                    "last_access": datetime.now().isoformat(),
+                                },
+                            )
+
+                        session_details = (
+                            self._assistant.context_manager.get_session_details(
+                                session_id
+                            )
+                        )
                         return {
                             "session_id": session_id,
                             "created": False,
@@ -300,13 +312,17 @@ class OptimizedAssistantService(BaseService):
                         "created_time": datetime.now().isoformat(),
                     },
                 )
-                
-                session_details = self._assistant.context_manager.get_session_details(session_id)
+
+                session_details = self._assistant.context_manager.get_session_details(
+                    session_id
+                )
                 return {
                     "session_id": session_id,
                     "created": True,
                     "status": "active",
-                    "created_time": session_details.get("created_time", datetime.now().isoformat()),
+                    "created_time": session_details.get(
+                        "created_time", datetime.now().isoformat()
+                    ),
                     "message": "新会话创建成功",
                     "timestamp": datetime.now().isoformat(),
                 }
@@ -316,7 +332,7 @@ class OptimizedAssistantService(BaseService):
 
                 session_manager = SessionManager()
                 session = session_manager.get_session(session_id)
-                
+
                 if not session:
                     session = session_manager.create_session(session_id)
                     created = True
@@ -329,7 +345,11 @@ class OptimizedAssistantService(BaseService):
                     "session_id": session_id,
                     "created": created,
                     "status": "active",
-                    "created_time": session.created_at.isoformat() if session else datetime.now().isoformat(),
+                    "created_time": (
+                        session.created_at.isoformat()
+                        if session
+                        else datetime.now().isoformat()
+                    ),
                     "message": message,
                     "timestamp": datetime.now().isoformat(),
                 }
@@ -461,10 +481,10 @@ class OptimizedAssistantService(BaseService):
                 "min_confidence": 0.6,
             },
             "performance_targets": {
-                "p50_latency_ms": 500,   # 目标P50延迟
+                "p50_latency_ms": 500,  # 目标P50延迟
                 "p95_latency_ms": 2000,  # 目标P95延迟
                 "p99_latency_ms": 5000,  # 目标P99延迟
-                "target_accuracy": 0.85, # 目标准确率
+                "target_accuracy": 0.85,  # 目标准确率
             },
         }
 
@@ -510,7 +530,10 @@ class OptimizedAssistantService(BaseService):
             latency_divisor = 1000
             performance_multiplier = 2
             min_performance_factor = 1.0
-            performance_factor = max(avg_latency / latency_divisor * performance_multiplier, min_performance_factor)
+            performance_factor = max(
+                avg_latency / latency_divisor * performance_multiplier,
+                min_performance_factor,
+            )
         else:
             performance_factor = 1.0
 
@@ -698,60 +721,7 @@ class OptimizedAssistantService(BaseService):
                 "timestamp": datetime.now().isoformat(),
             }
 
-    async def upload_knowledge(self, request) -> Dict[str, Any]:
-        try:
-            # 确保服务就绪
-            await self._ensure_ready()
-
-            # 验证请求数据
-            if not request.title or not request.content:
-                raise ValidationError("title/content", "标题和内容不能为空")
-
-            # 构建文档数据
-            document_data = {
-                "title": request.title,
-                "content": request.content,
-                "source": request.source or "user_upload",
-                "category": request.category or "general",
-                "tags": request.tags or [],
-                "metadata": request.metadata or {},
-                "upload_time": datetime.now().isoformat(),
-            }
-
-            # 如果助手支持上传知识库，调用助手方法
-            if self._assistant and hasattr(self._assistant, "upload_knowledge"):
-                result = await self._assistant.upload_knowledge(document_data)
-                return {
-                    "uploaded": result.get("success", True),
-                    "document_id": result.get("document_id"),
-                    "message": result.get("message", "知识库上传成功"),
-                    "timestamp": datetime.now().isoformat(),
-                }
-            else:
-                # 备用实现：记录文档信息
-                logger.warning("使用备用知识库上传实现")
-                import hashlib
-
-                document_id = hashlib.md5(
-                    f"{request.title}{request.content}".encode()
-                ).hexdigest()
-
-                return {
-                    "uploaded": True,
-                    "document_id": document_id,
-                    "message": "知识库上传成功（使用备用实现）",
-                    "timestamp": datetime.now().isoformat(),
-                }
-
-        except ValidationError:
-            raise
-        except Exception as e:
-            logger.error(f"上传知识库失败: {str(e)}")
-            raise AssistantError(f"上传失败: {str(e)}")
-
-    async def upload_knowledge_file(
-        self, file, title: str = None, source: str = None
-    ) -> Dict[str, Any]:
+    async def upload_knowledge_file(self, file) -> Dict[str, Any]:
         try:
             # 确保服务就绪
             await self._ensure_ready()
@@ -766,75 +736,101 @@ class OptimizedAssistantService(BaseService):
             # 检查文件大小
             max_file_size = 10 * 1024 * 1024  # 10MB
             if len(content) > max_file_size:
-                raise ValidationError("file", f"文件大小不能超过{max_file_size // (1024 * 1024)}MB")
+                raise ValidationError(
+                    "file", f"文件大小不能超过{max_file_size // (1024 * 1024)}MB"
+                )
 
-            # 根据文件类型处理内容
-            filename = file.filename or "unknown"
-            file_extension = filename.split(".")[-1].lower() if "." in filename else ""
+            # 获取原始文件名
+            original_filename = file.filename or "unknown.txt"
+            file_extension = (
+                original_filename.split(".")[-1].lower()
+                if "." in original_filename
+                else "txt"
+            )
 
+            # 验证文件格式
+            supported_formats = ["md", "txt", "doc", "docx"]
+            if file_extension not in supported_formats:
+                raise ValidationError(
+                    "file",
+                    f"不支持的文件格式: {file_extension}。支持的格式: {', '.join(supported_formats)}",
+                )
+
+            # 解析文件内容
             try:
                 if file_extension in ["txt", "md", "markdown"]:
                     file_content = content.decode("utf-8")
-                elif file_extension in ["pdf"]:
-                    # 这里可以集成PDF解析库
-                    file_content = "PDF文件内容解析暂不支持，请转换为文本格式上传"
                 elif file_extension in ["doc", "docx"]:
-                    # 这里可以集成Word文档解析库
-                    file_content = "Word文档内容解析暂不支持，请转换为文本格式上传"
+                    # 暂时作为文本处理，后续可以集成python-docx库
+                    try:
+                        file_content = content.decode("utf-8")
+                    except UnicodeDecodeError:
+                        raise ValidationError(
+                            "file", "Word文档内容解析暂不支持，请转换为文本格式上传"
+                        )
                 else:
-                    # 尝试作为文本文件解码
                     file_content = content.decode("utf-8")
             except UnicodeDecodeError:
                 raise ValidationError(
                     "file", "文件编码不支持，请使用UTF-8编码的文本文件"
                 )
 
-            # 构建文档数据
-            document_data = {
-                "title": title or filename,
-                "content": file_content,
-                "source": source or "file_upload",
-                "category": "uploaded_file",
-                "filename": filename,
+            # 获取知识库根路径
+            knowledge_base_path = config.rag.knowledge_base_path
+
+            # 确保知识库目录存在
+            os.makedirs(knowledge_base_path, exist_ok=True)
+
+            # 处理文件名冲突
+            final_filename = self._resolve_filename_conflict(
+                knowledge_base_path, original_filename
+            )
+
+            # 文件完整路径
+            file_path = os.path.join(knowledge_base_path, final_filename)
+
+            # 写入文件到知识库路径
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write(file_content)
+
+            # 生成文档ID
+            import hashlib
+
+            document_id = hashlib.md5(
+                f"{final_filename}{file_content}".encode()
+            ).hexdigest()
+
+            logger.info(f"知识库文件已保存: {file_path}")
+
+            return {
+                "uploaded": True,
+                "document_id": document_id,
+                "filename": final_filename,
                 "file_size": len(content),
-                "file_type": file_extension,
-                "upload_time": datetime.now().isoformat(),
+                "message": f"文件上传成功，已保存为: {final_filename}",
+                "timestamp": datetime.now().isoformat(),
+                "file_path": file_path,
             }
-
-            # 如果助手支持文件上传，调用助手方法
-            if self._assistant and hasattr(self._assistant, "upload_knowledge_file"):
-                result = await self._assistant.upload_knowledge_file(document_data)
-                return {
-                    "uploaded": result.get("success", True),
-                    "document_id": result.get("document_id"),
-                    "filename": filename,
-                    "file_size": len(content),
-                    "message": result.get("message", "文件上传成功"),
-                    "timestamp": datetime.now().isoformat(),
-                }
-            else:
-                # 备用实现：记录文件信息
-                logger.warning("使用备用文件上传实现")
-                import hashlib
-
-                document_id = hashlib.md5(
-                    f"{filename}{file_content}".encode()
-                ).hexdigest()
-
-                return {
-                    "uploaded": True,
-                    "document_id": document_id,
-                    "filename": filename,
-                    "file_size": len(content),
-                    "message": "文件上传成功（使用备用实现）",
-                    "timestamp": datetime.now().isoformat(),
-                }
 
         except ValidationError:
             raise
         except Exception as e:
             logger.error(f"上传文件失败: {str(e)}")
             raise AssistantError(f"文件上传失败: {str(e)}")
+
+    def _resolve_filename_conflict(self, directory: str, filename: str) -> str:
+        """解决文件名冲突，如果文件已存在则添加UUID"""
+        if not os.path.exists(os.path.join(directory, filename)):
+            return filename
+
+        # 分离文件名和扩展名
+        name_part, ext_part = os.path.splitext(filename)
+
+        # 生成唯一文件名
+        unique_id = str(uuid.uuid4())
+        new_filename = f"{name_part}_{unique_id}{ext_part}"
+
+        return new_filename
 
     async def add_document(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         try:
@@ -848,43 +844,66 @@ class OptimizedAssistantService(BaseService):
             # 验证必要字段
             title = payload.get("title")
             content = payload.get("content")
+            file_name = payload.get("file_name")
 
-            if not title or not content:
-                raise ValidationError("title/content", "文档标题和内容不能为空")
+            if not title or not content or not file_name:
+                raise ValidationError(
+                    "required_fields", "title、content和file_name字段不能为空"
+                )
 
-            # 构建文档数据
-            document_data = {
-                "title": title,
-                "content": content,
-                "source": payload.get("source", "api_upload"),
-                "category": payload.get("category", "general"),
-                "tags": payload.get("tags", []),
-                "metadata": payload.get("metadata", {}),
-                "add_time": datetime.now().isoformat(),
+            # 验证文件名格式
+            if not file_name.strip() or "." not in file_name:
+                raise ValidationError("file_name", "文件名必须包含文件扩展名")
+
+            file_extension = file_name.split(".")[-1].lower()
+            supported_formats = ["md", "txt"]
+            if file_extension not in supported_formats:
+                raise ValidationError(
+                    "file_name",
+                    f"不支持的文件扩展名: {file_extension}。支持的格式: {', '.join(supported_formats)}",
+                )
+
+            # 获取知识库根路径
+            knowledge_base_path = config.rag.knowledge_base_path
+
+            # 确保知识库目录存在
+            os.makedirs(knowledge_base_path, exist_ok=True)
+
+            # 处理文件名冲突
+            final_filename = self._resolve_filename_conflict(
+                knowledge_base_path, file_name
+            )
+
+            # 构建文件内容（将title作为一级标题，然后是content）
+            if file_extension == "md":
+                file_content = f"# {title}\n\n{content}"
+            else:  # txt格式
+                file_content = f"{title}\n\n{content}"
+
+            # 文件完整路径
+            file_path = os.path.join(knowledge_base_path, final_filename)
+
+            # 写入文件到知识库路径
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write(file_content)
+
+            # 生成文档ID
+            import hashlib
+
+            document_id = hashlib.md5(
+                f"{final_filename}{file_content}".encode()
+            ).hexdigest()
+
+            logger.info(f"知识库文档已保存: {file_path}")
+
+            return {
+                "added": True,
+                "document_id": document_id,
+                "message": f"文档添加成功，已保存为: {final_filename}",
+                "timestamp": datetime.now().isoformat(),
+                "file_path": file_path,
+                "filename": final_filename,
             }
-
-            # 如果助手支持添加文档，调用助手方法
-            if self._assistant and hasattr(self._assistant, "add_document"):
-                result = await self._assistant.add_document(document_data)
-                return {
-                    "added": result.get("success", True),
-                    "document_id": result.get("document_id"),
-                    "message": result.get("message", "文档添加成功"),
-                    "timestamp": datetime.now().isoformat(),
-                }
-            else:
-                # 备用实现：记录文档信息
-                logger.warning("使用备用文档添加实现")
-                import hashlib
-
-                document_id = hashlib.md5(f"{title}{content}".encode()).hexdigest()
-
-                return {
-                    "added": True,
-                    "document_id": document_id,
-                    "message": "文档添加成功（使用备用实现）",
-                    "timestamp": datetime.now().isoformat(),
-                }
 
         except ValidationError:
             raise

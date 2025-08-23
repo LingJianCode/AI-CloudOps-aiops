@@ -39,7 +39,6 @@ from app.models import (
     ServiceInfoResponse,
     ServiceReadyResponse,
     SessionInfoResponse,
-    UploadKnowledgeRequest,
     UploadKnowledgeResponse,
 )
 from app.services.assistant_service import OptimizedAssistantService
@@ -198,36 +197,17 @@ async def create_session(request: CreateSessionRequest) -> Dict[str, Any]:
     return ResponseWrapper.success(data=response.dict(), message="操作成功")
 
 
-@router.post("/upload_knowledge", summary="上传知识库(JSON格式)")
-@api_response("上传知识库")
-async def upload_knowledge(request: UploadKnowledgeRequest) -> Dict[str, Any]:
-    await assistant_service.initialize()
 
-    upload_result = await assistant_service.upload_knowledge(request)
-
-    response = UploadKnowledgeResponse(
-        uploaded=upload_result.get("uploaded", True),
-        document_id=upload_result.get("document_id"),
-        filename=None,
-        file_size=None,
-        message=upload_result.get("message", "知识库上传成功"),
-        timestamp=datetime.now().isoformat(),
-    )
-    return ResponseWrapper.success(data=response.dict(), message="操作成功")
 
 
 @router.post("/upload_knowledge_file", summary="上传知识库文件")
 @api_response("上传知识库文件")
 async def upload_knowledge_file(
     file: UploadFile = File(...),
-    title: str = Form(None),
-    source: str = Form(None),
 ) -> Dict[str, Any]:
     await assistant_service.initialize()
 
-    upload_result = await assistant_service.upload_knowledge_file(
-        file=file, title=title, source=source
-    )
+    upload_result = await assistant_service.upload_knowledge_file(file=file)
 
     response = UploadKnowledgeResponse(
         uploaded=upload_result.get("uploaded", True),
