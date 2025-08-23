@@ -138,23 +138,7 @@ class AutoFixService(BaseService):
         include_logs: bool = False,
         include_events: bool = True,
     ) -> Dict[str, Any]:
-        """
-        诊断Kubernetes问题
-
-        Args:
-            deployment: 部署名称（可选）
-            namespace: 命名空间
-            include_pods: 是否包含Pod信息
-            include_logs: 是否包含日志
-            include_events: 是否包含事件
-
-        Returns:
-            诊断结果字典
-
-        Raises:
-            ValidationError: 参数验证失败
-            AutoFixError: 诊断过程失败
-        """
+        """诊断Kubernetes问题"""
         self._ensure_initialized()
 
         # 验证命名空间
@@ -227,12 +211,7 @@ class AutoFixService(BaseService):
             raise AutoFixError(f"诊断失败: {str(e)}")
 
     async def get_autofix_config(self) -> Dict[str, Any]:
-        """
-        获取自动修复配置信息
-
-        Returns:
-            配置信息字典
-        """
+        """获取自动修复配置信息"""
         from ..config.settings import config
 
         config_info = {
@@ -273,12 +252,7 @@ class AutoFixService(BaseService):
         return config_info
 
     async def get_service_health_info(self) -> Dict[str, Any]:
-        """
-        获取自动修复服务详细健康信息
-
-        Returns:
-            健康信息字典
-        """
+        """获取服务健康信息"""
         try:
             health_status = {
                 "service": "autofix",
@@ -343,16 +317,7 @@ class AutoFixService(BaseService):
             }
 
     def _validate_k8s_params(self, deployment: str, namespace: str) -> None:
-        """
-        验证Kubernetes参数
-
-        Args:
-            deployment: 部署名称
-            namespace: 命名空间
-
-        Raises:
-            ValidationError: 参数验证失败
-        """
+        """验证Kubernetes参数"""
         if not deployment or not isinstance(deployment, str):
             raise ValidationError("deployment", "部署名称不能为空")
 
@@ -379,19 +344,7 @@ class AutoFixService(BaseService):
         agent_type: str,
         dry_run: bool = False,
     ) -> Dict[str, Any]:
-        """
-        包装修复结果
-
-        Args:
-            fix_result: 原始修复结果
-            deployment: 部署名称
-            namespace: 命名空间
-            agent_type: 代理类型
-            dry_run: 是否为演练模式
-
-        Returns:
-            标准化的修复结果
-        """
+        """包装修复结果"""
         if isinstance(fix_result, dict):
             wrapped_result = fix_result.copy()
         else:
@@ -428,7 +381,7 @@ class AutoFixService(BaseService):
             # 清理K8s修复代理
             if self._k8s_fixer:
                 try:
-                    if hasattr(self._k8s_fixer, 'cleanup'):
+                    if hasattr(self._k8s_fixer, "cleanup"):
                         if asyncio.iscoroutinefunction(self._k8s_fixer.cleanup):
                             await self._k8s_fixer.cleanup()
                         else:
@@ -440,7 +393,7 @@ class AutoFixService(BaseService):
             # 清理监督代理
             if self._supervisor:
                 try:
-                    if hasattr(self._supervisor, 'cleanup'):
+                    if hasattr(self._supervisor, "cleanup"):
                         if asyncio.iscoroutinefunction(self._supervisor.cleanup):
                             await self._supervisor.cleanup()
                         else:

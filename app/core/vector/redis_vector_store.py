@@ -11,11 +11,13 @@ Description: Redis向量存储
 
 import asyncio
 import hashlib
+import heapq
 import logging
 import pickle
 import re
-import heapq
+import time
 from collections import defaultdict
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -81,67 +83,198 @@ class EnhancedRedisVectorStore:
         embedding_model: Embeddings,
         vector_dim: int = 1536,
         index_type: str = "HNSW",  # FLAT, IVF, HNSW
+        max_connections: int = 20,
+        connection_timeout: Optional[int] = None,
     ):
         self.redis_config = redis_config
         self.collection_name = collection_name
         self.embedding_model = embedding_model
         self.vector_dim = vector_dim
         self.index_type = index_type
+        self._closed = False
 
-        # Redis连接池
-        self.pool = redis.ConnectionPool(**redis_config)
-        self.client = redis.Redis(connection_pool=self.pool)
+        # 从配置获取超时值
+        from app.config.settings import config
+
+        default_timeout = (
+            config.redis.connection_timeout if hasattr(config, "redis") else 5
+        )
+
+        # 优化Redis连接池配置
+        pool_config = {
+            **redis_config,
+            "max_connections": max_connections,
+            "socket_timeout": connection_timeout or default_timeout,
+            "socket_connect_timeout": connection_timeout or default_timeout,
+            "retry_on_timeout": True,
+            "health_check_interval": 30,
+        }
+
+        try:
+            self.pool = redis.ConnectionPool(**pool_config)
+            self.client = redis.Redis(
+                connection_pool=self.pool,
+                socket_keepalive=True,
+                socket_keepalive_options={},
+            )
+        except Exception as e:
+            logger.error(f"Redis连接池初始化失败: {e}")
+            raise
 
         # 索引管理
-        self.index_manager = IndexManager(self.client, collection_name)
+        try:
+            self.index_manager = IndexManager(self.client, collection_name)
+        except Exception as e:
+            logger.error(f"索引管理器初始化失败: {e}")
+            raise
 
-        # 查询缓存
-        self.query_cache = QueryCache(self.client, ttl=3600)
+        # 查询缓存（减少内存占用）
+        self.query_cache = QueryCache(self.client, ttl=1800, max_cache_size=1000)
 
         # 批处理队列
-        self.batch_queue = BatchQueue(max_size=50)
+        self.batch_queue = BatchQueue(max_size=30)
 
-        # MD文档处理器
+        # 性能监控
+        self.stats = {
+            "search_count": 0,
+            "cache_hits": 0,
+            "error_count": 0,
+            "last_error": None,
+        }
+
+        # MD文档处理器（懒加载）
         self.md_processor = None
         self.md_query_processor = None
-        if MD_PROCESSOR_AVAILABLE:
-            self.md_processor = MDDocumentProcessor(
-                {
-                    "max_chunk_size": 800,
-                    "chunk_overlap": 100,
-                    "preserve_structure": True,
-                }
-            )
-            self.md_query_processor = MDEnhancedQueryProcessor()
-            logger.info("MD查询处理器已启用")
+        self._md_processor_initialized = False
 
-        # 层次化检索器
+        if MD_PROCESSOR_AVAILABLE:
+            try:
+                self._initialize_md_processors()
+            except Exception as e:
+                logger.warning(f"MD处理器初始化失败: {e}")
+
+        # 层次化检索器（懒加载）
         self.hierarchical_retriever = None
+        self._hierarchical_retriever_initialized = False
+
         if HIERARCHICAL_RETRIEVAL_AVAILABLE:
-            self.hierarchical_retriever = HierarchicalRetriever(
-                vector_store=self,
-                config={
-                    "max_clusters": 50,
-                    "min_cluster_size": 3,
-                    "enable_quality_scoring": True,
-                    "dynamic_thresholds": True,
-                },
-            )
-            logger.info("层次化检索器已启用")
+            try:
+                self._initialize_hierarchical_retriever()
+            except Exception as e:
+                logger.warning(f"层次化检索器初始化失败: {e}")
 
         self._initialize()
 
     def _initialize(self):
+        """初始化向量存储"""
         try:
+            # 测试Redis连接
             self.client.ping()
-            logger.info(f"Redis向量存储初始化成功: {self.collection_name}")
+            logger.info(f"Redis连接成功: {self.collection_name}")
 
             # 创建索引
             self.index_manager.create_index(self.vector_dim, self.index_type)
+            logger.info(
+                f"向量索引创建成功，类型: {self.index_type}，维度: {self.vector_dim}"
+            )
 
+        except redis.ConnectionError as e:
+            logger.error(f"Redis连接失败: {e}")
+            raise
         except Exception as e:
             logger.error(f"初始化失败: {e}")
+            self.stats["error_count"] += 1
+            self.stats["last_error"] = str(e)
             raise
+
+    def _initialize_md_processors(self):
+        """懒加载MD处理器"""
+        if not self._md_processor_initialized and MD_PROCESSOR_AVAILABLE:
+            try:
+                self.md_processor = MDDocumentProcessor(
+                    {
+                        "max_chunk_size": 800,
+                        "chunk_overlap": 100,
+                        "preserve_structure": True,
+                    }
+                )
+                self.md_query_processor = MDEnhancedQueryProcessor()
+                self._md_processor_initialized = True
+                logger.info("MD处理器初始化成功")
+            except Exception as e:
+                logger.error(f"MD处理器初始化失败: {e}")
+                raise
+
+    def _initialize_hierarchical_retriever(self):
+        """懒加载层次化检索器"""
+        if (
+            not self._hierarchical_retriever_initialized
+            and HIERARCHICAL_RETRIEVAL_AVAILABLE
+        ):
+            try:
+                self.hierarchical_retriever = HierarchicalRetriever(
+                    vector_store=self,
+                    config={
+                        "max_clusters": 50,
+                        "min_cluster_size": 3,
+                        "enable_quality_scoring": True,
+                        "dynamic_thresholds": True,
+                    },
+                )
+                self._hierarchical_retriever_initialized = True
+                logger.info("层次化检索器初始化成功")
+            except Exception as e:
+                logger.error(f"层次化检索器初始化失败: {e}")
+                raise
+
+    async def close(self):
+        """清理资源"""
+        if self._closed:
+            return
+
+        try:
+            # 清理缓存
+            if hasattr(self, "query_cache"):
+                await self.query_cache.clear()
+
+            # 关闭连接池
+            if hasattr(self, "pool"):
+                self.pool.disconnect()
+
+            self._closed = True
+            logger.info(f"向量存储已关闭: {self.collection_name}")
+        except Exception as e:
+            logger.error(f"关闭向量存储时出错: {e}")
+
+    def __del__(self):
+        """析构函数"""
+        if not self._closed and hasattr(self, "pool"):
+            try:
+                self.pool.disconnect()
+            except:
+                pass
+
+    @asynccontextmanager
+    async def get_redis_client(self):
+        """获取Redis客户端的上下文管理器"""
+        if self._closed:
+            raise RuntimeError("向量存储已关闭")
+
+        client = None
+        try:
+            client = redis.Redis(connection_pool=self.pool)
+            yield client
+        except Exception as e:
+            logger.error(f"Redis操作失败: {e}")
+            self.stats["error_count"] += 1
+            self.stats["last_error"] = str(e)
+            raise
+        finally:
+            if client:
+                try:
+                    client.close()
+                except:
+                    pass
 
     async def add_documents(self, documents: List[Document]) -> List[str]:
         """批量添加文档 - 优化版本"""
@@ -171,7 +304,7 @@ class EnhancedRedisVectorStore:
                 logger.warning(f"更新层次化检索聚类失败: {e}")
 
         # 清理相关缓存
-        self.query_cache.invalidate_pattern("*")
+        await self.query_cache.invalidate_pattern("*")
 
         logger.info(f"成功添加 {len(doc_ids)} 个文档")
         return doc_ids
@@ -263,17 +396,17 @@ class EnhancedRedisVectorStore:
     def _is_markdown_content(self, content: str) -> bool:
         """检测内容是否是Markdown格式"""
         md_indicators = [
-            '# ',
-            '## ',
-            '### ',  # 标题
-            '```',  # 代码块
-            '- ',
-            '* ',
-            '1. ',  # 列表
-            '| ',  # 表格
-            '> ',  # 引用
-            '[',
-            '](',  # 链接
+            "# ",
+            "## ",
+            "### ",  # 标题
+            "```",  # 代码块
+            "- ",
+            "* ",
+            "1. ",  # 列表
+            "| ",  # 表格
+            "> ",  # 引用
+            "[",
+            "](",  # 链接
         ]
 
         content_lower = content.lower()
@@ -298,7 +431,7 @@ class EnhancedRedisVectorStore:
         # 提取代码块语言
         import re
 
-        code_blocks = re.findall(r'```(\w+)', content)
+        code_blocks = re.findall(r"```(\w+)", content)
         if code_blocks:
             info["languages"] = list(set(code_blocks))
 
@@ -308,60 +441,149 @@ class EnhancedRedisVectorStore:
         """批量生成嵌入"""
         texts = [doc.page_content for doc in documents]
 
-        # 智能批处理
-        batch_size = 25  # 优化的批大小
-        embeddings = []
+        # 动态调整批大小
+        total_texts = len(texts)
+        if total_texts <= 10:
+            batch_size = total_texts  # 小批量时不分批
+        elif total_texts <= 100:
+            batch_size = 20
+        else:
+            batch_size = 30  # 大批量时使用更大的批
 
-        for i in range(0, len(texts), batch_size):
+        tasks = []
+
+        # 创建并发任务（限制并发数）
+        max_concurrent = min(3, (total_texts + batch_size - 1) // batch_size)
+        semaphore = asyncio.Semaphore(max_concurrent)
+
+        async def embed_batch(batch_texts, batch_index):
+            async with semaphore:
+                try:
+                    # 添加小延迟避免API限流
+                    if batch_index > 0:
+                        await asyncio.sleep(0.05 * batch_index)
+
+                    batch_embeddings = await asyncio.to_thread(
+                        self.embedding_model.embed_documents, batch_texts
+                    )
+                    return batch_index, batch_embeddings
+                except Exception as e:
+                    logger.error(f"批次 {batch_index} 嵌入生成失败: {e}")
+                    return batch_index, None
+
+        # 创建所有批次任务
+        for i in range(0, total_texts, batch_size):
             batch = texts[i : i + batch_size]
+            batch_index = i // batch_size
+            task = asyncio.create_task(embed_batch(batch, batch_index))
+            tasks.append(task)
 
-            # 异步生成嵌入
-            batch_embeddings = await asyncio.to_thread(
-                self.embedding_model.embed_documents, batch
-            )
-            embeddings.extend(batch_embeddings)
+        # 等待所有任务完成
+        results = await asyncio.gather(*tasks, return_exceptions=True)
 
-            # 避免API限流
-            if i + batch_size < len(texts):
-                await asyncio.sleep(0.1)
+        # 按顺序重组结果
+        ordered_embeddings = [None] * len(tasks)
+        for result in results:
+            if isinstance(result, Exception):
+                logger.error(f"嵌入任务异常: {result}")
+                continue
+            batch_idx, batch_emb = result
+            if batch_emb is not None:
+                ordered_embeddings[batch_idx] = batch_emb
 
-        return [np.array(e, dtype=np.float32) for e in embeddings]
+        # 展平结果
+        final_embeddings = []
+        for batch_emb in ordered_embeddings:
+            if batch_emb is not None:
+                final_embeddings.extend(batch_emb)
+
+        logger.debug(
+            f"生成了 {len(final_embeddings)} 个嵌入向量，使用 {len(tasks)} 个批次"
+        )
+        return [np.array(e, dtype=np.float32) for e in final_embeddings]
 
     async def _parallel_store(
         self, documents: List[Document], embeddings: List[np.ndarray]
     ) -> List[str]:
         """并行存储文档"""
-        doc_ids = []
-
-        # 使用管道批量操作
-        pipe = self.client.pipeline()
-
-        for doc, embedding in zip(documents, embeddings):
-            doc_id = self._generate_doc_id(doc.page_content)
-            doc_ids.append(doc_id)
-
-            # 存储文档
-            doc_key = f"{self.collection_name}:doc:{doc_id}"
-            pipe.hset(
-                doc_key,
-                mapping={
-                    "content": doc.page_content,
-                    "metadata": pickle.dumps(doc.metadata),
-                },
+        if len(documents) != len(embeddings):
+            raise ValueError(
+                f"文档数量({len(documents)})与嵌入数量({len(embeddings)})不匹配"
             )
 
-            # 存储向量
-            vec_key = f"{self.collection_name}:vec:{doc_id}"
-            pipe.set(vec_key, embedding.tobytes())
+        doc_ids = []
+        total_docs = len(documents)
 
-            # 更新倒排索引（限制词数，降低写放大）
-            terms = list(self._tokenize_text(doc.page_content))[:100]
-            for term in terms:
-                term_key = f"{self.collection_name}:term:{term}"
-                pipe.sadd(term_key, doc_id)
+        # 对于大量文档，使用分批并行存储
+        if total_docs > 50:
+            batch_size = 25
+            tasks = []
 
-        # 执行批量操作
-        await asyncio.to_thread(pipe.execute)
+            for i in range(0, total_docs, batch_size):
+                batch_docs = documents[i : i + batch_size]
+                batch_embeddings = embeddings[i : i + batch_size]
+                task = asyncio.create_task(
+                    self._store_batch(batch_docs, batch_embeddings, i // batch_size)
+                )
+                tasks.append(task)
+
+            # 等待所有批次完成
+            batch_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            # 收集结果
+            for result in batch_results:
+                if isinstance(result, Exception):
+                    logger.error(f"批次存储失败: {result}")
+                    continue
+                doc_ids.extend(result)
+        else:
+            # 小批量使用单个管道
+            doc_ids = await self._store_batch(documents, embeddings, 0)
+
+        logger.debug(f"并行存储完成: {len(doc_ids)} 个文档")
+        return doc_ids
+
+    async def _store_batch(
+        self, documents: List[Document], embeddings: List[np.ndarray], batch_id: int
+    ) -> List[str]:
+        """存储一个批次的文档"""
+        doc_ids = []
+
+        try:
+            # 使用管道批量操作
+            pipe = self.client.pipeline()
+
+            for doc, embedding in zip(documents, embeddings):
+                doc_id = self._generate_doc_id(doc.page_content)
+                doc_ids.append(doc_id)
+
+                # 存储文档
+                doc_key = f"{self.collection_name}:doc:{doc_id}"
+                pipe.hset(
+                    doc_key,
+                    mapping={
+                        "content": doc.page_content,
+                        "metadata": pickle.dumps(doc.metadata),
+                    },
+                )
+
+                # 存储向量
+                vec_key = f"{self.collection_name}:vec:{doc_id}"
+                pipe.set(vec_key, embedding.tobytes())
+
+                # 更新倒排索引（限制词数，降低写放大）
+                terms = list(self._tokenize_text(doc.page_content))[:80]  # 减少到80个词
+                for term in terms:
+                    term_key = f"{self.collection_name}:term:{term}"
+                    pipe.sadd(term_key, doc_id)
+
+            # 执行批量操作
+            await asyncio.to_thread(pipe.execute)
+            logger.debug(f"批次 {batch_id} 存储完成: {len(doc_ids)} 个文档")
+
+        except Exception as e:
+            logger.error(f"批次 {batch_id} 存储失败: {e}")
+            raise
 
         return doc_ids
 
@@ -369,31 +591,50 @@ class EnhancedRedisVectorStore:
         self, query: str, k: int = 5, config: Optional[SearchConfig] = None
     ) -> List[Tuple[Document, float]]:
         """优化的相似度搜索，支持智能检索策略切换"""
+        if self._closed:
+            raise RuntimeError("向量存储已关闭")
+
         config = config or SearchConfig()
+        self.stats["search_count"] += 1
+        start_time = time.time()
 
-        # 检查缓存
-        if config.use_cache:
-            cache_key = self._get_search_cache_key(query, k, config)
-            cached = self.query_cache.get(cache_key)
-            if cached:
-                logger.debug(f"搜索缓存命中: {query[:50]}...")
-                return cached
+        try:
+            # 检查缓存
+            if config.use_cache:
+                cache_key = self._get_search_cache_key(query, k, config)
+                cached = self.query_cache.get(cache_key)
+                if cached:
+                    self.stats["cache_hits"] += 1
+                    logger.debug(f"搜索缓存命中: {query[:50]}...")
+                    return cached
 
-        # 智能选择检索策略
-        use_hierarchical = self._should_use_hierarchical_retrieval(config)
+            # 智能选择检索策略
+            use_hierarchical = self._should_use_hierarchical_retrieval(config)
 
-        if use_hierarchical and self.hierarchical_retriever:
-            logger.debug(f"使用层次化检索: {query[:50]}...")
-            results = await self._hierarchical_search_with_fallback(query, k, config)
-        else:
-            logger.debug(f"使用标准检索: {query[:50]}...")
-            results = await self._standard_search(query, k, config)
+            if use_hierarchical and self.hierarchical_retriever:
+                logger.debug(f"使用层次化检索: {query[:50]}...")
+                results = await self._hierarchical_search_with_fallback(
+                    query, k, config
+                )
+            else:
+                logger.debug(f"使用标准检索: {query[:50]}...")
+                results = await self._standard_search(query, k, config)
 
-        # 缓存结果
-        if config.use_cache and results:
-            self.query_cache.set(cache_key, results, config.cache_ttl)
+            # 缓存结果
+            if config.use_cache and results:
+                self.query_cache.set(cache_key, results, config.cache_ttl)
 
-        return results
+            elapsed_time = time.time() - start_time
+            logger.debug(
+                f"搜索完成，返回 {len(results)} 个结果，耗时: {elapsed_time:.3f}秒"
+            )
+            return results
+
+        except Exception as e:
+            self.stats["error_count"] += 1
+            self.stats["last_error"] = str(e)
+            logger.error(f"搜索失败: {e}")
+            raise
 
     def _should_use_hierarchical_retrieval(self, config: SearchConfig) -> bool:
         """判断是否应该使用层次化检索"""
@@ -438,8 +679,13 @@ class EnhancedRedisVectorStore:
                 logger.warning("层次化检索无结果，切换到标准检索")
                 return await self._standard_search(query, k, config)
 
+        except redis.RedisError as e:
+            logger.error(f"层次化检索Redis错误，切换到标准检索: {e}")
+            self.stats["error_count"] += 1
+            return await self._standard_search(query, k, config)
         except Exception as e:
             logger.warning(f"层次化检索失败，切换到标准检索: {e}")
+            self.stats["error_count"] += 1
             return await self._standard_search(query, k, config)
 
     async def _standard_search(
@@ -654,8 +900,13 @@ class EnhancedRedisVectorStore:
 
             return Document(page_content=content, metadata=metadata)
 
+        except redis.RedisError as e:
+            logger.error(f"获取文档Redis错误 {doc_id}: {e}")
+            self.stats["error_count"] += 1
+            return None
         except Exception as e:
             logger.error(f"获取文档失败 {doc_id}: {e}")
+            self.stats["error_count"] += 1
             return None
 
     async def _get_documents_bulk(self, doc_ids: List[str]) -> Dict[str, Document]:
@@ -678,8 +929,13 @@ class EnhancedRedisVectorStore:
                 metadata = pickle.loads(data.get(b"metadata", pickle.dumps({})))
                 docs[doc_id] = Document(page_content=content, metadata=metadata)
             return docs
+        except redis.RedisError as e:
+            logger.error(f"批量获取文档Redis错误: {e}")
+            self.stats["error_count"] += 1
+            return {}
         except Exception as e:
             logger.error(f"批量获取文档失败: {e}")
+            self.stats["error_count"] += 1
             return {}
 
     def _generate_doc_id(self, content: str) -> str:
@@ -767,8 +1023,13 @@ class EnhancedRedisVectorStore:
             logger.info(f"Fallback搜索找到 {len(results)} 个结果")
             return results
 
+        except redis.RedisError as e:
+            logger.error(f"Fallback搜索Redis错误: {e}")
+            self.stats["error_count"] += 1
+            return []
         except Exception as e:
             logger.error(f"Fallback搜索失败: {e}")
+            self.stats["error_count"] += 1
             return []
 
     def _cosine_similarity_fallback(self, vec1: np.ndarray, vec2: np.ndarray) -> float:
@@ -800,6 +1061,562 @@ class EnhancedRedisVectorStore:
         cleaned = re.sub(r"[^\w\s]", " ", lowered)
         return [t for t in cleaned.split() if t]
 
+    async def _cleanup_partial_data(self, doc_ids: List[str]):
+        """清理部分数据"""
+        if not doc_ids:
+            return
+
+        try:
+            pipe = self.client.pipeline()
+            for doc_id in doc_ids:
+                doc_key = f"{self.collection_name}:doc:{doc_id}"
+                vec_key = f"{self.collection_name}:vec:{doc_id}"
+                pipe.delete(doc_key, vec_key)
+
+                # 清理倒排索引（简化处理）
+                terms = self._tokenize_text(f"cleanup_{doc_id}")
+                for term in terms[:10]:  # 限制数量
+                    term_key = f"{self.collection_name}:term:{term}"
+                    pipe.srem(term_key, doc_id)
+
+            await asyncio.to_thread(pipe.execute)
+            logger.debug(f"清理了 {len(doc_ids)} 个文档的部分数据")
+        except Exception as e:
+            logger.error(f"清理部分数据失败: {e}")
+
+    def get_stats(self) -> Dict[str, Any]:
+        """获取统计信息"""
+        stats = self.stats.copy()
+
+        try:
+            # 添加Redis状态
+            redis_info = self.client.info()
+            stats.update(
+                {
+                    "redis_connected_clients": redis_info.get("connected_clients", 0),
+                    "redis_used_memory": redis_info.get("used_memory_human", "0B"),
+                    "redis_used_memory_peak": redis_info.get(
+                        "used_memory_peak_human", "0B"
+                    ),
+                    "redis_uptime": redis_info.get("uptime_in_seconds", 0),
+                    "redis_total_commands_processed": redis_info.get(
+                        "total_commands_processed", 0
+                    ),
+                    "redis_keyspace_hits": redis_info.get("keyspace_hits", 0),
+                    "redis_keyspace_misses": redis_info.get("keyspace_misses", 0),
+                }
+            )
+
+            # 计算缓存命中率
+            cache_stats = self.query_cache.get_stats()
+            total_requests = cache_stats["hits"] + cache_stats["misses"]
+            if total_requests > 0:
+                stats["cache_hit_rate"] = cache_stats["hits"] / total_requests
+            else:
+                stats["cache_hit_rate"] = 0.0
+            stats.update(cache_stats)
+
+            # 添加索引状态
+            if self.index_manager and hasattr(self.index_manager, "faiss_index"):
+                faiss_index = self.index_manager.faiss_index
+                if faiss_index:
+                    stats["index_total_vectors"] = faiss_index.ntotal
+                    stats["index_type"] = self.index_type
+
+            # 添加错误率统计
+            if self.stats["search_count"] > 0:
+                stats["error_rate"] = (
+                    self.stats["error_count"] / self.stats["search_count"]
+                )
+            else:
+                stats["error_rate"] = 0.0
+
+            # 添加集合信息
+            stats["collection_name"] = self.collection_name
+            stats["vector_dimension"] = self.vector_dim
+
+            # 添加时间戳
+            stats["timestamp"] = time.time()
+
+        except Exception as e:
+            logger.warning(f"获取统计信息失败: {e}")
+
+        return stats
+
+    def log_performance_metrics(
+        self, operation: str, duration: float, details: Dict[str, Any] = None
+    ):
+        """记录性能指标"""
+        details = details or {}
+
+        # 性能日志
+        if duration > 1.0:  # 超过1秒的操作记录为警告
+            logger.warning(
+                f"性能警告 - {operation}: {duration:.3f}秒, " f"详情: {details}"
+            )
+        elif duration > 0.5:  # 超过500ms记录为信息
+            logger.info(
+                f"性能监控 - {operation}: {duration:.3f}秒, " f"详情: {details}"
+            )
+        else:
+            logger.debug(
+                f"性能监控 - {operation}: {duration:.3f}秒, " f"详情: {details}"
+            )
+
+    def health_check(self) -> Dict[str, Any]:
+        """健康检查"""
+        health = {
+            "status": "unknown",
+            "redis_connection": False,
+            "index_available": False,
+            "cache_available": False,
+            "error_count": self.stats["error_count"],
+            "last_error": self.stats.get("last_error"),
+            "timestamp": time.time(),
+        }
+
+        try:
+            # 检查Redis连接
+            self.client.ping()
+            health["redis_connection"] = True
+
+            # 检查索引
+            if self.index_manager:
+                health["index_available"] = True
+
+            # 检查缓存
+            if self.query_cache:
+                health["cache_available"] = True
+
+            # 根据错误率判断整体状态
+            total_searches = self.stats["search_count"]
+            if total_searches == 0:
+                health["status"] = "healthy"
+            else:
+                error_rate = self.stats["error_count"] / total_searches
+                if error_rate < 0.01:  # 错误率小于1%
+                    health["status"] = "healthy"
+                elif error_rate < 0.05:  # 错误率小于5%
+                    health["status"] = "degraded"
+                else:
+                    health["status"] = "unhealthy"
+
+        except Exception as e:
+            health["status"] = "unhealthy"
+            health["last_check_error"] = str(e)
+            logger.error(f"健康检查失败: {e}")
+
+        return health
+
+    async def batch_similarity_search(
+        self, queries: List[str], k: int = 5, config: Optional[SearchConfig] = None
+    ) -> List[List[Tuple[Document, float]]]:
+        """批量相似度搜索（性能优化版）"""
+        if not queries:
+            return []
+
+        config = config or SearchConfig()
+        start_time = time.time()
+
+        try:
+            # 预生成所有查询的embedding
+            batch_embeddings = await self._batch_embed_queries(queries)
+
+            # 并发执行搜索
+            search_tasks = []
+            for i, (query, embedding) in enumerate(zip(queries, batch_embeddings)):
+                if embedding is not None:
+                    task = asyncio.create_task(
+                        self._single_search_with_embedding(query, embedding, k, config)
+                    )
+                    search_tasks.append(task)
+                else:
+                    search_tasks.append(
+                        asyncio.create_task(asyncio.sleep(0, result=[]))
+                    )
+
+            # 等待所有搜索完成
+            results = await asyncio.gather(*search_tasks, return_exceptions=True)
+
+            # 处理结果
+            final_results = []
+            for result in results:
+                if isinstance(result, Exception):
+                    logger.error(f"批量搜索中的单个查询失败: {result}")
+                    final_results.append([])
+                else:
+                    final_results.append(result)
+
+            batch_time = time.time() - start_time
+            logger.info(
+                f"批量搜索完成: {len(queries)} 个查询，耗时: {batch_time:.3f}秒"
+            )
+
+            return final_results
+
+        except Exception as e:
+            logger.error(f"批量搜索失败: {e}")
+            # 返回空结果而不是抛出异常
+            return [[] for _ in queries]
+
+    async def _batch_embed_queries(
+        self, queries: List[str]
+    ) -> List[Optional[np.ndarray]]:
+        """批量生成查询embedding"""
+        try:
+            # 使用更大的批处理以提高效率
+            batch_size = min(20, len(queries))
+            embeddings = []
+
+            for i in range(0, len(queries), batch_size):
+                batch = queries[i : i + batch_size]
+                try:
+                    batch_embeddings = await asyncio.to_thread(
+                        self.embedding_model.embed_documents, batch
+                    )
+                    embeddings.extend(
+                        [np.array(e, dtype=np.float32) for e in batch_embeddings]
+                    )
+                except Exception as e:
+                    logger.error(f"批次embedding生成失败: {e}")
+                    # 为失败的批次填充None
+                    embeddings.extend([None] * len(batch))
+
+            return embeddings
+
+        except Exception as e:
+            logger.error(f"批量embedding生成失败: {e}")
+            return [None] * len(queries)
+
+    async def _single_search_with_embedding(
+        self, query: str, query_embedding: np.ndarray, k: int, config: SearchConfig
+    ) -> List[Tuple[Document, float]]:
+        """使用预生成的embedding进行单个搜索"""
+        try:
+            # 检查缓存
+            if config.use_cache:
+                cache_key = self._get_search_cache_key(query, k, config)
+                cached = self.query_cache.get(cache_key)
+                if cached:
+                    return cached
+
+            # 智能选择检索策略
+            use_hierarchical = self._should_use_hierarchical_retrieval(config)
+
+            if use_hierarchical and self.hierarchical_retriever:
+                # 层次化搜索
+                context = {}
+                if self.md_query_processor:
+                    enhanced_query_info = self.md_query_processor.enhance_query_for_md(
+                        query, context
+                    )
+                    context.update(enhanced_query_info)
+
+                results = await self.hierarchical_retriever.hierarchical_search(
+                    query, k, context
+                )
+
+                if not results:
+                    # 回退到标准搜索
+                    results = await self._standard_search_with_embedding(
+                        query, query_embedding, k, config
+                    )
+            else:
+                results = await self._standard_search_with_embedding(
+                    query, query_embedding, k, config
+                )
+
+            # 缓存结果
+            if config.use_cache and results:
+                cache_key = self._get_search_cache_key(query, k, config)
+                self.query_cache.set(cache_key, results, config.cache_ttl)
+
+            return results
+
+        except Exception as e:
+            logger.error(f"单个搜索失败: {e}")
+            return []
+
+    async def _standard_search_with_embedding(
+        self, query: str, query_embedding: np.ndarray, k: int, config: SearchConfig
+    ) -> List[Tuple[Document, float]]:
+        """使用预生成embedding的标准搜索"""
+        # 执行混合搜索
+        results = await self._hybrid_search_with_embedding(
+            query, query_embedding, k * 3, config
+        )
+
+        # MMR去重和重排序
+        if config.use_mmr and len(results) > k:
+            results = self._mmr_rerank(results, query_embedding, k, config.mmr_lambda)
+        else:
+            results = results[:k]
+
+        return results
+
+    async def _hybrid_search_with_embedding(
+        self, query: str, query_embedding: np.ndarray, k: int, config: SearchConfig
+    ) -> List[Tuple[Document, float]]:
+        """使用预生成embedding的混合搜索"""
+        # 并行执行语义和词汇搜索
+        semantic_task = asyncio.create_task(
+            self._semantic_search_with_embedding(query_embedding, k)
+        )
+        lexical_task = asyncio.create_task(self._lexical_search(query, k))
+
+        semantic_results, lexical_results = await asyncio.gather(
+            semantic_task, lexical_task
+        )
+
+        # 融合结果
+        return self._fuse_results(
+            semantic_results,
+            lexical_results,
+            config.semantic_weight,
+            config.lexical_weight,
+            config.similarity_threshold,
+        )
+
+    async def _semantic_search_with_embedding(
+        self, query_embedding: np.ndarray, k: int
+    ) -> List[Tuple[Document, float]]:
+        """使用预生成embedding的语义搜索"""
+        try:
+            # 尝试使用索引搜索
+            doc_ids_scores = await self.index_manager.search_vectors(query_embedding, k)
+
+            # 获取文档
+            results = []
+            for doc_id, score in doc_ids_scores:
+                doc = await self._get_document(doc_id)
+                if doc:
+                    results.append((doc, score))
+
+            # 如果结果不足，使用fallback搜索
+            if len(results) < k // 2:
+                logger.debug("索引搜索结果不足，使用fallback搜索补充")
+                fallback_results = await self._fallback_semantic_search(
+                    query_embedding, k * 2
+                )
+
+                # 合并结果，去重
+                existing_ids = set(
+                    self._generate_doc_id(doc.page_content) for doc, _ in results
+                )
+                for doc, score in fallback_results:
+                    doc_id = self._generate_doc_id(doc.page_content)
+                    if doc_id not in existing_ids:
+                        results.append((doc, score))
+                        existing_ids.add(doc_id)
+                        if len(results) >= k:
+                            break
+
+            return results[:k]
+
+        except Exception as e:
+            logger.warning(f"embedding语义搜索失败，使用fallback: {e}")
+            return await self._fallback_semantic_search(query_embedding, k)
+
+    async def delete_documents(self, doc_ids: List[str]) -> bool:
+        """批量删除文档"""
+        if not doc_ids:
+            return True
+
+        try:
+            async with self.get_redis_client() as client:
+                pipe = client.pipeline()
+
+                # 删除文档和向量
+                for doc_id in doc_ids:
+                    doc_key = f"{self.collection_name}:doc:{doc_id}"
+                    vec_key = f"{self.collection_name}:vec:{doc_id}"
+                    pipe.delete(doc_key, vec_key)
+
+                # 执行删除
+                await asyncio.to_thread(pipe.execute)
+
+                # 清理倒排索引（简化处理）
+                await self._cleanup_inverted_index(doc_ids)
+
+                # 清理相关缓存
+                await self.query_cache.invalidate_pattern("*")
+
+                logger.info(f"成功删除 {len(doc_ids)} 个文档")
+                return True
+
+        except Exception as e:
+            logger.error(f"删除文档失败: {e}")
+            return False
+
+    async def _cleanup_inverted_index(self, doc_ids: List[str]):
+        """清理倒排索引"""
+        try:
+            async with self.get_redis_client() as client:
+                # 获取所有term键
+                pattern = f"{self.collection_name}:term:*"
+                cursor = 0
+
+                while True:
+                    cursor, keys = await asyncio.to_thread(
+                        client.scan, cursor, match=pattern, count=100
+                    )
+
+                    if keys:
+                        pipe = client.pipeline()
+                        for key in keys:
+                            for doc_id in doc_ids:
+                                pipe.srem(key, doc_id)
+                        await asyncio.to_thread(pipe.execute)
+
+                    if cursor == 0:
+                        break
+
+        except Exception as e:
+            logger.warning(f"清理倒排索引失败: {e}")
+
+    async def get_document_count(self) -> int:
+        """获取文档总数"""
+        try:
+            async with self.get_redis_client() as client:
+                pattern = f"{self.collection_name}:doc:*"
+                cursor = 0
+                count = 0
+
+                while True:
+                    cursor, keys = await asyncio.to_thread(
+                        client.scan, cursor, match=pattern, count=1000
+                    )
+                    count += len(keys) if keys else 0
+
+                    if cursor == 0:
+                        break
+
+                return count
+
+        except Exception as e:
+            logger.error(f"获取文档数量失败: {e}")
+            return 0
+
+    async def optimize_storage(self):
+        """优化存储"""
+        try:
+            logger.info("开始存储优化...")
+
+            # 清理空的term集合
+            await self._cleanup_empty_term_sets()
+
+            # 压缩稀疏的term集合
+            await self._compress_sparse_term_sets()
+
+            # 重建索引（如果需要）
+            if self.index_manager and hasattr(self.index_manager, "optimize"):
+                await self.index_manager.optimize()
+
+            logger.info("存储优化完成")
+
+        except Exception as e:
+            logger.error(f"存储优化失败: {e}")
+
+    async def _cleanup_empty_term_sets(self):
+        """清理空的term集合"""
+        try:
+            async with self.get_redis_client() as client:
+                pattern = f"{self.collection_name}:term:*"
+                cursor = 0
+                deleted_count = 0
+
+                while True:
+                    cursor, keys = await asyncio.to_thread(
+                        client.scan, cursor, match=pattern, count=500
+                    )
+
+                    if keys:
+                        pipe = client.pipeline()
+                        for key in keys:
+                            pipe.scard(key)
+                        sizes = await asyncio.to_thread(pipe.execute)
+
+                        # 删除空集合
+                        empty_keys = [
+                            key for key, size in zip(keys, sizes) if size == 0
+                        ]
+                        if empty_keys:
+                            await asyncio.to_thread(client.delete, *empty_keys)
+                            deleted_count += len(empty_keys)
+
+                    if cursor == 0:
+                        break
+
+                if deleted_count > 0:
+                    logger.info(f"清理了 {deleted_count} 个空的term集合")
+
+        except Exception as e:
+            logger.warning(f"清理空term集合失败: {e}")
+
+    async def _compress_sparse_term_sets(self):
+        """压缩稀疏的term集合"""
+        try:
+            async with self.get_redis_client() as client:
+                pattern = f"{self.collection_name}:term:*"
+                cursor = 0
+                compressed_count = 0
+
+                while True:
+                    cursor, keys = await asyncio.to_thread(
+                        client.scan, cursor, match=pattern, count=100
+                    )
+
+                    if keys:
+                        for key in keys:
+                            try:
+                                # 检查集合大小
+                                size = await asyncio.to_thread(client.scard, key)
+
+                                # 如果集合很小且包含的文档可能已被删除，重新验证
+                                if 0 < size < 3:
+                                    members = await asyncio.to_thread(
+                                        client.smembers, key
+                                    )
+                                    valid_members = []
+
+                                    for member in members:
+                                        doc_id = (
+                                            member.decode()
+                                            if isinstance(member, bytes)
+                                            else str(member)
+                                        )
+                                        doc_key = f"{self.collection_name}:doc:{doc_id}"
+                                        exists = await asyncio.to_thread(
+                                            client.exists, doc_key
+                                        )
+                                        if exists:
+                                            valid_members.append(member)
+
+                                    # 如果没有有效成员，删除这个term
+                                    if not valid_members:
+                                        await asyncio.to_thread(client.delete, key)
+                                        compressed_count += 1
+                                    elif len(valid_members) < size:
+                                        # 重建集合
+                                        await asyncio.to_thread(client.delete, key)
+                                        if valid_members:
+                                            await asyncio.to_thread(
+                                                client.sadd, key, *valid_members
+                                            )
+                                        compressed_count += 1
+
+                            except Exception as e:
+                                logger.warning(f"压缩term集合失败 {key}: {e}")
+
+                    if cursor == 0:
+                        break
+
+                if compressed_count > 0:
+                    logger.info(f"压缩了 {compressed_count} 个稀疏term集合")
+
+        except Exception as e:
+            logger.warning(f"压缩稀疏term集合失败: {e}")
+
 
 class IndexManager:
     """索引管理器"""
@@ -808,60 +1625,126 @@ class IndexManager:
         self.client = redis_client
         self.collection_name = collection_name
         self.index_key = f"{collection_name}:index"
+        self._index_stats = {
+            "total_vectors": 0,
+            "last_update": 0,
+            "search_count": 0,
+            "build_time": 0,
+        }
 
         # 尝试加载FAISS
         try:
-            pass
+            import faiss
 
+            self.faiss = faiss
             self.faiss_available = True
             self.faiss_index = None
+            logger.info("FAISS库加载成功")
         except ImportError:
             self.faiss_available = False
+            self.faiss = None
             logger.warning("FAISS不可用，使用基础索引")
 
     def create_index(self, dim: int, index_type: str = "FLAT"):
         """创建索引"""
         if not self.faiss_available:
+            logger.warning("FAISS不可用，跳过索引创建")
             return
 
-        import faiss
+        start_time = time.time()
 
-        if index_type == "FLAT":
-            self.faiss_index = faiss.IndexFlatIP(dim)
-        elif index_type == "IVF":
-            quantizer = faiss.IndexFlatIP(dim)
-            self.faiss_index = faiss.IndexIVFFlat(quantizer, dim, 100)
-        elif index_type == "HNSW":
-            self.faiss_index = faiss.IndexHNSWFlat(dim, 32)
-        else:
-            self.faiss_index = faiss.IndexFlatIP(dim)
+        try:
+            if index_type == "FLAT":
+                self.faiss_index = self.faiss.IndexFlatIP(dim)
+            elif index_type == "IVF":
+                # 改进的IVF配置
+                nlist = min(100, max(10, dim // 20))  # 动态调整聚类数
+                quantizer = self.faiss.IndexFlatIP(dim)
+                self.faiss_index = self.faiss.IndexIVFFlat(quantizer, dim, nlist)
+                # 设置搜索参数
+                self.faiss_index.nprobe = min(10, nlist // 2)
+            elif index_type == "HNSW":
+                # 改进的HNSW配置
+                M = min(64, max(16, dim // 30))  # 动态调整连接数
+                self.faiss_index = self.faiss.IndexHNSWFlat(dim, M)
+                # 设置搜索参数
+                self.faiss_index.hnsw.efSearch = 64
+                self.faiss_index.hnsw.efConstruction = 200
+            else:
+                self.faiss_index = self.faiss.IndexFlatIP(dim)
 
-        logger.info(f"创建{index_type}索引，维度: {dim}")
+            build_time = time.time() - start_time
+            self._index_stats["build_time"] = build_time
+            self._index_stats["last_update"] = time.time()
+
+            logger.info(
+                f"创建{index_type}索引成功，维度: {dim}，耗时: {build_time:.3f}秒"
+            )
+
+        except Exception as e:
+            logger.error(f"创建索引失败: {e}")
+            self.faiss_index = None
+            raise
 
     async def update_index(self, doc_ids: List[str], embeddings: List[np.ndarray]):
         """更新索引"""
         if not self.faiss_available or not self.faiss_index:
+            logger.debug("索引不可用，跳过更新")
             return
 
-        # 添加到FAISS索引
-        vectors = np.array(embeddings, dtype=np.float32)
+        if not doc_ids or not embeddings:
+            return
 
-        # 归一化向量（用于内积相似度）
-        norms = np.linalg.norm(vectors, axis=1, keepdims=True)
-        vectors = vectors / (norms + 1e-10)
+        start_time = time.time()
 
-        # 训练索引（如果需要）
-        if hasattr(self.faiss_index, "is_trained") and not self.faiss_index.is_trained:
-            self.faiss_index.train(vectors)
+        try:
+            # 添加到FAISS索引
+            vectors = np.array(embeddings, dtype=np.float32)
 
-        # 添加向量
-        start_idx = self.faiss_index.ntotal
-        self.faiss_index.add(vectors)
+            # 检查向量维度
+            if vectors.shape[1] != self.faiss_index.d:
+                raise ValueError(
+                    f"向量维度不匹配: 期望 {self.faiss_index.d}, 实际 {vectors.shape[1]}"
+                )
 
-        # 更新ID映射
-        for i, doc_id in enumerate(doc_ids):
-            idx_key = f"{self.collection_name}:idx:{start_idx + i}"
-            await asyncio.to_thread(self.client.set, idx_key, doc_id)
+            # 归一化向量（用于内积相似度）
+            norms = np.linalg.norm(vectors, axis=1, keepdims=True)
+            vectors = vectors / (norms + 1e-10)
+
+            # 训练索引（如果需要）
+            if (
+                hasattr(self.faiss_index, "is_trained")
+                and not self.faiss_index.is_trained
+            ):
+                logger.info("训练FAISS索引...")
+                train_start = time.time()
+                self.faiss_index.train(vectors)
+                train_time = time.time() - train_start
+                logger.info(f"索引训练完成，耗时: {train_time:.3f}秒")
+
+            # 添加向量
+            start_idx = self.faiss_index.ntotal
+            self.faiss_index.add(vectors)
+
+            # 批量更新ID映射
+            pipe = self.client.pipeline()
+            for i, doc_id in enumerate(doc_ids):
+                idx_key = f"{self.collection_name}:idx:{start_idx + i}"
+                pipe.set(idx_key, doc_id)
+            await asyncio.to_thread(pipe.execute)
+
+            # 更新统计信息
+            self._index_stats["total_vectors"] = self.faiss_index.ntotal
+            self._index_stats["last_update"] = time.time()
+
+            update_time = time.time() - start_time
+            logger.debug(
+                f"索引更新完成: 添加 {len(doc_ids)} 个向量，总计 {self.faiss_index.ntotal} 个，耗时: {update_time:.3f}秒"
+            )
+
+        except Exception as e:
+            logger.error(f"更新索引失败: {e}")
+            raise
 
     async def search_vectors(
         self, query_vector: np.ndarray, k: int
@@ -872,73 +1755,187 @@ class IndexManager:
             or not self.faiss_index
             or self.faiss_index.ntotal == 0
         ):
+            logger.debug("索引不可用或为空，返回空结果")
             return []
 
-        # 归一化查询向量
-        query_vector = query_vector / (np.linalg.norm(query_vector) + 1e-10)
-        query_vector = query_vector.reshape(1, -1).astype(np.float32)
+        start_time = time.time()
+        self._index_stats["search_count"] += 1
 
-        # FAISS搜索
-        scores, indices = self.faiss_index.search(
-            query_vector, min(k, self.faiss_index.ntotal)
-        )
+        try:
+            # 检查查询向量维度
+            if query_vector.shape[0] != self.faiss_index.d:
+                raise ValueError(
+                    f"查询向量维度不匹配: 期望 {self.faiss_index.d}, 实际 {query_vector.shape[0]}"
+                )
 
-        # 获取文档ID
-        results = []
-        for score, idx in zip(scores[0], indices[0]):
-            if idx < 0:
-                continue
+            # 归一化查询向量
+            query_vector = query_vector / (np.linalg.norm(query_vector) + 1e-10)
+            query_vector = query_vector.reshape(1, -1).astype(np.float32)
 
-            idx_key = f"{self.collection_name}:idx:{idx}"
-            doc_id = await asyncio.to_thread(self.client.get, idx_key)
+            # 动态调整搜索参数
+            search_k = min(k * 2, self.faiss_index.ntotal)  # 获取更多候选以提高质量
 
-            if doc_id:
-                if isinstance(doc_id, bytes):
-                    doc_id = doc_id.decode()
-                results.append((doc_id, float(score)))
+            # FAISS搜索
+            scores, indices = self.faiss_index.search(query_vector, search_k)
 
-        return results
+            # 批量获取文档ID
+            valid_indices = indices[0][indices[0] >= 0]  # 过滤无效索引
+            if len(valid_indices) == 0:
+                return []
+
+            pipe = self.client.pipeline()
+            for idx in valid_indices:
+                idx_key = f"{self.collection_name}:idx:{idx}"
+                pipe.get(idx_key)
+            doc_ids = await asyncio.to_thread(pipe.execute)
+
+            # 构建结果
+            results = []
+            for i, (score, idx) in enumerate(zip(scores[0], indices[0])):
+                if idx < 0 or i >= len(doc_ids):
+                    continue
+
+                doc_id = doc_ids[i]
+                if doc_id:
+                    if isinstance(doc_id, bytes):
+                        doc_id = doc_id.decode()
+                    results.append((doc_id, float(score)))
+
+                # 限制返回数量
+                if len(results) >= k:
+                    break
+
+            search_time = time.time() - start_time
+            logger.debug(
+                f"向量搜索完成: 查询 {self.faiss_index.ntotal} 个向量，返回 {len(results)} 个结果，耗时: {search_time:.3f}秒"
+            )
+            return results
+
+        except Exception as e:
+            logger.error(f"向量搜索失败: {e}")
+            return []
+
+    def get_stats(self) -> Dict[str, Any]:
+        """获取索引统计信息"""
+        stats = self._index_stats.copy()
+        if self.faiss_index:
+            stats["index_type"] = type(self.faiss_index).__name__
+            stats["is_trained"] = getattr(self.faiss_index, "is_trained", True)
+        return stats
 
 
 class QueryCache:
     """查询缓存"""
 
-    def __init__(self, redis_client, ttl: int = 3600):
+    def __init__(self, redis_client, ttl: int = 3600, max_cache_size: int = 1000):
         self.client = redis_client
         self.ttl = ttl
+        self.max_cache_size = max_cache_size
         self.prefix = "query_cache:"
+        self._cache_stats = {
+            "hits": 0,
+            "misses": 0,
+            "sets": 0,
+            "evictions": 0,
+        }
 
     def get(self, key: str) -> Optional[Any]:
         """获取缓存"""
         try:
             data = self.client.get(self.prefix + key)
             if data:
+                self._cache_stats["hits"] += 1
                 return pickle.loads(data)
+            else:
+                self._cache_stats["misses"] += 1
         except Exception as e:
             logger.warning(f"缓存读取失败: {e}")
+            self._cache_stats["misses"] += 1
         return None
 
     def set(self, key: str, value: Any, ttl: Optional[int] = None):
         """设置缓存"""
         try:
-            self.client.setex(self.prefix + key, ttl or self.ttl, pickle.dumps(value))
+            # 检查缓存大小，如果超限则清理最旧的条目
+            self._ensure_cache_size()
+
+            # 序列化数据并检查大小
+            data = pickle.dumps(value)
+            data_size = len(data)
+
+            # 如果单个数据过大，记录警告但仍然缓存
+            if data_size > 1024 * 1024:  # 1MB
+                logger.warning(f"缓存数据过大: {data_size} bytes, key: {key[:50]}...")
+
+            self.client.setex(self.prefix + key, ttl or self.ttl, data)
+            self._cache_stats["sets"] += 1
+
         except Exception as e:
             logger.warning(f"缓存写入失败: {e}")
 
-    def invalidate_pattern(self, pattern: str):
+    def _ensure_cache_size(self):
+        """确保缓存大小不超过限制"""
+        try:
+            # 获取当前缓存键的数量
+            pattern = self.prefix + "*"
+            cursor = 0
+            keys = []
+
+            while True:
+                cursor, batch_keys = self.client.scan(cursor, match=pattern, count=100)
+                keys.extend(batch_keys)
+                if cursor == 0:
+                    break
+
+            if len(keys) >= self.max_cache_size:
+                # 删除最旧的25%的缓存
+                evict_count = len(keys) // 4
+                if evict_count > 0:
+                    # 简单策略：删除前N个键（FIFO近似）
+                    to_delete = keys[:evict_count]
+                    if to_delete:
+                        self.client.delete(*to_delete)
+                        self._cache_stats["evictions"] += len(to_delete)
+                        logger.debug(f"清理了 {len(to_delete)} 个缓存条目")
+
+        except Exception as e:
+            logger.warning(f"缓存大小检查失败: {e}")
+
+    async def invalidate_pattern(self, pattern: str):
         """清理匹配的缓存"""
         try:
             cursor = 0
+            deleted_count = 0
             while True:
                 cursor, keys = self.client.scan(
                     cursor, match=self.prefix + pattern, count=100
                 )
                 if keys:
                     self.client.delete(*keys)
+                    deleted_count += len(keys)
                 if cursor == 0:
                     break
+            if deleted_count > 0:
+                logger.debug(f"清理了 {deleted_count} 个匹配的缓存条目")
         except Exception as e:
             logger.warning(f"缓存清理失败: {e}")
+
+    async def clear(self):
+        """清空所有缓存"""
+        try:
+            await self.invalidate_pattern("*")
+            self._cache_stats = {
+                "hits": 0,
+                "misses": 0,
+                "sets": 0,
+                "evictions": 0,
+            }
+        except Exception as e:
+            logger.warning(f"清空缓存失败: {e}")
+
+    def get_stats(self) -> Dict[str, Any]:
+        """获取缓存统计信息"""
+        return self._cache_stats.copy()
 
 
 class BatchQueue:

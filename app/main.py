@@ -16,7 +16,7 @@ import signal
 import sys
 import time
 from contextlib import asynccontextmanager
-from typing import Dict, Any
+from typing import Any, Dict
 
 from fastapi import FastAPI
 

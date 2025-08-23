@@ -15,8 +15,8 @@ from datetime import datetime
 from typing import Any, Dict, Optional
 
 from ..common.exceptions import AssistantError, ValidationError
-from ..core.agents.enterprise_assistant import get_enterprise_assistant
 from ..config.settings import config
+from ..core.agents.enterprise_assistant import get_enterprise_assistant
 from .base import BaseService
 
 logger = logging.getLogger("aiops.services.assistant")
@@ -177,7 +177,7 @@ class OptimizedAssistantService(BaseService):
             # 清除助手缓存
             cache_cleared = False
             cleared_items = 0
-            if self._assistant and hasattr(self._assistant, 'clear_cache'):
+            if self._assistant and hasattr(self._assistant, "clear_cache"):
                 result = await self._assistant.clear_cache()
                 cache_cleared = result.get("success", False)
                 cleared_items = result.get("cleared_items", 0)
@@ -215,17 +215,17 @@ class OptimizedAssistantService(BaseService):
             session_id = str(uuid.uuid4())
 
             # 如果助手支持会话创建，调用助手方法
-            if self._assistant and hasattr(self._assistant, 'create_session'):
+            if self._assistant and hasattr(self._assistant, "create_session"):
                 result = await self._assistant.create_session(
                     session_id,
                     {
                         "mode": request.mode,
                         "question": (
-                            request.question if hasattr(request, 'question') else None
+                            request.question if hasattr(request, "question") else None
                         ),
                         "chat_history": (
                             request.chat_history
-                            if hasattr(request, 'chat_history')
+                            if hasattr(request, "chat_history")
                             else None
                         ),
                         "created_time": datetime.now().isoformat(),
@@ -254,6 +254,89 @@ class OptimizedAssistantService(BaseService):
         except Exception as e:
             logger.error(f"创建会话失败: {str(e)}")
             raise AssistantError(f"创建会话失败: {str(e)}")
+
+    async def create_or_get_session(self, user_id: str, mode: int = 1) -> Dict[str, Any]:
+        """根据用户ID创建或获取会话"""
+        try:
+            # 确保服务就绪
+            await self._ensure_ready()
+
+            # 生成基于用户ID的会话ID
+            import hashlib
+            session_id = f"user_{user_id}_{hashlib.md5(f'{user_id}_{mode}'.encode()).hexdigest()[:8]}"
+
+            # 检查是否已存在会话
+            session_info = None
+            try:
+                if self._assistant:
+                    session_info = await self._assistant.get_session_info(session_id)
+                    if session_info.get("success") and session_info.get("session_id"):
+                        # 会话已存在，更新最后活动时间
+                        if hasattr(self._assistant, "context_manager"):
+                            self._assistant.context_manager.update_context(session_id, {
+                                "mode": mode,
+                                "last_access": datetime.now().isoformat()
+                            })
+                        
+                        session_details = self._assistant.context_manager.get_session_details(session_id)
+                        return {
+                            "session_id": session_id,
+                            "created": False,
+                            "status": "active",
+                            "created_time": session_details.get("created_time", ""),
+                            "message": "会话已存在，返回现有会话",
+                            "timestamp": datetime.now().isoformat(),
+                        }
+            except Exception as e:
+                logger.debug(f"获取现有会话失败，将创建新会话: {str(e)}")
+
+            # 创建新会话
+            if self._assistant and hasattr(self._assistant, "create_session"):
+                result = await self._assistant.create_session(
+                    session_id,
+                    {
+                        "mode": mode,
+                        "user_id": user_id,
+                        "created_time": datetime.now().isoformat(),
+                    },
+                )
+                
+                session_details = self._assistant.context_manager.get_session_details(session_id)
+                return {
+                    "session_id": session_id,
+                    "created": True,
+                    "status": "active",
+                    "created_time": session_details.get("created_time", datetime.now().isoformat()),
+                    "message": "新会话创建成功",
+                    "timestamp": datetime.now().isoformat(),
+                }
+            else:
+                # 使用备用会话管理器
+                from app.core.agents.fallback_models import SessionManager
+
+                session_manager = SessionManager()
+                session = session_manager.get_session(session_id)
+                
+                if not session:
+                    session = session_manager.create_session(session_id)
+                    created = True
+                    message = "新会话创建成功（使用备用实现）"
+                else:
+                    created = False
+                    message = "会话已存在，返回现有会话（使用备用实现）"
+
+                return {
+                    "session_id": session_id,
+                    "created": created,
+                    "status": "active",
+                    "created_time": session.created_at.isoformat() if session else datetime.now().isoformat(),
+                    "message": message,
+                    "timestamp": datetime.now().isoformat(),
+                }
+
+        except Exception as e:
+            logger.error(f"创建或获取会话失败: {str(e)}")
+            raise AssistantError(f"创建或获取会话失败: {str(e)}")
 
     async def get_session_info(self, session_id: str) -> Dict[str, Any]:
         """获取会话信息"""
@@ -378,10 +461,10 @@ class OptimizedAssistantService(BaseService):
                 "min_confidence": 0.6,
             },
             "performance_targets": {
-                "p50_latency_ms": 500,
-                "p95_latency_ms": 2000,
-                "p99_latency_ms": 5000,
-                "target_accuracy": 0.85,
+                "p50_latency_ms": 500,   # 目标P50延迟
+                "p95_latency_ms": 2000,  # 目标P95延迟
+                "p99_latency_ms": 5000,  # 目标P99延迟
+                "target_accuracy": 0.85, # 目标准确率
             },
         }
 
@@ -416,13 +499,18 @@ class OptimizedAssistantService(BaseService):
         base_timeout = float(config.rag.timeout)
 
         # 根据问题长度调整
-        length_factor = min(len(question) / 100, 3.0)
+        question_length_divisor = 100
+        max_length_factor = 3.0
+        length_factor = min(len(question) / question_length_divisor, max_length_factor)
 
         # 根据历史性能调整
         perf_stats = self._performance_monitor.get_stats()
         if perf_stats and "avg_latency" in perf_stats:
             avg_latency = perf_stats["avg_latency"]
-            performance_factor = max(avg_latency / 1000 * 2, 1.0)
+            latency_divisor = 1000
+            performance_multiplier = 2
+            min_performance_factor = 1.0
+            performance_factor = max(avg_latency / latency_divisor * performance_multiplier, min_performance_factor)
         else:
             performance_factor = 1.0
 
@@ -455,7 +543,7 @@ class OptimizedAssistantService(BaseService):
         # 添加性能指标
         if "processing_time" in enhanced:
             enhanced["performance"] = {
-                "latency_ms": enhanced["processing_time"] * 1000,
+                "latency_ms": enhanced["processing_time"] * 1000,  # 转换为毫秒
                 "cache_hit": enhanced.get("cache_hit", False),
             }
 
@@ -611,7 +699,6 @@ class OptimizedAssistantService(BaseService):
             }
 
     async def upload_knowledge(self, request) -> Dict[str, Any]:
-        """上传结构化知识库"""
         try:
             # 确保服务就绪
             await self._ensure_ready()
@@ -632,7 +719,7 @@ class OptimizedAssistantService(BaseService):
             }
 
             # 如果助手支持上传知识库，调用助手方法
-            if self._assistant and hasattr(self._assistant, 'upload_knowledge'):
+            if self._assistant and hasattr(self._assistant, "upload_knowledge"):
                 result = await self._assistant.upload_knowledge(document_data)
                 return {
                     "uploaded": result.get("success", True),
@@ -665,7 +752,6 @@ class OptimizedAssistantService(BaseService):
     async def upload_knowledge_file(
         self, file, title: str = None, source: str = None
     ) -> Dict[str, Any]:
-        """上传知识库文件"""
         try:
             # 确保服务就绪
             await self._ensure_ready()
@@ -677,26 +763,27 @@ class OptimizedAssistantService(BaseService):
             # 读取文件内容
             content = await file.read()
 
-            # 检查文件大小（限制10MB）
-            if len(content) > 10 * 1024 * 1024:
-                raise ValidationError("file", "文件大小不能超过10MB")
+            # 检查文件大小
+            max_file_size = 10 * 1024 * 1024  # 10MB
+            if len(content) > max_file_size:
+                raise ValidationError("file", f"文件大小不能超过{max_file_size // (1024 * 1024)}MB")
 
             # 根据文件类型处理内容
             filename = file.filename or "unknown"
-            file_extension = filename.split('.')[-1].lower() if '.' in filename else ""
+            file_extension = filename.split(".")[-1].lower() if "." in filename else ""
 
             try:
-                if file_extension in ['txt', 'md', 'markdown']:
-                    file_content = content.decode('utf-8')
-                elif file_extension in ['pdf']:
+                if file_extension in ["txt", "md", "markdown"]:
+                    file_content = content.decode("utf-8")
+                elif file_extension in ["pdf"]:
                     # 这里可以集成PDF解析库
                     file_content = "PDF文件内容解析暂不支持，请转换为文本格式上传"
-                elif file_extension in ['doc', 'docx']:
+                elif file_extension in ["doc", "docx"]:
                     # 这里可以集成Word文档解析库
                     file_content = "Word文档内容解析暂不支持，请转换为文本格式上传"
                 else:
                     # 尝试作为文本文件解码
-                    file_content = content.decode('utf-8')
+                    file_content = content.decode("utf-8")
             except UnicodeDecodeError:
                 raise ValidationError(
                     "file", "文件编码不支持，请使用UTF-8编码的文本文件"
@@ -715,7 +802,7 @@ class OptimizedAssistantService(BaseService):
             }
 
             # 如果助手支持文件上传，调用助手方法
-            if self._assistant and hasattr(self._assistant, 'upload_knowledge_file'):
+            if self._assistant and hasattr(self._assistant, "upload_knowledge_file"):
                 result = await self._assistant.upload_knowledge_file(document_data)
                 return {
                     "uploaded": result.get("success", True),
@@ -750,7 +837,6 @@ class OptimizedAssistantService(BaseService):
             raise AssistantError(f"文件上传失败: {str(e)}")
 
     async def add_document(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        """添加知识库文档"""
         try:
             # 确保服务就绪
             await self._ensure_ready()
@@ -778,7 +864,7 @@ class OptimizedAssistantService(BaseService):
             }
 
             # 如果助手支持添加文档，调用助手方法
-            if self._assistant and hasattr(self._assistant, 'add_document'):
+            if self._assistant and hasattr(self._assistant, "add_document"):
                 result = await self._assistant.add_document(document_data)
                 return {
                     "added": result.get("success", True),
@@ -821,7 +907,6 @@ class PerformanceMonitor:
         self._lock = asyncio.Lock()
 
     class Timer:
-        """计时器上下文管理器"""
 
         def __init__(self, monitor, operation):
             self.monitor = monitor
@@ -850,9 +935,10 @@ class PerformanceMonitor:
             self.metrics["total_latency"] += latency
             self.metrics["latencies"].append(latency)
 
-            # 保持最近1000个样本
-            if len(self.metrics["latencies"]) > 1000:
-                self.metrics["latencies"] = self.metrics["latencies"][-1000:]
+            # 保持最近样本数量
+            max_samples = 1000
+            if len(self.metrics["latencies"]) > max_samples:
+                self.metrics["latencies"] = self.metrics["latencies"][-max_samples:]
 
     def record_success(self):
         """记录成功"""

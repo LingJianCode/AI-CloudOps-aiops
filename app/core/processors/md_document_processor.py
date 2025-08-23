@@ -9,16 +9,18 @@ License: Apache 2.0
 Description: MD文档专用处理器
 """
 
-import re
-import logging
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple, Any
-from enum import Enum
 import hashlib
+import logging
+import re
+import time
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any, Dict, List, Optional, Tuple
 
 # 延迟导入元数据增强器
 try:
-    from .md_metadata_enhancer import MDMetadataEnhancer, EnhancedMetadata
+    from .md_metadata_enhancer import EnhancedMetadata, MDMetadataEnhancer
 
     METADATA_ENHANCER_AVAILABLE = True
 except ImportError:
@@ -80,6 +82,33 @@ class MDDocumentProcessor:
             "enable_metadata_enhancement", True
         )
 
+        # 性能优化配置
+        self.enable_parallel_processing = self.config.get(
+            "enable_parallel_processing", True
+        )
+        self.max_workers = self.config.get("max_workers", 2)
+        self.chunk_cache_size = self.config.get("chunk_cache_size", 100)
+        self.enable_caching = self.config.get("enable_caching", True)
+
+        # 缓存管理
+        self._chunk_cache = {} if self.enable_caching else None
+        self._pattern_cache = {}
+
+        # 线程池（仅在需要时创建）
+        self._executor = None
+        if self.enable_parallel_processing:
+            self._executor = ThreadPoolExecutor(max_workers=self.max_workers)
+
+        # 统计信息
+        self.stats = {
+            "documents_processed": 0,
+            "chunks_generated": 0,
+            "processing_time_total": 0.0,
+            "average_processing_time": 0.0,
+            "cache_hits": 0,
+            "cache_misses": 0,
+        }
+
         # 权重配置
         self.title_weights = {1: 1.5, 2: 1.3, 3: 1.2, 4: 1.1, 5: 1.05, 6: 1.0}
         self.element_weights = {
@@ -100,60 +129,100 @@ class MDDocumentProcessor:
         # 编译正则表达式
         self._compile_patterns()
 
+        # 额外的快速匹配模式
+        self._compile_fast_patterns()
+
     def _compile_patterns(self):
         """编译常用的正则表达式"""
         self.patterns = {
-            'title': re.compile(r'^(#{1,6})\s+(.+)$', re.MULTILINE),
-            'code_block': re.compile(r'```(\w+)?\n(.*?)```', re.DOTALL),
-            'inline_code': re.compile(r'`([^`]+)`'),
-            'list_item': re.compile(r'^(\s*)([-*+]|\d+\.)\s+(.+)$', re.MULTILINE),
-            'table_row': re.compile(r'\|(.+)\|'),
-            'quote': re.compile(r'^>\s*(.+)$', re.MULTILINE),
-            'link': re.compile(r'\[([^\]]+)\]\(([^)]+)\)'),
-            'image': re.compile(r'!\[([^\]]*)\]\(([^)]+)\)'),
-            'bold': re.compile(r'\*\*([^*]+)\*\*'),
-            'italic': re.compile(r'\*([^*]+)\*'),
+            "title": re.compile(r"^(#{1,6})\s+(.+)$", re.MULTILINE),
+            "code_block": re.compile(r"```(\w+)?\n(.*?)```", re.DOTALL),
+            "inline_code": re.compile(r"`([^`]+)`"),
+            "list_item": re.compile(r"^(\s*)([-*+]|\d+\.)\s+(.+)$", re.MULTILINE),
+            "table_row": re.compile(r"\|(.+)\|"),
+            "quote": re.compile(r"^>\s*(.+)$", re.MULTILINE),
+            "link": re.compile(r"\[([^\]]+)\]\(([^)]+)\)"),
+            "image": re.compile(r"!\[([^\]]*)\]\(([^)]+)\)"),
+            "bold": re.compile(r"\*\*([^*]+)\*\*"),
+            "italic": re.compile(r"\*([^*]+)\*"),
+        }
+
+    def _compile_fast_patterns(self):
+        """编译快速匹配模式"""
+        self.fast_patterns = {
+            "has_headers": re.compile(r"^#{1,6}\s+", re.MULTILINE),
+            "has_code_blocks": re.compile(r"```"),
+            "has_lists": re.compile(r"^(\s*)([-*+]|\d+\.)\s+", re.MULTILINE),
         }
 
     def parse_document(
         self, content: str, metadata: Optional[Dict[str, Any]] = None
     ) -> List[MDChunk]:
-        """解析MD文档为结构化块"""
+        """解析MD文档为结构化块（带缓存和性能优化）"""
         metadata = metadata or {}
+        start_time = time.time()
+
+        # 检查缓存
+        if self.enable_caching and self._chunk_cache is not None:
+            cache_key = self._get_cache_key(content, str(metadata))
+            if cache_key in self._chunk_cache:
+                self.stats["cache_hits"] += 1
+                logger.debug(f"使用缓存的解析结果: {cache_key[:16]}...")
+                return self._chunk_cache[cache_key]
+            else:
+                self.stats["cache_misses"] += 1
 
         # 预处理文档
         content = self._preprocess_content(content)
 
-        # 解析文档结构
-        elements = self._parse_elements(content)
+        # 评估文档复杂度并选择处理策略
+        complexity = self._assess_document_complexity(content)
 
-        # 构建标题层级
-        title_hierarchy = self._build_title_hierarchy(elements)
+        if (
+            complexity == "complex"
+            and self.enable_parallel_processing
+            and self._executor
+        ):
+            chunks = self._process_document_parallel(content, metadata)
+        else:
+            chunks = self._process_document_sequential(content, metadata)
 
-        # 智能分块
-        chunks = self._intelligent_chunking(elements, title_hierarchy, metadata)
+        # 更新统计信息
+        processing_time = time.time() - start_time
+        self._update_stats(len(chunks), processing_time)
 
-        # 计算权重和元数据
-        self._calculate_weights_and_metadata(chunks)
+        # 缓存结果（如果启用）
+        if self.enable_caching and self._chunk_cache is not None:
+            cache_key = self._get_cache_key(content, str(metadata))
 
-        # 如果启用了元数据增强器，进行增强处理
-        if self.metadata_enhancer:
-            self._enhance_chunks_metadata(chunks, content, metadata)
+            # 限制缓存大小
+            if len(self._chunk_cache) >= self.chunk_cache_size:
+                # 简单的LRU：移除最老的一半条目
+                keys_to_remove = list(self._chunk_cache.keys())[
+                    : self.chunk_cache_size // 2
+                ]
+                for key in keys_to_remove:
+                    del self._chunk_cache[key]
 
-        logger.info(f"MD文档解析完成，生成 {len(chunks)} 个块")
+            self._chunk_cache[cache_key] = chunks
+
+        logger.info(
+            f"MD文档解析完成，生成 {len(chunks)} 个块，"
+            f"复杂度: {complexity}，耗时: {processing_time:.3f}秒"
+        )
         return chunks
 
     def _preprocess_content(self, content: str) -> str:
         """预处理文档内容"""
         # 标准化换行符
-        content = content.replace('\r\n', '\n').replace('\r', '\n')
+        content = content.replace("\r\n", "\n").replace("\r", "\n")
 
         # 移除过多的空行
-        content = re.sub(r'\n{3,}', '\n\n', content)
+        content = re.sub(r"\n{3,}", "\n\n", content)
 
         # 标准化标题格式
         content = re.sub(
-            r'^(#{1,6})\s*([^#\n]+)\s*#+?\s*$', r'\1 \2', content, flags=re.MULTILINE
+            r"^(#{1,6})\s*([^#\n]+)\s*#+?\s*$", r"\1 \2", content, flags=re.MULTILINE
         )
 
         return content.strip()
@@ -161,11 +230,10 @@ class MDDocumentProcessor:
     def _parse_elements(self, content: str) -> List[MDElement]:
         """解析文档元素"""
         elements = []
-        lines = content.split('\n')
+        lines = content.split("\n")
         i = 0
 
         while i < len(lines):
-            lines[i]
             element, consumed_lines = self._parse_line(lines, i)
 
             if element:
@@ -187,7 +255,7 @@ class MDDocumentProcessor:
             return None, 1
 
         # 标题
-        title_match = self.patterns['title'].match(lines[start_idx])
+        title_match = self.patterns["title"].match(lines[start_idx])
         if title_match:
             level = len(title_match.group(1))
             title = title_match.group(2).strip()
@@ -202,22 +270,22 @@ class MDDocumentProcessor:
             )
 
         # 代码块
-        if line.startswith('```'):
+        if line.startswith("```"):
             return self._parse_code_block(lines, start_idx)
 
         # 列表项
-        list_match = self.patterns['list_item'].match(lines[start_idx])
+        list_match = self.patterns["list_item"].match(lines[start_idx])
         if list_match:
             return self._parse_list_item(lines, start_idx)
 
         # 引用
-        if line.startswith('>'):
+        if line.startswith(">"):
             return self._parse_quote(lines, start_idx)
 
         # 表格
-        if '|' in line and start_idx < len(lines) - 1:
+        if "|" in line and start_idx < len(lines) - 1:
             next_line = lines[start_idx + 1].strip()
-            if '|' in next_line and re.match(r'^[\|\-\s:]+$', next_line):
+            if "|" in next_line and re.match(r"^[\|\-\s:]+$", next_line):
                 return self._parse_table(lines, start_idx)
 
         # 普通段落
@@ -228,7 +296,7 @@ class MDDocumentProcessor:
     ) -> Tuple[Optional[MDElement], int]:
         """解析代码块"""
         start_line = lines[start_idx]
-        language_match = re.match(r'```(\w+)?', start_line)
+        language_match = re.match(r"```(\w+)?", start_line)
         language = (
             language_match.group(1)
             if language_match and language_match.group(1)
@@ -239,7 +307,7 @@ class MDDocumentProcessor:
         i = start_idx + 1
 
         while i < len(lines):
-            if lines[i].strip() == '```':
+            if lines[i].strip() == "```":
                 break
             code_lines.append(lines[i])
             i += 1
@@ -248,7 +316,7 @@ class MDDocumentProcessor:
             # 未闭合的代码块
             return None, 1
 
-        content = '\n'.join(code_lines)
+        content = "\n".join(code_lines)
         return (
             MDElement(
                 element_type=MDElementType.CODE_BLOCK,
@@ -276,7 +344,7 @@ class MDDocumentProcessor:
             current_indent = len(line) - len(line.lstrip())
 
             # 检查是否是列表项或延续
-            if self.patterns['list_item'].match(line) or (
+            if self.patterns["list_item"].match(line) or (
                 current_indent > base_indent and line.strip()
             ):
                 list_lines.append(line)
@@ -284,14 +352,14 @@ class MDDocumentProcessor:
             else:
                 break
 
-        content = '\n'.join(list_lines)
+        content = "\n".join(list_lines)
         return (
             MDElement(
                 element_type=MDElementType.LIST,
                 content=content,
                 metadata={
                     "item_count": len(
-                        [l for l in list_lines if self.patterns['list_item'].match(l)]
+                        [l for l in list_lines if self.patterns["list_item"].match(l)]
                     )
                 },
             ),
@@ -307,7 +375,7 @@ class MDDocumentProcessor:
 
         while i < len(lines):
             line = lines[i]
-            if line.strip().startswith('>'):
+            if line.strip().startswith(">"):
                 quote_lines.append(line.strip()[1:].strip())
                 i += 1
             elif not line.strip():
@@ -315,7 +383,7 @@ class MDDocumentProcessor:
             else:
                 break
 
-        content = '\n'.join(quote_lines)
+        content = "\n".join(quote_lines)
         return (
             MDElement(element_type=MDElementType.QUOTE, content=content),
             i - start_idx,
@@ -330,7 +398,7 @@ class MDDocumentProcessor:
 
         while i < len(lines):
             line = lines[i].strip()
-            if '|' in line:
+            if "|" in line:
                 table_lines.append(line)
                 i += 1
             elif not line:
@@ -341,14 +409,14 @@ class MDDocumentProcessor:
         if len(table_lines) < 2:
             return None, 1
 
-        content = '\n'.join(table_lines)
+        content = "\n".join(table_lines)
 
         # 解析表格结构
-        headers = [h.strip() for h in table_lines[0].split('|')[1:-1]]
+        headers = [h.strip() for h in table_lines[0].split("|")[1:-1]]
         rows = []
         for line in table_lines[2:]:  # 跳过分隔符行
-            if '|' in line:
-                row = [cell.strip() for cell in line.split('|')[1:-1]]
+            if "|" in line:
+                row = [cell.strip() for cell in line.split("|")[1:-1]]
                 rows.append(row)
 
         return (
@@ -380,11 +448,11 @@ class MDDocumentProcessor:
 
             # 检查是否是其他元素的开始
             if (
-                line.startswith('#')
-                or line.startswith('```')
-                or line.startswith('>')
-                or self.patterns['list_item'].match(lines[i])
-                or ('|' in line and i + 1 < len(lines) and '|' in lines[i + 1])
+                line.startswith("#")
+                or line.startswith("```")
+                or line.startswith(">")
+                or self.patterns["list_item"].match(lines[i])
+                or ("|" in line and i + 1 < len(lines) and "|" in lines[i + 1])
             ):
                 break
 
@@ -394,12 +462,12 @@ class MDDocumentProcessor:
         if not para_lines:
             return None, 1
 
-        content = ' '.join(para_lines)
+        content = " ".join(para_lines)
 
         # 提取段落中的特殊元素
-        links = self.patterns['link'].findall(content)
-        images = self.patterns['image'].findall(content)
-        inline_codes = self.patterns['inline_code'].findall(content)
+        links = self.patterns["link"].findall(content)
+        images = self.patterns["image"].findall(content)
+        inline_codes = self.patterns["inline_code"].findall(content)
 
         return (
             MDElement(
@@ -556,7 +624,7 @@ class MDDocumentProcessor:
             else:
                 content_parts.append(element.content)
 
-        content = '\n\n'.join(content_parts)
+        content = "\n\n".join(content_parts)
 
         # 生成块ID
         chunk_id = hashlib.md5(content.encode()).hexdigest()
@@ -642,11 +710,13 @@ class MDDocumentProcessor:
         if not chunks:
             return
 
-        # 标准化语义权重
+        # 提前计算所有权重，避免重复列表生成
         semantic_weights = [chunk.semantic_weight for chunk in chunks]
+        structural_weights = [chunk.structural_weight for chunk in chunks]
+
+        # 标准化语义权重
         if semantic_weights:
-            max_semantic = max(semantic_weights)
-            min_semantic = min(semantic_weights)
+            min_semantic, max_semantic = min(semantic_weights), max(semantic_weights)
             range_semantic = max_semantic - min_semantic
 
             if range_semantic > 0:
@@ -656,10 +726,10 @@ class MDDocumentProcessor:
                     )
 
         # 标准化结构权重
-        structural_weights = [chunk.structural_weight for chunk in chunks]
         if structural_weights:
-            max_structural = max(structural_weights)
-            min_structural = min(structural_weights)
+            min_structural, max_structural = min(structural_weights), max(
+                structural_weights
+            )
             range_structural = max_structural - min_structural
 
             if range_structural > 0:
@@ -759,7 +829,7 @@ class MDDocumentProcessor:
         logger.debug("块元数据增强完成")
 
     def _adjust_weights_from_enhancement(
-        self, chunk: MDChunk, enhanced: 'EnhancedMetadata'
+        self, chunk: MDChunk, enhanced: "EnhancedMetadata"
     ):
         """根据增强元数据调整权重"""
         try:
@@ -785,7 +855,7 @@ class MDDocumentProcessor:
 
             complexity = (
                 enhanced.content_complexity.value
-                if hasattr(enhanced.content_complexity, 'value')
+                if hasattr(enhanced.content_complexity, "value")
                 else str(enhanced.content_complexity)
             )
             multiplier = complexity_multipliers.get(complexity, 1.0)
@@ -807,16 +877,16 @@ class MDEnhancedQueryProcessor:
 
         # MD特定的查询模式
         self.md_patterns = {
-            "code_query": re.compile(r'代码|代码示例|implementation|code|script|命令'),
-            "config_query": re.compile(r'配置|设置|配置文件|config|setting|参数'),
+            "code_query": re.compile(r"代码|代码示例|implementation|code|script|命令"),
+            "config_query": re.compile(r"配置|设置|配置文件|config|setting|参数"),
             "tutorial_query": re.compile(
-                r'教程|指南|步骤|how\s+to|guide|tutorial|安装|部署'
+                r"教程|指南|步骤|how\s+to|guide|tutorial|安装|部署"
             ),
             "troubleshoot_query": re.compile(
-                r'问题|错误|故障|排查|debug|error|fail|issue'
+                r"问题|错误|故障|排查|debug|error|fail|issue"
             ),
             "concept_query": re.compile(
-                r'什么是|概念|原理|principle|concept|定义|架构'
+                r"什么是|概念|原理|principle|concept|定义|架构"
             ),
         }
 
@@ -995,3 +1065,144 @@ class MDEnhancedQueryProcessor:
         )
 
         return min(final_score, 2.0)  # 限制最大加成
+
+    def _get_cache_key(self, content: str, metadata_str: str) -> str:
+        """生成缓存键"""
+        content_hash = hashlib.md5(content.encode()).hexdigest()[:16]
+        metadata_hash = hashlib.md5(metadata_str.encode()).hexdigest()[:8]
+        return f"{content_hash}_{metadata_hash}"
+
+    def _assess_document_complexity(self, content: str) -> str:
+        """快速评估文档复杂度"""
+        # 快速指标检查
+        char_count = len(content)
+        if char_count < 1000:
+            return "simple"
+
+        # 检查结构复杂度
+        has_headers = bool(self.patterns["has_headers"].search(content))
+        has_code_blocks = bool(self.patterns["has_code_blocks"].search(content))
+        has_lists = bool(self.patterns["has_lists"].search(content))
+
+        complexity_score = sum([has_headers, has_code_blocks, has_lists])
+
+        if char_count > 5000 or complexity_score >= 2:
+            return "complex"
+        elif char_count > 2000 or complexity_score >= 1:
+            return "moderate"
+        else:
+            return "simple"
+
+    def _process_document_sequential(
+        self, content: str, metadata: Dict[str, Any]
+    ) -> List[MDChunk]:
+        """顺序处理文档"""
+        # 解析文档结构
+        elements = self._parse_elements(content)
+
+        # 构建标题层级
+        title_hierarchy = self._build_title_hierarchy(elements)
+
+        # 智能分块
+        chunks = self._intelligent_chunking(elements, title_hierarchy, metadata)
+
+        # 计算权重和元数据
+        self._calculate_weights_and_metadata(chunks)
+
+        # 如果启用了元数据增强器，进行增强处理
+        if self.metadata_enhancer:
+            self._enhance_chunks_metadata(chunks, content, metadata)
+
+        return chunks
+
+    def _process_document_parallel(
+        self, content: str, metadata: Dict[str, Any]
+    ) -> List[MDChunk]:
+        """并行处理文档"""
+        # 解析文档结构
+        elements = self._parse_elements(content)
+
+        # 构建标题层级
+        title_hierarchy = self._build_title_hierarchy(elements)
+
+        # 智能分块
+        chunks = self._intelligent_chunking(elements, title_hierarchy, metadata)
+
+        # 并行计算权重和元数据
+        futures = []
+        chunk_batches = self._split_chunks_for_parallel(chunks)
+
+        for batch in chunk_batches:
+            future = self._executor.submit(self._process_chunk_batch, batch)
+            futures.append(future)
+
+        # 等待所有批次完成
+        for future in futures:
+            future.result()
+
+        # 计算全局权重和元数据
+        self._calculate_weights_and_metadata(chunks)
+
+        # 如果启用了元数据增强器，进行增强处理
+        if self.metadata_enhancer:
+            self._enhance_chunks_metadata(chunks, content, metadata)
+
+        return chunks
+
+    def _split_chunks_for_parallel(self, chunks: List[MDChunk]) -> List[List[MDChunk]]:
+        """将块分割为并行处理的批次"""
+        if len(chunks) <= self.max_workers:
+            return [chunks]
+
+        batch_size = max(1, len(chunks) // self.max_workers)
+        batches = []
+
+        for i in range(0, len(chunks), batch_size):
+            batch = chunks[i : i + batch_size]
+            batches.append(batch)
+
+        return batches
+
+    def _process_chunk_batch(self, chunks: List[MDChunk]):
+        """处理一个批次的块"""
+        for chunk in chunks:
+            # 预计算一些可以并行处理的元数据
+            chunk.metadata["word_count"] = len(chunk.content.split())
+            chunk.metadata["char_count"] = len(chunk.content)
+            chunk.metadata["line_count"] = chunk.content.count("\n") + 1
+
+    def _update_stats(self, chunk_count: int, processing_time: float):
+        """更新统计信息"""
+        self.stats["documents_processed"] += 1
+        self.stats["chunks_generated"] += chunk_count
+        self.stats["processing_time_total"] += processing_time
+
+        # 计算平均处理时间
+        if self.stats["documents_processed"] > 0:
+            self.stats["average_processing_time"] = (
+                self.stats["processing_time_total"] / self.stats["documents_processed"]
+            )
+
+    def get_stats(self) -> Dict[str, Any]:
+        """获取处理统计信息"""
+        stats = self.stats.copy()
+        stats.update(
+            {
+                "cache_size": len(self._chunk_cache),
+                "max_cache_size": self.chunk_cache_size,
+                "parallel_processing_enabled": self.enable_parallel_processing,
+                "max_workers": self.max_workers,
+            }
+        )
+        return stats
+
+    def clear_cache(self):
+        """清理缓存"""
+        self._chunk_cache.clear()
+        self._pattern_cache.clear()
+        logger.info("MD文档处理器缓存已清理")
+
+    def __del__(self):
+        """析构函数，清理资源"""
+        if hasattr(self, "_executor"):
+            self._executor.shutdown(wait=False)

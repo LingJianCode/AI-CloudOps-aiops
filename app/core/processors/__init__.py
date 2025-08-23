@@ -10,20 +10,19 @@ Description: 文档处理器模块
 """
 
 from .md_document_processor import (
-    MDDocumentProcessor,
-    MDEnhancedQueryProcessor,
-    MDElement,
     MDChunk,
+    MDDocumentProcessor,
+    MDElement,
     MDElementType,
+    MDEnhancedQueryProcessor,
 )
-
 from .md_metadata_enhancer import (
-    MDMetadataEnhancer,
+    ContentComplexity,
+    ContentPattern,
     EnhancedMetadata,
+    MDMetadataEnhancer,
     SemanticTag,
     TechnicalConcept,
-    ContentPattern,
-    ContentComplexity,
     TechnicalDomain,
 )
 

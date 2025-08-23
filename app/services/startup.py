@@ -223,20 +223,20 @@ class StartupService(BaseService):
             start_time = time.time()
 
             # 尝试不同的清理方法
-            if hasattr(instance, 'shutdown') and callable(
-                getattr(instance, 'shutdown')
+            if hasattr(instance, "shutdown") and callable(
+                getattr(instance, "shutdown")
             ):
                 if asyncio.iscoroutinefunction(instance.shutdown):
                     await instance.shutdown()
                 else:
                     instance.shutdown()
-            elif hasattr(instance, 'close') and callable(getattr(instance, 'close')):
+            elif hasattr(instance, "close") and callable(getattr(instance, "close")):
                 if asyncio.iscoroutinefunction(instance.close):
                     await instance.close()
                 else:
                     instance.close()
-            elif hasattr(instance, 'cleanup') and callable(
-                getattr(instance, 'cleanup')
+            elif hasattr(instance, "cleanup") and callable(
+                getattr(instance, "cleanup")
             ):
                 if asyncio.iscoroutinefunction(instance.cleanup):
                     await instance.cleanup()
@@ -275,12 +275,12 @@ class StartupService(BaseService):
 
             # 尝试获取健康状态
             try:
-                if hasattr(instance, 'health_check'):
+                if hasattr(instance, "health_check"):
                     if asyncio.iscoroutinefunction(instance.health_check):
                         status["healthy"] = await instance.health_check()
                     else:
                         status["healthy"] = instance.health_check()
-                elif hasattr(instance, 'is_healthy'):
+                elif hasattr(instance, "is_healthy"):
                     status["healthy"] = instance.is_healthy()
             except Exception as e:
                 status["healthy"] = False

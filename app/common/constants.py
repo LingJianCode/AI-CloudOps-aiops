@@ -18,9 +18,7 @@ class AppConstants:
     APP_NAME = "AI-CloudOps Platform"
     APP_VERSION = "1.0.0"
     APP_DESCRIPTION = "AI-CloudOps智能云原生运维平台"
-
     API_VERSION_V1 = "/api/v1"
-
     DEFAULT_PAGE_SIZE = 20
     MAX_PAGE_SIZE = 100
 

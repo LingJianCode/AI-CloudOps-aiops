@@ -95,7 +95,7 @@ class MCPService(BaseService):
         try:
             # 导入配置
             from app.config.settings import config
-            
+
             # 设置超时
             timeout = config.mcp.timeout
 
@@ -271,12 +271,12 @@ class MCPService(BaseService):
             # 清理MCP助手实例
             if self._mcp_assistant:
                 try:
-                    if hasattr(self._mcp_assistant, 'cleanup'):
+                    if hasattr(self._mcp_assistant, "cleanup"):
                         if asyncio.iscoroutinefunction(self._mcp_assistant.cleanup):
                             await self._mcp_assistant.cleanup()
                         else:
                             self._mcp_assistant.cleanup()
-                    elif hasattr(self._mcp_assistant, 'close'):
+                    elif hasattr(self._mcp_assistant, "close"):
                         if asyncio.iscoroutinefunction(self._mcp_assistant.close):
                             await self._mcp_assistant.close()
                         else:

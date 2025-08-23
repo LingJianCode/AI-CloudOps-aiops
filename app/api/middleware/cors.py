@@ -23,11 +23,13 @@ def setup_cors(app: FastAPI):
         # 凭据模式不支持通配符
         from app.config.settings import config
 
+        # 动态构建允许的源
+        frontend_port = getattr(config, "frontend_port", 3000)
         allowed_origins = [
             f"http://localhost:{config.port}",
             f"http://127.0.0.1:{config.port}",
-            "http://localhost:3000",
-            "http://127.0.0.1:3000",
+            f"http://localhost:{frontend_port}",
+            f"http://127.0.0.1:{frontend_port}",
         ]
 
         app.add_middleware(

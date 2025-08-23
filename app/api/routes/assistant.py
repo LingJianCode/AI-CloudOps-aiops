@@ -13,7 +13,7 @@ import logging
 from datetime import datetime
 from typing import Any, Dict
 
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
 from app.api.decorators import api_response, log_api_call
 from app.common.constants import (
@@ -21,14 +21,17 @@ from app.common.constants import (
     AppConstants,
     ErrorMessages,
     HttpStatusCodes,
+    ServiceConstants,
 )
 from app.common.response import ResponseWrapper
+from app.config.settings import config
 from app.models import (
     AddDocumentRequest,
     AddDocumentResponse,
     AssistantRequest,
     AssistantResponse,
     ClearCacheResponse,
+    CreateSessionRequest,
     CreateSessionResponse,
     RefreshKnowledgeResponse,
     ServiceConfigResponse,
@@ -68,7 +71,7 @@ async def assistant_query(request: AssistantRequest) -> Dict[str, Any]:
         session_id=answer_result.get("session_id"),
     )
 
-    return ResponseWrapper.success(data=response.dict(), message="success")
+    return ResponseWrapper.success(data=response.dict(), message="操作成功")
 
 
 @router.get("/session/{session_id}", summary="获取会话信息")
@@ -87,7 +90,7 @@ async def get_session_info(session_id: str) -> Dict[str, Any]:
         status=session_info.get("status", "active"),
     )
 
-    return ResponseWrapper.success(data=response.dict(), message="success")
+    return ResponseWrapper.success(data=response.dict(), message="操作成功")
 
 
 @router.post("/refresh", summary="刷新知识库")
@@ -105,7 +108,7 @@ async def refresh_knowledge_base() -> Dict[str, Any]:
         message=refresh_result.get("message", "知识库刷新成功"),
     )
 
-    return ResponseWrapper.success(data=response.dict(), message="success")
+    return ResponseWrapper.success(data=response.dict(), message="操作成功")
 
 
 @router.get("/health", summary="智能助手健康检查")
@@ -124,20 +127,19 @@ async def assistant_health() -> Dict[str, Any]:
         uptime=health_status.get("uptime"),
     )
 
-    return ResponseWrapper.success(data=response.dict(), message="success")
+    return ResponseWrapper.success(data=response.dict(), message="操作成功")
 
 
 @router.get("/ready", summary="智能助手就绪检查")
 @api_response("智能助手就绪检查")
 async def assistant_ready() -> Dict[str, Any]:
-    """检查智能助手就绪状态"""
     try:
         await assistant_service.initialize()
         health_status = await assistant_service.get_service_health_info_with_mode()
 
         is_ready = (
-            health_status.get("modes", {}).get("rag", {}).get("status") == "healthy"
-            or health_status.get("modes", {}).get("mcp", {}).get("status") == "healthy"
+            health_status.get("modes", {}).get("rag", {}).get("status") == ServiceConstants.STATUS_HEALTHY
+            or health_status.get("modes", {}).get("mcp", {}).get("status") == ServiceConstants.STATUS_HEALTHY
         )
 
         if not is_ready:
@@ -178,32 +180,27 @@ async def clear_cache() -> Dict[str, Any]:
         timestamp=datetime.now().isoformat(),
         message=clear_result.get("message", "缓存清除成功"),
     )
-    return ResponseWrapper.success(data=response.dict(), message="success")
+    return ResponseWrapper.success(data=response.dict(), message="操作成功")
 
 
-@router.post("/session", summary="创建会话")
-@api_response("创建会话")
-async def create_session(request: AssistantRequest) -> Dict[str, Any]:
+@router.post("/session", summary="创建或获取用户会话")
+@api_response("创建或获取用户会话")
+async def create_session(request: CreateSessionRequest) -> Dict[str, Any]:
     await assistant_service.initialize()
-    session_result = await assistant_service.create_session(request)
+    session_result = await assistant_service.create_or_get_session(request.user_id, request.mode)
 
     response = CreateSessionResponse(
-        session_id=(
-            session_result
-            if isinstance(session_result, str)
-            else session_result.get("session_id", "")
-        ),
+        session_id=session_result.get("session_id", ""),
         mode=request.mode,
-        created_time=datetime.now().isoformat(),
-        status="active",
+        created_time=session_result.get("created_time", datetime.now().isoformat()),
+        status=session_result.get("status", "active"),
     )
-    return ResponseWrapper.success(data=response.dict(), message="success")
+    return ResponseWrapper.success(data=response.dict(), message="操作成功")
 
 
 @router.post("/upload_knowledge", summary="上传知识库(JSON格式)")
 @api_response("上传知识库")
 async def upload_knowledge(request: UploadKnowledgeRequest) -> Dict[str, Any]:
-    """上传结构化知识库数据"""
     await assistant_service.initialize()
 
     upload_result = await assistant_service.upload_knowledge(request)
@@ -216,7 +213,7 @@ async def upload_knowledge(request: UploadKnowledgeRequest) -> Dict[str, Any]:
         message=upload_result.get("message", "知识库上传成功"),
         timestamp=datetime.now().isoformat(),
     )
-    return ResponseWrapper.success(data=response.dict(), message="success")
+    return ResponseWrapper.success(data=response.dict(), message="操作成功")
 
 
 @router.post("/upload_knowledge_file", summary="上传知识库文件")
@@ -226,7 +223,6 @@ async def upload_knowledge_file(
     title: str = Form(None),
     source: str = Form(None),
 ) -> Dict[str, Any]:
-    """上传知识库文件"""
     await assistant_service.initialize()
 
     upload_result = await assistant_service.upload_knowledge_file(
@@ -241,7 +237,7 @@ async def upload_knowledge_file(
         message=upload_result.get("message", "知识库上传成功"),
         timestamp=datetime.now().isoformat(),
     )
-    return ResponseWrapper.success(data=response.dict(), message="success")
+    return ResponseWrapper.success(data=response.dict(), message="操作成功")
 
 
 @router.post("/add-document", summary="添加知识库文档")
@@ -256,7 +252,7 @@ async def add_document(request: AddDocumentRequest) -> Dict[str, Any]:
         message=result.get("message", "文档添加成功"),
         timestamp=datetime.now().isoformat(),
     )
-    return ResponseWrapper.success(data=response.dict(), message="success")
+    return ResponseWrapper.success(data=response.dict(), message="操作成功")
 
 
 @router.get("/config", summary="获取智能助手配置")
@@ -270,7 +266,7 @@ async def get_assistant_config() -> Dict[str, Any]:
         service="assistant", config=config_info, timestamp=datetime.now().isoformat()
     )
 
-    return ResponseWrapper.success(data=response.dict(), message="success")
+    return ResponseWrapper.success(data=response.dict(), message="操作成功")
 
 
 @router.get("/info", summary="AI-CloudOps智能助手服务信息")
@@ -344,12 +340,12 @@ async def assistant_info() -> Dict[str, Any]:
             ],
         },
         "constraints": {
-            "max_question_length": 1000,
-            "max_context_docs": 10,
-            "default_context_docs": 3,
-            "timeout": 360,
-            "session_timeout": 3600,
-            "max_retries": 2,
+            "max_question_length": config.rag.max_context_length,
+            "max_context_docs": ServiceConstants.ASSISTANT_MAX_CONTEXT_DOCS,
+            "default_context_docs": ServiceConstants.ASSISTANT_DEFAULT_CONTEXT_DOCS,
+            "timeout": ServiceConstants.ASSISTANT_TIMEOUT,
+            "session_timeout": ServiceConstants.ASSISTANT_SESSION_TIMEOUT,
+            "max_retries": config.mcp.max_retries,
             "quality_threshold": 0.7,
         },
         "performance": {"caching_enabled": True, "parallel_processing": True},
@@ -369,7 +365,7 @@ async def assistant_info() -> Dict[str, Any]:
         status=info["status"],
     )
 
-    return ResponseWrapper.success(data=response.dict(), message="success")
+    return ResponseWrapper.success(data=response.dict(), message="操作成功")
 
 
 __all__ = ["router"]

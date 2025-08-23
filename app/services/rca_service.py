@@ -471,7 +471,7 @@ class RCAService(BaseService, HealthCheckMixin):
             # 清理收集器
             if self._metrics_collector:
                 try:
-                    if hasattr(self._metrics_collector, 'cleanup'):
+                    if hasattr(self._metrics_collector, "cleanup"):
                         await self._metrics_collector.cleanup()
                 except Exception as e:
                     self.logger.warning(f"清理metrics_collector失败: {e}")
@@ -479,7 +479,7 @@ class RCAService(BaseService, HealthCheckMixin):
 
             if self._events_collector:
                 try:
-                    if hasattr(self._events_collector, 'cleanup'):
+                    if hasattr(self._events_collector, "cleanup"):
                         await self._events_collector.cleanup()
                 except Exception as e:
                     self.logger.warning(f"清理events_collector失败: {e}")
@@ -487,7 +487,7 @@ class RCAService(BaseService, HealthCheckMixin):
 
             if self._logs_collector:
                 try:
-                    if hasattr(self._logs_collector, 'cleanup'):
+                    if hasattr(self._logs_collector, "cleanup"):
                         await self._logs_collector.cleanup()
                 except Exception as e:
                     self.logger.warning(f"清理logs_collector失败: {e}")
@@ -496,7 +496,7 @@ class RCAService(BaseService, HealthCheckMixin):
             # 清理分析引擎
             if self._engine:
                 try:
-                    if hasattr(self._engine, 'cleanup'):
+                    if hasattr(self._engine, "cleanup"):
                         await self._engine.cleanup()
                 except Exception as e:
                     self.logger.warning(f"清理RCA引擎失败: {e}")

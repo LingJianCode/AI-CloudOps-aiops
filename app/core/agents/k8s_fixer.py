@@ -12,10 +12,10 @@ Description: Kubernetes自动修复代理
 import json
 import logging
 import os
-import requests
 import time
 from typing import Any, Dict, List
 
+import requests
 import yaml
 
 from app.config.settings import config
@@ -34,9 +34,9 @@ class K8sFixerAgent:
         self.llm = self.llm_service  # 保留一个llm属性作为兼容
 
         # 从配置获取重试参数
-        self.max_retries = config.rca.max_retries if hasattr(config, 'rca') else 3
+        self.max_retries = config.rca.max_retries if hasattr(config, "rca") else 3
         self.retry_delay = (
-            getattr(config.common, 'retry_delay', 2) if hasattr(config, 'common') else 2
+            getattr(config.common, "retry_delay", 2) if hasattr(config, "common") else 2
         )
         logger.info("K8s Fixer Agent initialized")
 

@@ -10,15 +10,15 @@ Description: 层次化检索系统，解决多文档准确率下降问题
 """
 
 import asyncio
-import logging
 import hashlib
+import logging
 import time
-import numpy as np
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple, Any
 from enum import Enum
+from typing import Any, Dict, List, Optional, Tuple
 
+import numpy as np
 from langchain_core.documents import Document
 
 logger = logging.getLogger("aiops.hierarchical_retriever")
@@ -177,9 +177,9 @@ class DocumentQualityScorer:
         # 通用结构评分
         if "```" in content:  # 包含代码块
             score += 0.2
-        if content.count('\n') > 3:  # 多行内容
+        if content.count("\n") > 3:  # 多行内容
             score += 0.1
-        if any(marker in content for marker in ['#', '*', '-', '1.']):  # 结构标记
+        if any(marker in content for marker in ["#", "*", "-", "1."]):  # 结构标记
             score += 0.2
 
         return min(score, 1.0)
@@ -225,23 +225,23 @@ class DocumentQualityScorer:
 
         # 检查是否包含技术术语
         tech_terms = [
-            'kubernetes',
-            'docker',
-            'prometheus',
-            'grafana',
-            'nginx',
-            'deployment',
-            'service',
-            'pod',
-            'cluster',
-            'namespace',
-            'yaml',
-            'json',
-            'api',
-            'http',
-            'https',
-            'tcp',
-            'udp',
+            "kubernetes",
+            "docker",
+            "prometheus",
+            "grafana",
+            "nginx",
+            "deployment",
+            "service",
+            "pod",
+            "cluster",
+            "namespace",
+            "yaml",
+            "json",
+            "api",
+            "http",
+            "https",
+            "tcp",
+            "udp",
         ]
 
         tech_score = sum(
@@ -335,29 +335,29 @@ class QueryRouter:
         # 查询模式
         self.complexity_patterns = {
             QueryComplexity.SIMPLE: [
-                r'\b(什么是|what is|定义|definition)\b',
-                r'\b(多少|how many|count)\b',
-                r'\b(是否|是不是|can|能否)\b',
+                r"\b(什么是|what is|定义|definition)\b",
+                r"\b(多少|how many|count)\b",
+                r"\b(是否|是不是|can|能否)\b",
             ],
             QueryComplexity.MODERATE: [
-                r'\b(如何|how to|怎么|步骤|step)\b',
-                r'\b(为什么|why|原因|reason)\b',
-                r'\b(配置|config|设置|setting)\b',
+                r"\b(如何|how to|怎么|步骤|step)\b",
+                r"\b(为什么|why|原因|reason)\b",
+                r"\b(配置|config|设置|setting)\b",
             ],
             QueryComplexity.COMPLEX: [
-                r'\b(故障|错误|问题|排查|troubleshoot|debug)\b',
-                r'\b(优化|性能|performance|optimize)\b',
-                r'\b(架构|architecture|设计|design)\b',
-                r'\b(部署|deploy|安装|install|实现|implement)\b',
+                r"\b(故障|错误|问题|排查|troubleshoot|debug)\b",
+                r"\b(优化|性能|performance|optimize)\b",
+                r"\b(架构|architecture|设计|design)\b",
+                r"\b(部署|deploy|安装|install|实现|implement)\b",
             ],
         }
 
         self.domain_patterns = {
-            "kubernetes": [r'\b(k8s|kubernetes|pod|deployment|service|namespace)\b'],
-            "prometheus": [r'\b(prometheus|metric|监控|monitor|alert)\b'],
-            "docker": [r'\b(docker|container|镜像|image)\b'],
-            "network": [r'\b(网络|network|ip|port|tcp|udp|http)\b'],
-            "storage": [r'\b(存储|storage|volume|pv|pvc|disk)\b'],
+            "kubernetes": [r"\b(k8s|kubernetes|pod|deployment|service|namespace)\b"],
+            "prometheus": [r"\b(prometheus|metric|监控|monitor|alert)\b"],
+            "docker": [r"\b(docker|container|镜像|image)\b"],
+            "network": [r"\b(网络|network|ip|port|tcp|udp|http)\b"],
+            "storage": [r"\b(存储|storage|volume|pv|pvc|disk)\b"],
         }
 
     def analyze_query(self, query: str) -> RetrievalContext:
@@ -381,11 +381,11 @@ class QueryRouter:
 
         # 分析偏好类型
         preferred_types = []
-        if re.search(r'\b(代码|code|script|命令)\b', query_lower):
+        if re.search(r"\b(代码|code|script|命令)\b", query_lower):
             preferred_types.append("code_block")
-        if re.search(r'\b(配置|config|参数|setting)\b', query_lower):
+        if re.search(r"\b(配置|config|参数|setting)\b", query_lower):
             preferred_types.extend(["code_block", "table"])
-        if re.search(r'\b(步骤|教程|guide|tutorial)\b', query_lower):
+        if re.search(r"\b(步骤|教程|guide|tutorial)\b", query_lower):
             preferred_types.extend(["title", "list"])
 
         # 设置检索预算

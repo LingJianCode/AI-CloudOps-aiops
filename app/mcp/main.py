@@ -32,7 +32,6 @@ try:
     from .server.mcp_server import MCPServer
     from .server.tools import tools as mcp_tools
 except ImportError:
-    # 如果相对导入失败，尝试绝对导入
     try:
         from app.config.settings import config
         from app.mcp.server.mcp_server import MCPServer
@@ -46,7 +45,6 @@ from app.config.logging import setup_logging
 setup_logging()
 logger = logging.getLogger("aiops.mcp.main")
 
-# 全局变量
 mcp_server: Optional[MCPServer] = None
 active_sse_connections: set = set()
 
@@ -311,16 +309,21 @@ def parse_server_url(url: str) -> tuple[str, int]:
             url = f"http://{url}"
 
         parsed = urlparse(url)
-        host = parsed.hostname or "0.0.0.0"
-        port = parsed.port or config.mcp.server_url.split(':')[-1] or 9000
+        host = parsed.hostname or config.host
+        default_mcp_port = getattr(config, "mcp_default_port", 9000)
+        port = parsed.port or config.mcp.server_url.split(":")[-1] or default_mcp_port
 
         return host, port
     except Exception as e:
         logger.warning(f"解析URL失败: {e}，使用默认配置")
         default_port = (
-            config.mcp.server_url.split(':')[-1] if config.mcp.server_url else 9000
+            config.mcp.server_url.split(":")[-1]
+            if config.mcp.server_url
+            else getattr(config, "mcp_default_port", 9000)
         )
-        return "0.0.0.0", int(default_port) if str(default_port).isdigit() else 9000
+        return config.host, (
+            int(default_port) if str(default_port).isdigit() else default_port
+        )
 
 
 def signal_handler(signum, frame):

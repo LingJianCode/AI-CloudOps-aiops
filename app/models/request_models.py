@@ -61,6 +61,15 @@ class UploadKnowledgeRequest(BaseModel):
     metadata: Optional[Dict[str, str]] = Field(default=None, description="额外元数据")
 
 
+class CreateSessionRequest(BaseModel):
+    """创建会话请求模型"""
+
+    user_id: str = Field(..., min_length=1, description="用户ID")
+    mode: int = Field(
+        default=1, description="助手模式：1=RAG模式，2=MCP模式", ge=1, le=2
+    )
+
+
 class AddDocumentRequest(BaseModel):
     """添加文档请求模型"""
 

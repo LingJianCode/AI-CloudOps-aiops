@@ -40,6 +40,7 @@ from .request_models import (
     AddDocumentRequest,
     AssistantRequest,
     AutoFixRequest,
+    CreateSessionRequest,
     DiagnoseRequest,
     UploadKnowledgeRequest,
 )
@@ -69,6 +70,7 @@ __all__ = [
     "AddDocumentRequest",
     "AutoFixRequest",
     "AssistantRequest",
+    "CreateSessionRequest",
     "DiagnoseRequest",
     "UploadKnowledgeRequest",
     # 响应模型
