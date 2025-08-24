@@ -109,7 +109,7 @@ services:
              wait"
 
   redis:
-    image: redis:7-alpine
+    image: redis:6.2.5
     container_name: redis
     ports:
       - "6379:6379"

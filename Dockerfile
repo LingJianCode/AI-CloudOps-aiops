@@ -10,7 +10,6 @@ WORKDIR /app
 # 设置环境变量
 ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
-ENV FLASK_APP=app.main:app
 ENV PIP_DEFAULT_TIMEOUT=100
 ENV ENV=production
 
@@ -36,17 +35,8 @@ RUN mkdir -p data/models data/sample logs config
 # 复制应用代码
 COPY . .
 
-# 确保配置目录有正确的权限
-RUN chown -R root:root config && chmod -R 755 config
-
-# 创建非root用户
-RUN useradd --create-home --shell /bin/bash aiops && \
-    chown -R aiops:aiops /app
-
-USER aiops
-
 # 暴露端口
 EXPOSE 8080
 
 # 启动应用
-CMD ["python", "app/main.py"]
+CMD ["python", "-m", "app.main"]
