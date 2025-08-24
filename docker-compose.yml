@@ -1,18 +1,18 @@
 version: "3.8"
 
 services:
-  aiops-platform:
+  cloudops-platform:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: aiops-platform
+    container_name: cloudops-platform
     ports:
       - "8080:8080"
     env_file:
       - .env
     environment:
       # MCP服务地址
-      - MCP_SERVER_URL=http://aiops-mcp:9000
+      - MCP_SERVER_URL=http://cloudops-mcp:9000
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
@@ -22,22 +22,16 @@ services:
       - prometheus
       - ollama
       - redis
-      - aiops-mcp
+      - cloudops-mcp
     restart: unless-stopped
     networks:
       - aiops-network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/api/v1/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
 
-  aiops-mcp:
+  cloudops-mcp:
     build:
       context: .
       dockerfile: Dockerfile.mcp
-    container_name: aiops-mcp
+    container_name: cloudops-mcp
     ports:
       - "9000:9000"
     env_file:
@@ -63,18 +57,12 @@ services:
     restart: unless-stopped
     networks:
       - aiops-network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
     command:
       ["python", "-m", "app.mcp.main", "--host", "0.0.0.0", "--port", "9000"]
 
   prometheus:
     image: prom/prometheus:v2.45.0
-    container_name: aiops-prometheus
+    container_name: prometheus
     ports:
       - "9090:9090"
     volumes:
@@ -95,7 +83,7 @@ services:
 
   ollama:
     image: ollama/ollama:latest
-    container_name: aiops-ollama
+    container_name: ollama
     ports:
       - "11434:11434"
     volumes:
@@ -122,12 +110,12 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: aiops-redis
+    container_name: redis
     ports:
       - "6379:6379"
     volumes:
       - redis_data:/data
-    command: redis-server --appendonly yes
+    command: redis-server --appendonly yes --requirepass v6SxhWHyZC7S
     restart: unless-stopped
     networks:
       - aiops-network
@@ -135,7 +123,6 @@ services:
 volumes:
   prometheus_data:
     driver: local
-
   ollama_data:
     driver: local
   redis_data:

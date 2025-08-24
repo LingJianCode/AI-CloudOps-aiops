@@ -8,7 +8,7 @@ app:
 
 # Prometheus配置
 prometheus:
-  host: prometheus-server:9090
+  host: prometheus:9090
   timeout: 30
 
 # LLM模型配置
@@ -20,7 +20,7 @@ llm:
   max_tokens: 2048 # 最大生成Token数
   request_timeout: 360 # LLM请求超时时间（秒）
   ollama_model: qwen2.5:3b # Ollama本地模型名称（备用）
-  ollama_base_url: http://ollama-service:11434/v1 # Ollama API基础URL
+  ollama_base_url: http://ollama:11434/v1 # Ollama API基础URL
 
 # 测试配置
 testing:
@@ -29,7 +29,7 @@ testing:
 # Kubernetes配置
 kubernetes:
   in_cluster: true # 是否在K8s集群内部运行
-  # config_path: ./deploy/kubernetes/config # K8s配置文件路径（仅in_cluster为false时需要）
+  config_path: ./deploy/kubernetes/config # K8s配置文件路径（仅in_cluster为false时需要）
   namespace: default # 默认命名空间
 
 # 根因分析配置
@@ -180,7 +180,7 @@ tavily:
 
 # Redis配置 - 用于向量数据缓存和元数据存储
 redis:
-  host: redis-service # Redis主机地址
+  host: redis # Redis主机地址
   port: 6379 # Redis端口
   db: 0 # Redis数据库编号
   password: "v6SxhWHyZC7S" # Redis密码
@@ -210,7 +210,7 @@ rag:
 
 # MCP配置
 mcp:
-  server_url: http://localhost:9000 # MCP服务端地址
+  server_url: http://cloudops-mcp:9000 # MCP服务端地址
   timeout: 30 # 请求超时时间（秒）
   max_retries: 3 # 最大重试次数
   health_check_interval: 30 # 健康检查间隔（秒）
