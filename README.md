@@ -134,7 +134,6 @@ Ai-CloudOps-aiops/
 ├── deploy/                      # 部署配置
 │   ├── kubernetes/              # K8s部署文件
 │   ├── predict_operator/        # 预测Operator
-│   ├── grafana/                 # Grafana配置
 │   └── prometheus/              # Prometheus配置
 ├── docs/                        # 项目文档
 ├── scripts/                     # 运维脚本
@@ -148,82 +147,298 @@ Ai-CloudOps-aiops/
 
 ### 环境要求
 
-- **Python 3.8+** - 核心运行环境
-- **Docker & Docker Compose** - 容器化部署
-- **Redis 6.0+** - 向量存储和缓存
+#### 系统要求
+- **操作系统**: Linux/macOS/Windows (推荐 Linux)
+- **内存**: 最少 8GB RAM (推荐 16GB+)
+- **存储**: 最少 20GB 可用空间
+- **网络**: 能够访问外部API服务
+
+#### 软件依赖
+- **Python 3.11+** - 核心运行环境
+- **Docker 20.10+** - 容器化部署
+- **Docker Compose 2.0+** - 容器编排
+- **Redis 7.0+** - 向量存储和缓存
+- **Git** - 用于代码拉取
 - **Kubernetes (可选)** - 集群管理和自动修复功能
 - **Prometheus (推荐)** - 监控指标收集
-- **Node.js 16+ (MCP功能需要)** - MCP工具调用支持
 
-### 安装步骤
+### 🎯 一键部署（推荐）
 
 1. **克隆项目**
 
 ```bash
-git clone 'https://github.com/GoSimplicity/AI-CloudOps.git'
+git clone https://github.com/GoSimplicity/AI-CloudOps.git
 cd Ai-CloudOps-aiops
 ```
 
-2. **安装Python依赖**
+2. **配置环境变量**
 
 ```bash
-pip install -r requirements.txt
-```
-
-3. **配置环境变量**
-
-```bash
+# 复制环境配置文件
 cp env.example .env
-# 编辑 .env 文件，配置以下关键变量：
-# - OPENAI_API_KEY 或 OLLAMA_BASE_URL (LLM服务)
-# - REDIS_HOST, REDIS_PORT, REDIS_PASSWORD (Redis配置)
-# - PROMETHEUS_URL (监控集成)
+
+# 编辑配置文件，至少需要配置以下必要参数：
+nano .env
 ```
 
-4. **启动Redis服务**
+**核心环境变量配置**：
+```bash
+# 基础配置
+ENV=production                    # 环境类型
+DEBUG=false                      # 调试模式
+HOST=0.0.0.0                     # 监听地址
+PORT=8080                        # 主应用端口
+
+# LLM配置（必需）
+LLM_API_KEY=sk-your-api-key      # API密钥
+LLM_BASE_URL=https://api.siliconflow.cn/v1  # API基础URL
+LLM_MODEL=Qwen/Qwen2.5-32B-Instruct         # 主模型
+
+# K8s集群配置（可选）
+K8S_IN_CLUSTER=false             # 是否在集群内运行
+K8S_CONFIG_PATH=./deploy/kubernetes/config  # kubeconfig路径
+K8S_NAMESPACE=default            # 默认命名空间
+
+# 通知配置（可选）
+FEISHU_WEBHOOK=https://your-webhook-url  # 飞书通知
+TAVILY_API_KEY=your-tavily-key   # Tavily搜索API
+REDIS_PASSWORD=your-redis-password  # Redis密码
+```
+
+3. **一键部署**
 
 ```bash
-# 使用Docker启动Redis
-docker run -d --name redis-aiops -p 6379:6379 redis:latest
+# 给部署脚本执行权限
+chmod +x scripts/deploy.sh
 
-# 或使用docker-compose
-docker-compose up redis -d
+# 执行部署
+./scripts/deploy.sh
+
+# 或者使用生产模式部署
+./scripts/deploy.sh --production --health-check
 ```
 
-5. **启动主服务**
+4. **验证部署**
 
 ```bash
-# 开发环境
-python app/main.py
+# 查看服务状态
+./scripts/deploy.sh --status
 
-# 生产环境
-python app/main.py --env production
-
-# 或使用启动脚本
-bash scripts/start.sh
+# 查看日志
+./scripts/deploy.sh --logs
 ```
 
-6. **启动MCP服务（可选，用于工具调用功能）**
+### 🛠️ 手动部署
+
+如果需要手动控制部署过程：
+
+#### 1. 安装系统依赖
+
+**Ubuntu/Debian**:
+```bash
+# 更新包列表
+sudo apt update
+
+# 安装Docker
+sudo apt install -y docker.io docker-compose-plugin
+
+# 安装其他工具
+sudo apt install -y git curl
+
+# 启动Docker服务
+sudo systemctl start docker
+sudo systemctl enable docker
+
+# 将用户添加到docker组
+sudo usermod -aG docker $USER
+```
+
+**CentOS/RHEL**:
+```bash
+# 安装Docker
+sudo yum install -y docker docker-compose
+
+# 启动Docker服务
+sudo systemctl start docker
+sudo systemctl enable docker
+
+# 安装其他工具
+sudo yum install -y git curl
+```
+
+**macOS**:
+```bash
+# 使用Homebrew安装
+brew install docker docker-compose git curl
+
+# 或者下载Docker Desktop
+# https://www.docker.com/products/docker-desktop
+```
+
+#### 2. 构建和启动服务
 
 ```bash
-# 在新终端窗口启动MCP服务器
-python -m app.mcp.main
+# 构建主应用镜像
+docker build -t aiops-platform:latest -f Dockerfile .
 
-# 后台启动
-bash scripts/start_mcp.sh
+# 构建MCP服务镜像
+docker build -t aiops-mcp:latest -f Dockerfile.mcp .
+
+# 启动所有服务
+docker-compose up -d
+
+# 查看服务状态
+docker-compose ps
+
+# 查看日志
+docker-compose logs -f aiops-platform
 ```
 
-### 配置说明
+#### 3. 配置Kubernetes（可选）
 
-主要配置文件：`config/config.yaml`
+如果需要在Kubernetes集群中管理资源：
 
-核心配置项：
-- **llm**: LLM模型配置 (OpenAI/Ollama)
-- **redis**: Redis连接配置
-- **rag**: RAG知识库配置
-- **mcp**: MCP工具调用配置
-- **prometheus**: 监控集成配置
-- **kubernetes**: K8s集群配置
+```bash
+# 方法1: 复制kubeconfig到项目目录
+mkdir -p deploy/kubernetes
+cp ~/.kube/config deploy/kubernetes/config
+
+# 方法2: 设置环境变量指向kubeconfig路径
+export K8S_CONFIG_PATH=/path/to/your/kubeconfig
+```
+
+### 📋 服务组件架构
+
+```
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   主应用服务      │    │   MCP服务        │    │   Prometheus    │
+│   (8080)        │◄──►│   (9000)        │    │   (9090)        │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+         │                       │                       │
+         └───────────────────────┼───────────────────────┘
+                                 │
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+                    │   Redis         │    │   Ollama        │
+                    │   (6379)        │    │   (11434)       │
+                    └─────────────────┘    └─────────────────┘
+```
+
+#### 核心服务
+- **主应用服务** (aiops-platform): 提供API接口、根因分析、智能预测等核心功能
+- **MCP服务** (aiops-mcp): 提供工具调用能力和SSE服务端
+- **Redis**: 用于缓存和向量数据存储
+- **Prometheus**: 监控数据收集和存储
+
+- **Ollama**: 本地大语言模型服务
+
+### 🔗 服务访问
+
+部署完成后，可以通过以下地址访问各个服务：
+
+| 服务       | 地址                   | 说明                      |
+| ---------- | ---------------------- | ------------------------- |
+| 主应用     | http://localhost:8080  | 主要API接口               |
+| MCP服务    | http://localhost:9000  | 工具调用接口              |
+| Prometheus | http://localhost:9090  | 监控数据查询              |
+
+| Ollama     | http://localhost:11434 | 本地模型API               |
+
+#### API文档
+- 主应用API文档: http://localhost:8080/docs
+- MCP服务API文档: http://localhost:9000/docs (如果启用)
+
+### ✅ 健康检查
+
+#### 自动健康检查
+```bash
+# 执行完整健康检查
+./scripts/deploy.sh --health-check
+```
+
+#### 手动检查
+```bash
+# 检查主应用
+curl http://localhost:8080/api/v1/health
+
+# 检查MCP服务
+curl http://localhost:9000/health
+
+# 检查Prometheus
+curl http://localhost:9090/-/healthy
+
+
+
+# 检查Redis
+docker exec aiops-redis redis-cli ping
+```
+
+### 📊 数据持久化
+
+所有重要数据都会持久化到本地目录：
+- `./data`: 应用数据、模型文件
+- `./logs`: 日志文件
+- `./config`: 配置文件
+
+### 🔧 故障排除
+
+#### 常见问题
+
+**1. 服务无法启动**
+```bash
+# 查看服务日志
+docker-compose logs aiops-platform
+docker-compose logs aiops-mcp
+
+# 检查端口占用
+netstat -tulpn | grep :8080
+netstat -tulpn | grep :9000
+
+# 检查Docker资源
+docker system df
+docker system prune  # 清理未使用的资源
+```
+
+**2. MCP服务连接失败**
+```bash
+# 检查MCP服务状态
+curl http://localhost:9000/health
+
+# 检查网络连接
+docker network ls
+docker network inspect aiops-network
+
+# 重启MCP服务
+docker-compose restart aiops-mcp
+```
+
+**3. Kubernetes配置问题**
+```bash
+# 检查kubeconfig
+kubectl config current-context
+kubectl cluster-info
+
+# 验证权限
+kubectl auth can-i get pods
+kubectl auth can-i create deployments
+```
+
+#### 日志分析
+```bash
+# 所有服务日志
+docker-compose logs -f
+
+# 特定服务日志
+docker-compose logs -f aiops-platform
+docker-compose logs -f aiops-mcp
+
+# 最近100行日志
+docker-compose logs --tail=100 aiops-platform
+```
+
+日志文件位置：
+- 主应用日志: `./logs/app.log`
+- MCP服务日志: `./logs/mcp.log`
+- Docker容器日志: `docker logs <container_name>`
 
 ## 📊 核心模块详解
 
@@ -995,44 +1210,180 @@ python app/main.py
 
 ## 📈 性能优化
 
-### 1. 系统性能
+### 生产环境优化
+
+#### 1. 环境配置
+```bash
+# 设置生产环境
+ENV=production
+DEBUG=false
+LOG_LEVEL=WARNING
+
+# 优化连接池
+REDIS_MAX_CONNECTIONS=50
+LLM_REQUEST_TIMEOUT=300
+```
+
+#### 2. 资源限制
+在 `docker-compose.yml` 中添加资源限制：
+```yaml
+services:
+  aiops-platform:
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2.0'
+        reservations:
+          memory: 2G
+          cpus: '1.0'
+```
+
+#### 3. 缓存优化
+```bash
+# Redis缓存配置
+REDIS_MAX_CONNECTIONS=20
+RAG_CACHE_EXPIRY=7200
+
+# 模型缓存
+PREDICTION_MODEL_CACHE_SIZE=100
+```
+
+### 监控配置
+
+#### Prometheus配置
+编辑 `deploy/prometheus/prometheus.yml`:
+```yaml
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'aiops-platform'
+    static_configs:
+      - targets: ['aiops-platform:8080']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+```
+
+
+
+### 系统性能
 
 - **异步处理**: 使用 asyncio 处理 I/O 密集操作
 - **连接池**: 数据库和 HTTP 连接池管理
 - **缓存策略**: 多级缓存提升响应速度
 - **负载均衡**: 支持水平扩展
-
-### 2. 内存优化
-
-- **对象池**: 复用大对象减少 GC 压力
+- **内存优化**: 对象池复用大对象减少 GC 压力
 - **流式处理**: 大数据集分批处理
-- **内存监控**: 实时监控内存使用情况
+- **网络优化**: 启用 gzip 压缩和长连接复用
 
-### 3. 网络优化
+## 🔒 安全配置
 
-- **压缩传输**: 启用 gzip 压缩
-- **长连接**: 复用 HTTP 连接
-- **CDN 加速**: 静态资源 CDN 分发
+### 生产环境安全
 
-## 🔒 安全说明
+#### 1. 访问控制
+```bash
+# Redis密码保护
+REDIS_PASSWORD=your-redis-password
 
-### 1. 数据安全
+# API访问限制
+API_RATE_LIMIT=100
+```
 
+#### 2. 网络安全
+```yaml
+# docker-compose.yml 网络配置
+networks:
+  aiops-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+```
+
+#### 3. 数据安全
 - **加密存储**: 敏感数据加密存储
 - **传输加密**: HTTPS/TLS 加密传输
 - **访问控制**: 基于角色的访问控制
+- **密钥管理**: 使用 Docker secrets 或外部密钥管理系统
 
-### 2. API 安全
+### API 安全
 
 - **身份验证**: JWT 令牌认证
 - **授权控制**: 细粒度权限控制
 - **限流保护**: API 请求限流
-
-### 3. 系统安全
-
 - **输入验证**: 严格的输入参数验证
 - **SQL 注入防护**: 使用参数化查询
 - **XSS 防护**: 输出数据转义
+
+## 💾 备份与恢复
+
+### 数据备份
+```bash
+# 备份数据目录
+tar -czf aiops-backup-$(date +%Y%m%d).tar.gz ./data ./config
+
+# 备份数据库
+docker exec aiops-redis redis-cli --rdb /data/dump.rdb
+
+# 备份配置
+cp .env .env.backup
+```
+
+### 恢复数据
+```bash
+# 恢复数据目录
+tar -xzf aiops-backup-YYYYMMDD.tar.gz
+
+# 恢复数据库
+docker exec aiops-redis redis-cli --eval backup.rdb
+```
+
+## 🔄 更新升级
+
+### 应用更新
+```bash
+# 拉取最新代码
+git pull origin main
+
+# 重新构建镜像
+./scripts/deploy.sh --build
+
+# 滚动更新
+docker-compose up -d --force-recreate
+```
+
+### 配置更新
+```bash
+# 更新配置文件
+cp config/config.yaml config/config.yaml.backup
+# 编辑新配置...
+
+# 重启相关服务
+docker-compose restart aiops-platform aiops-mcp
+```
+
+### 扩展部署
+
+#### 集群部署
+对于大规模部署，可以考虑：
+1. 使用 Kubernetes 部署
+2. 配置负载均衡
+3. 使用外部 Redis 集群
+4. 配置 Prometheus 高可用
+
+#### 多环境部署
+```bash
+# 开发环境
+ENV=development ./scripts/deploy.sh --dev
+
+# 测试环境
+ENV=testing ./scripts/deploy.sh
+
+# 生产环境
+ENV=production ./scripts/deploy.sh --production
+```
 
 ## 📝 更新日志
 
@@ -1061,6 +1412,50 @@ python app/main.py
 - 增强自动修复安全性
 - 完善健康检查和监控
 
+## 📋 附录
+
+### 端口列表
+| 服务       | 端口  | 协议 | 说明       |
+| ---------- | ----- | ---- | ---------- |
+| 主应用     | 8080  | HTTP | API接口    |
+| MCP服务    | 9000  | HTTP | 工具调用   |
+| Prometheus | 9090  | HTTP | 监控数据   |
+
+| Redis      | 6379  | TCP  | 缓存数据库 |
+| Ollama     | 11434 | HTTP | 本地模型   |
+
+### 目录结构说明
+```
+Ai-CloudOps-aiops/
+├── app/                 # 应用代码
+├── config/             # 配置文件
+├── data/               # 数据文件
+├── deploy/             # 部署配置
+├── docs/               # 文档
+├── logs/               # 日志文件
+├── scripts/            # 脚本文件
+├── docker-compose.yml  # Docker编排文件
+├── Dockerfile          # 主应用镜像
+├── Dockerfile.mcp      # MCP服务镜像
+└── .env               # 环境变量
+```
+
+### 版本信息
+- Python: 3.11+
+- Docker: 20.10+
+- Docker Compose: 2.0+
+- Redis: 7.0+
+- Prometheus: 2.45.0+
+
+
+## 🛟 技术支持
+
+如遇到问题，请：
+1. 查看本文档的故障排除部分
+2. 检查 [GitHub Issues](https://github.com/GoSimplicity/AI-CloudOps/issues)
+3. 查看项目日志文件
+4. 联系技术支持团队
+
 ## 🤝 贡献指南
 
 1. Fork 项目
@@ -1081,5 +1476,5 @@ python app/main.py
 
 ---
 
-_本文档最后更新: 2025-08-22_
-_版本: 1.1.0_
+_本文档最后更新: 2025-08-24_  
+_版本: 1.1.0_  

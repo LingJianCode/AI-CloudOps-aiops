@@ -162,7 +162,7 @@ class TechnicalTermExtractor:
                 "advanced": ["multi-stage", "buildkit", "layer-caching"],
             },
             TechnicalDomain.MONITORING: {
-                "primary": ["prometheus", "grafana", "metric", "alert", "monitor"],
+                "primary": ["prometheus", "metric", "alert", "monitor"],
                 "secondary": [
                     "query",
                     "dashboard",

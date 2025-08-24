@@ -27,7 +27,7 @@ AI-CloudOps 是一个基于人工智能的云原生运维平台，致力于为�
 - **应用场景**：Pod故障恢复、资源配置优化、服务可用性保障
 
 ### 5. 统一监控告警
-- **功能特性**：集成Prometheus、Grafana的统一监控告警平台
+- **功能特性**：集成Prometheus的统一监控告警平台
 - **技术实现**：支持多维度指标采集，智能告警降噪
 - **应用场景**：实时监控系统状态，及时发现和处理异常
 
@@ -46,7 +46,7 @@ AI-CloudOps 是一个基于人工智能的云原生运维平台，致力于为�
 - **时序数据库**：Prometheus + InfluxDB
 - **消息队列**：Redis Pub/Sub
 - **容器编排**：Kubernetes + Docker
-- **监控体系**：Prometheus + Grafana + AlertManager
+- **监控体系**：Prometheus + AlertManager
 
 ### 数据处理流程
 1. **数据采集**：从多个数据源收集运维数据

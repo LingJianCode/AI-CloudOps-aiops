@@ -2,7 +2,7 @@ FROM python:3.11-slim
 
 # 设置维护者信息
 LABEL maintainer="AIOps Team"
-LABEL description="AIOps Platform - Root Cause Analysis and Auto-fixing System"
+LABEL description="AIOps Platform - MCP Server"
 
 # 设置工作目录
 WORKDIR /app
@@ -10,7 +10,6 @@ WORKDIR /app
 # 设置环境变量
 ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
-ENV FLASK_APP=app.main:app
 ENV PIP_DEFAULT_TIMEOUT=100
 ENV ENV=production
 
@@ -46,7 +45,7 @@ RUN useradd --create-home --shell /bin/bash aiops && \
 USER aiops
 
 # 暴露端口
-EXPOSE 8080
+EXPOSE 9000
 
-# 启动应用
-CMD ["python", "app/main.py"]
+# 启动MCP服务
+CMD ["python", "-m", "app.mcp.main", "--host", "0.0.0.0", "--port", "9000"]

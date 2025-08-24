@@ -138,7 +138,7 @@ class ResponseTemplateManager:
    - 分析趋势和异常
    - 优化监控策略
 
-> 建议使用专业的监控工具如Prometheus + Grafana。""",
+> 建议使用专业的监控工具如Prometheus。""",
             ResponseTemplate.TROUBLESHOOTING: """**故障排除指南：**
 
 1. **问题定位**

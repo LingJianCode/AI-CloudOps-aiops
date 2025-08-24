@@ -156,7 +156,7 @@ spec:
    - 测试恢复流程
 
 ## 监控和告警
-- 部署Prometheus和Grafana
+- 部署Prometheus
 - 配置关键指标监控
 - 设置告警规则和通知
 

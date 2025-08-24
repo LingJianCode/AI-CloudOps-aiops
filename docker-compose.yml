@@ -8,16 +8,11 @@ services:
     container_name: aiops-platform
     ports:
       - "8080:8080"
+    env_file:
+      - .env
     environment:
-      # 设置环境类型
-      - ENV=${ENV:-production}
-      # 仅保留敏感配置
-      - LLM_API_KEY=${LLM_API_KEY:-sk-xrykvuqngkhbsmdtmvhzsupjafandfyhcdbcqojlyvrftttq}
-      - LLM_BASE_URL=${LLM_BASE_URL:-https://api.siliconflow.cn/v1}
-      # 仅用于通知的webhook
-      - FEISHU_WEBHOOK=${FEISHU_WEBHOOK:-}
-      # Tavily API密钥
-      - TAVILY_API_KEY=${TAVILY_API_KEY:-}
+      # MCP服务地址
+      - MCP_SERVER_URL=http://aiops-mcp:9000
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
@@ -26,6 +21,8 @@ services:
     depends_on:
       - prometheus
       - ollama
+      - redis
+      - aiops-mcp
     restart: unless-stopped
     networks:
       - aiops-network
@@ -35,6 +32,45 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
+
+  aiops-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp
+    container_name: aiops-mcp
+    ports:
+      - "9000:9000"
+    env_file:
+      - .env
+    environment:
+      # MCP服务配置
+      - MCP_SERVER_URL=http://0.0.0.0:9000
+      - HOST=0.0.0.0
+      - PORT=9000
+      # Kubernetes配置
+      - K8S_IN_CLUSTER=${K8S_IN_CLUSTER:-false}
+      - K8S_CONFIG_PATH=/app/deploy/kubernetes/config
+      - K8S_NAMESPACE=${K8S_NAMESPACE:-default}
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./config:/app/config
+      - ./deploy/kubernetes:/app/deploy/kubernetes
+      # 如果需要访问宿主机的kubeconfig
+      - ${HOME}/.kube:/root/.kube:ro
+    depends_on:
+      - redis
+    restart: unless-stopped
+    networks:
+      - aiops-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    command:
+      ["python", "-m", "app.mcp.main", "--host", "0.0.0.0", "--port", "9000"]
 
   prometheus:
     image: prom/prometheus:v2.45.0
@@ -84,24 +120,6 @@ services:
              ollama pull qwen2.5:3b &&
              wait"
 
-  grafana:
-    image: grafana/grafana:10.1.0
-    container_name: aiops-grafana
-    ports:
-      - "3000:3000"
-    environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin123
-      - GF_USERS_ALLOW_SIGN_UP=false
-    volumes:
-      - grafana_data:/var/lib/grafana
-      - ./deploy/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
-      - ./deploy/grafana/datasources:/etc/grafana/provisioning/datasources:ro
-    restart: unless-stopped
-    networks:
-      - aiops-network
-    depends_on:
-      - prometheus
-
   redis:
     image: redis:7-alpine
     container_name: aiops-redis
@@ -117,8 +135,7 @@ services:
 volumes:
   prometheus_data:
     driver: local
-  grafana_data:
-    driver: local
+
   ollama_data:
     driver: local
   redis_data:

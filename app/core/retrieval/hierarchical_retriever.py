@@ -228,7 +228,7 @@ class DocumentQualityScorer:
             "kubernetes",
             "docker",
             "prometheus",
-            "grafana",
+
             "nginx",
             "deployment",
             "service",

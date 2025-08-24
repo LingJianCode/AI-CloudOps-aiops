@@ -56,8 +56,7 @@ create_directories() {
     mkdir -p logs
     mkdir -p config
     mkdir -p deploy/kubernetes
-    mkdir -p deploy/grafana/dashboards
-    mkdir -p deploy/grafana/datasources
+
     mkdir -p deploy/prometheus
     echo "✅ 目录创建完成"
 }
@@ -367,19 +366,6 @@ scrape_configs:
         regex: true
 EOF
 
-    # Grafana数据源配置
-    mkdir -p deploy/grafana/datasources
-    cat > deploy/grafana/datasources/prometheus.yml << 'EOF'
-apiVersion: 1
-
-datasources:
-  - name: Prometheus
-    type: prometheus
-    access: proxy
-    url: http://prometheus:9090
-    isDefault: true
-EOF
-
     # 创建Kubernetes配置示例文件
     mkdir -p deploy/kubernetes
     cat > deploy/kubernetes/config.example << 'EOF'
@@ -500,7 +486,6 @@ show_next_steps() {
     echo "4. 访问服务："
     echo "   - AIOps API: http://localhost:8080"
     echo "   - Prometheus: http://localhost:9090"
-    echo "   - Grafana: http://localhost:3000 (admin/admin123)"
     echo ""
     echo "5. 健康检查："
     echo "   curl http://localhost:8080/api/v1/health"

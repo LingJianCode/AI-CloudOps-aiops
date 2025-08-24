@@ -457,11 +457,11 @@ class RAGConfig:
         )
     )
     top_k: int = field(
-        default_factory=lambda: get_env_or_config("RAG_TOP_K", "rag.top_k", 4, int)
+        default_factory=lambda: get_env_or_config("RAG_TOP_K", "rag.top_k", 8, int)
     )
     similarity_threshold: float = field(
         default_factory=lambda: get_env_or_config(
-            "RAG_SIMILARITY_THRESHOLD", "rag.similarity_threshold", 0.7, float
+            "RAG_SIMILARITY_THRESHOLD", "rag.similarity_threshold", 0.3, float
         )
     )
     openai_embedding_model: str = field(
@@ -586,9 +586,60 @@ class TimeConfig:
 
 
 @dataclass
+class TestingConfig:
+    """测试配置"""
+
+    skip_llm_tests: bool = field(
+        default_factory=lambda: get_env_or_config(
+            "TESTING_SKIP_LLM_TESTS", "testing.skip_llm_tests", False, bool
+        )
+    )
+
+
+@dataclass
+class SecurityConfig:
+    """安全配置"""
+
+    jwt_secret: str = field(
+        default_factory=lambda: get_env_or_config(
+            "JWT_SECRET", "security.jwt_secret", ""
+        )
+    )
+    api_rate_limit: int = field(
+        default_factory=lambda: get_env_or_config(
+            "API_RATE_LIMIT", "security.api_rate_limit", 100, int
+        )
+    )
+    cors_origins: str = field(
+        default_factory=lambda: get_env_or_config(
+            "CORS_ORIGINS", "security.cors_origins", "http://localhost:3000,http://localhost:8080"
+        )
+    )
+
+
+@dataclass
+class DevConfig:
+    """开发配置"""
+
+    auto_reload: bool = field(
+        default_factory=lambda: get_env_or_config(
+            "AUTO_RELOAD", "dev.auto_reload", False, bool
+        )
+    )
+    enable_debug_endpoints: bool = field(
+        default_factory=lambda: get_env_or_config(
+            "ENABLE_DEBUG_ENDPOINTS", "dev.enable_debug_endpoints", False, bool
+        )
+    )
+
+
+@dataclass
 class AppConfig:
     """应用程序主配置类"""
 
+    env: str = field(
+        default_factory=lambda: get_env_or_config("ENV", "app.env", "development")
+    )
     debug: bool = field(
         default_factory=lambda: get_env_or_config("DEBUG", "app.debug", False, bool)
     )
@@ -613,6 +664,9 @@ class AppConfig:
     rag: RAGConfig = field(default_factory=RAGConfig)
     mcp: MCPConfig = field(default_factory=MCPConfig)
     time: TimeConfig = field(default_factory=TimeConfig)
+    testing: TestingConfig = field(default_factory=TestingConfig)
+    security: SecurityConfig = field(default_factory=SecurityConfig)
+    dev: DevConfig = field(default_factory=DevConfig)
 
 
 config = AppConfig()

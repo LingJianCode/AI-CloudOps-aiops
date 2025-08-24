@@ -901,7 +901,7 @@ class MDEnhancedQueryProcessor:
                 "kubectl",
             ],
             "docker": ["docker", "container", "image", "dockerfile"],
-            "monitoring": ["prometheus", "grafana", "metric", "alert", "monitor"],
+            "monitoring": ["prometheus", "metric", "alert", "monitor"],
             "networking": ["network", "ip", "port", "proxy", "ingress"],
             "security": ["security", "auth", "rbac", "certificate", "tls"],
         }

@@ -374,10 +374,7 @@ scrape_configs:
     scrape_interval: 10s
 ```
 
-### 2. Grafana仪表盘
-- 导入预配置的仪表盘文件：`deploy/grafana/dashboards/aiops-dashboard.json`
-- 配置数据源指向Prometheus实例
-- 设置告警规则和通知渠道
+
 
 ## 安全配置
 
