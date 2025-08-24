@@ -148,6 +148,21 @@ class RCAService(BaseService, HealthCheckMixin):
                         "recommendations": cause.recommendations,
                     }
                 )
+            
+            # 转换关联数据
+            correlations = []
+            for correlation in analysis_result.correlations:
+                if hasattr(correlation, '__dict__'):
+                    # 如果是对象，转换为字典
+                    correlations.append({
+                        "confidence": correlation.confidence,
+                        "correlation_type": correlation.correlation_type,
+                        "evidence": correlation.evidence,
+                        "timeline": correlation.timeline,
+                    })
+                else:
+                    # 如果已经是字典，直接使用
+                    correlations.append(correlation)
 
             duration = time.time() - start_time
 
@@ -156,6 +171,8 @@ class RCAService(BaseService, HealthCheckMixin):
                 "timestamp": analysis_result.timestamp,
                 "namespace": analysis_result.namespace,
                 "root_causes": root_causes,
+                "anomalies": analysis_result.anomalies,  # 添加异常数据
+                "correlations": correlations,  # 添加关联数据
                 "confidence_score": analysis_result.confidence_score,
                 "recommendations": analysis_result.recommendations,
                 "timeline_events": len(analysis_result.timeline),

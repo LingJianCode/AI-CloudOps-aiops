@@ -1,0 +1,152 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: image-pull-error-test
+  namespace: default
+  labels:
+    app: rca-test
+    test-type: image-pull-error
+spec:
+  restartPolicy: Always
+  containers:
+  - name: nonexistent-image
+    image: nonexistent-registry.com/fake-org/fake-app:v1.0.0  # 完全不存在的镜像
+    command: ["echo", "This should never run"]
+    resources:
+      requests:
+        memory: "32Mi"
+        cpu: "50m"
+      limits:
+        memory: "64Mi"
+        cpu: "100m"
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: image-pull-private-registry
+  namespace: default
+  labels:
+    app: rca-test
+    test-type: image-pull-error
+spec:
+  restartPolicy: Always
+  containers:
+  - name: private-image
+    image: private-registry.example.com/secure/confidential-app:latest  # 私有镜像，无权限访问
+    command: ["echo", "This should never run"]
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: image-pull-wrong-tag
+  namespace: default
+  labels:
+    app: rca-test
+    test-type: image-pull-error
+spec:
+  restartPolicy: Always
+  containers:
+  - name: wrong-tag
+    image: nginx:nonexistent-tag-v999  # 存在的镜像但不存在的标签
+    command: ["echo", "This should never run"]
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: image-pull-invalid-name
+  namespace: default
+  labels:
+    app: rca-test
+    test-type: image-pull-error
+spec:
+  restartPolicy: Always
+  containers:
+  - name: invalid-name
+    image: invalid..name//repository:tag  # 无效的镜像名格式
+    command: ["echo", "This should never run"]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: image-pull-error-deployment
+  namespace: default
+  labels:
+    app: rca-test
+    test-type: image-pull-error
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: image-pull-error-app
+  template:
+    metadata:
+      labels:
+        app: image-pull-error-app
+        test-type: image-pull-error
+    spec:
+      containers:
+      - name: unavailable-image
+        image: docker.io/fakecorp/missing-application:2024.01.01
+        imagePullPolicy: Always  # 强制尝试拉取
+        command: ["sleep", "3600"]
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "50m"
+          limits:
+            memory: "64Mi"
+            cpu: "100m"
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: image-pull-timeout-test
+  namespace: default
+  labels:
+    app: rca-test
+    test-type: image-pull-error
+spec:
+  restartPolicy: Always
+  containers:
+  - name: timeout-image
+    image: quay.io/nonexistent-org/huge-image:massive-size  # 不存在的大镜像，模拟超时
+    imagePullPolicy: Always
+    command: ["echo", "This should never run"]
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: image-pull-access-denied
+  namespace: default
+  labels:
+    app: rca-test
+    test-type: image-pull-error
+spec:
+  restartPolicy: Always
+  containers:
+  - name: access-denied
+    image: gcr.io/google-samples/access-denied-test:v1.0  # 模拟访问被拒绝
+    imagePullPolicy: Always
+    command: ["echo", "This should never run"]
+---
+# 多容器Pod，多个镜像拉取失败
+apiVersion: v1
+kind: Pod
+metadata:
+  name: multi-container-image-fail
+  namespace: default
+  labels:
+    app: rca-test
+    test-type: image-pull-error
+spec:
+  restartPolicy: Always
+  containers:
+  - name: fail-container-1
+    image: fake-registry.io/app1:missing
+    command: ["echo", "Container 1"]
+  - name: fail-container-2
+    image: invalid-registry/app2:404
+    command: ["echo", "Container 2"]
+  - name: working-container
+    image: busybox:1.35  # 这个容器的镜像存在
+    command: ["sleep", "3600"]

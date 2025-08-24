@@ -273,11 +273,19 @@ class RCAAnalysisEngine:
         analysis_report = await self._generate_analysis_report(
             metrics, events, logs, root_causes, data_completeness
         )
+        
+        # 整合异常数据
+        anomalies = {
+            "metrics": metric_anomalies,
+            "events": event_patterns,
+            "logs": log_patterns
+        }
 
         return RootCauseAnalysis(
             timestamp=datetime.now(timezone.utc),
             namespace=namespace,
             root_causes=root_causes,
+            anomalies=anomalies,
             correlations=correlations,
             timeline=timeline,
             recommendations=recommendations,
@@ -739,6 +747,17 @@ class RCAAnalysisEngine:
     def _parse_recommendations_from_llm_response(self, response: str) -> List[str]:
         """解析LLM响应为建议列表"""
         try:
+            # 首先尝试解析为JSON数组
+            import json
+            try:
+                # 如果响应是JSON格式的列表
+                recommendations = json.loads(response)
+                if isinstance(recommendations, list):
+                    # 确保每个建议都是字符串
+                    return [str(r) for r in recommendations[:5]]
+            except json.JSONDecodeError:
+                pass  # 不是JSON格式，继续尝试其他解析方式
+            
             # 尝试按行分割
             lines = response.strip().split("\n")
             recommendations = []

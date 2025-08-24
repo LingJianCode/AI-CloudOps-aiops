@@ -1,0 +1,129 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: network-error-test
+  namespace: default
+  labels:
+    app: rca-test
+    test-type: network-error
+spec:
+  restartPolicy: Always
+  containers:
+  - name: network-client
+    image: busybox:1.35
+    command: ["/bin/sh"]
+    args:
+    - -c
+    - |
+      echo "开始网络连接测试..."
+      while true; do
+        echo "尝试连接到不存在的服务..."
+        # 尝试连接不存在的服务，产生connection refused错误
+        nc -z nonexistent-database.default.svc.cluster.local 5432 2>&1 || echo "ERROR: connection refused to database"
+        
+        # 尝试连接外部不可达的地址
+        nc -z 192.168.255.255 80 -w 5 2>&1 || echo "ERROR: network unreachable"
+        
+        # 尝试DNS解析失败
+        nslookup invalid-service.invalid-domain.local 2>&1 || echo "ERROR: DNS resolution failed"
+        
+        # 模拟网络超时
+        timeout 3 nc -z google.com 12345 2>&1 || echo "ERROR: connection timeout"
+        
+        echo "网络错误测试周期完成 $(date)"
+        sleep 10
+      done
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: network-timeout-test
+  namespace: default
+  labels:
+    app: rca-test
+    test-type: network-error
+spec:
+  restartPolicy: Always
+  containers:
+  - name: timeout-client
+    image: ubuntu:20.04
+    command: ["/bin/bash"]
+    args:
+    - -c
+    - |
+      apt-get update &> /dev/null || true
+      apt-get install -y curl netcat-openbsd dnsutils &> /dev/null || true
+      
+      echo "启动网络超时测试..."
+      while true; do
+        echo "=== 网络连接错误测试开始 ==="
+        
+        # HTTP连接超时
+        echo "测试HTTP连接超时..."
+        curl --connect-timeout 5 --max-time 10 http://192.168.255.254:8080/api 2>&1 | head -5 || true
+        
+        # TCP连接拒绝
+        echo "测试TCP连接拒绝..."
+        nc -zv 127.0.0.1 9999 2>&1 | head -5 || true
+        
+        # DNS超时
+        echo "测试DNS超时..."
+        dig @8.8.8.8 timeout-test.invalid-tld +time=2 +tries=1 2>&1 | head -5 || true
+        
+        # 端口不可达
+        echo "测试端口不可达..."
+        telnet 10.96.0.1 12345 2>&1 | timeout 5 cat || true
+        
+        echo "网络错误日志生成完成"
+        sleep 15
+      done
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: network-error-deployment
+  namespace: default
+  labels:
+    app: rca-test
+    test-type: network-error
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: network-error-app
+  template:
+    metadata:
+      labels:
+        app: network-error-app
+        test-type: network-error
+    spec:
+      containers:
+      - name: network-fail-app
+        image: busybox:1.35
+        command: ["/bin/sh"]
+        args:
+        - -c
+        - |
+          echo "网络故障模拟应用启动..."
+          while true; do
+            # 模拟各种网络错误场景
+            echo "ERROR: Failed to connect to redis://redis-master:6379"
+            echo "ERROR: dial tcp 10.96.0.1:443: connection refused"
+            echo "ERROR: Get \"https://api-service.default:8080/health\": dial tcp: lookup api-service.default on 10.96.0.10:53: no such host"
+            echo "ERROR: network unreachable - connect to database timeout after 30s"
+            echo "WARNING: Retrying connection to external-api.example.com:443 in 5s..."
+            echo "ERROR: TLS handshake timeout"
+            
+            # 尝试实际的网络操作来产生真实错误
+            ping -c 1 192.168.255.255 2>&1 || true
+            nc -z invalid-host.local 80 -w 2 2>&1 || true
+            
+            sleep 20
+          done
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "50m"
+          limits:
+            memory: "64Mi"
+            cpu: "100m"

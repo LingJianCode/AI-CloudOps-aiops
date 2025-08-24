@@ -121,10 +121,11 @@ class RootCauseAnalysis:
     timestamp: datetime  # 分析时间
     namespace: str  # 命名空间
     root_causes: List[Any]  # 根因列表
-    correlations: List[Any]  # 关联分析结果
-    timeline: List[Dict[str, Any]]  # 事件时间线
-    recommendations: List[str]  # 建议列表
-    confidence_score: float  # 置信度分数
+    anomalies: Dict[str, Any] = field(default_factory=dict)  # 异常检测结果
+    correlations: List[Any] = field(default_factory=list)  # 关联分析结果
+    timeline: List[Dict[str, Any]] = field(default_factory=list)  # 事件时间线
+    recommendations: List[str] = field(default_factory=list)  # 建议列表
+    confidence_score: float = 0.0  # 置信度分数
     analysis_metadata: Dict[str, Any] = field(default_factory=dict)  # 元数据
 
 

@@ -1,0 +1,320 @@
+# 组合问题测试 - 同时包含多种问题的复杂场景
+# 1. 多容器Pod - 不同问题同时发生
+apiVersion: v1
+kind: Pod
+metadata:
+  name: multi-issue-pod
+  namespace: default
+  labels:
+    app: rca-test
+    test-type: multi-issue
+spec:
+  restartPolicy: Always
+  containers:
+  # 容器1：内存问题 + 崩溃循环
+  - name: oom-crash-container
+    image: busybox:1.35
+    command: ["/bin/sh"]
+    args:
+    - -c
+    - |
+      echo "启动组合问题容器1：内存压力 + 崩溃循环"
+      counter=0
+      while true; do
+        counter=$((counter + 1))
+        echo "尝试 $counter: 分配内存..."
+        
+        # 内存分配（会导致OOM）
+        /bin/sh -c 'data=""; for i in $(seq 1 10000); do data="${data}$(seq -s "" 1 1000)"; done' &
+        
+        # 随机崩溃
+        if [ $((counter % 3)) -eq 0 ]; then
+          echo "FATAL: 应用发生致命错误!"
+          echo "panic: runtime error: slice bounds out of range"
+          exit 1
+        fi
+        
+        sleep 2
+      done
+    resources:
+      limits:
+        memory: "64Mi"  # 低内存限制，确保OOM
+        cpu: "100m"
+      requests:
+        memory: "32Mi"
+        cpu: "50m"
+  # 容器2：网络问题 + 磁盘问题
+  - name: network-disk-container
+    image: ubuntu:20.04
+    command: ["/bin/bash"]
+    args:
+    - -c
+    - |
+      apt-get update &> /dev/null || true
+      apt-get install -y curl netcat-openbsd &> /dev/null || true
+      
+      echo "启动组合问题容器2：网络错误 + 磁盘压力"
+      
+      while true; do
+        echo "=== 网络 + 磁盘问题测试循环 ==="
+        
+        # 网络连接失败
+        echo "ERROR: connection refused to database-cluster.default:5432"
+        curl --connect-timeout 3 http://nonexistent-api.local:8080/health 2>&1 | head -3
+        nc -z invalid-service.cluster.local 80 -w 2 2>&1 | head -3
+        
+        # 磁盘写入失败
+        echo "ERROR: cannot write to disk - no space left"
+        for i in $(seq 1 50); do
+          echo "Log entry $i $(date)" >> /tmp/massive_log_${i}.txt 2>&1 || {
+            echo "FATAL: disk write failed for log entry $i"
+            break
+          }
+        done
+        
+        # 清理日志文件避免真的占满磁盘
+        rm -f /tmp/massive_log_*.txt 2>/dev/null || true
+        
+        echo "ERROR: network timeout while writing to remote storage"
+        sleep 8
+      done
+    resources:
+      requests:
+        memory: "64Mi"
+        cpu: "50m"
+      limits:
+        memory: "128Mi"
+        cpu: "100m"
+  # 容器3：镜像拉取失败的init container
+  initContainers:
+  - name: failing-init
+    image: nonexistent-registry.com/init-app:v1.0
+    command: ["echo", "This init container will fail"]
+---
+# 2. 有问题的Deployment - 多种调度和资源问题
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: complex-issue-deployment
+  namespace: default
+  labels:
+    app: rca-test
+    test-type: multi-issue
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: complex-issue-app
+  template:
+    metadata:
+      labels:
+        app: complex-issue-app
+        test-type: multi-issue
+    spec:
+      # 节点选择器 - 选择不存在的节点
+      nodeSelector:
+        nonexistent-node-type: "true"
+      containers:
+      - name: problematic-app
+        image: busybox:1.35
+        command: ["/bin/sh"]
+        args:
+        - -c
+        - |
+          echo "复杂问题应用启动 - Pod: $HOSTNAME"
+          counter=0
+          
+          while true; do
+            counter=$((counter + 1))
+            echo "=== 问题模拟周期 $counter ==="
+            
+            # CPU密集型操作（会被限制）
+            echo "开始CPU密集型计算..."
+            for i in $(seq 1 1000); do
+              result=$((i * i * i))
+            done &
+            
+            # 内存压力
+            echo "开始内存分配..."
+            large_data="$(seq -s "" 1 50000)" &
+            
+            # 网络问题
+            echo "ERROR: failed to connect to redis://redis-cluster:6379"
+            echo "ERROR: database connection pool exhausted"
+            echo "TIMEOUT: API call to payment-service failed after 30s"
+            
+            # 文件系统问题
+            echo "ERROR: failed to create temp file - disk full"
+            echo "WARN: log rotation failed - insufficient space"
+            
+            # 应用逻辑错误
+            if [ $((counter % 5)) -eq 0 ]; then
+              echo "PANIC: index out of range in user data processing"
+              echo "Stack trace:"
+              echo "  processUserData() at app.go:142"
+              echo "  handleRequest() at server.go:89"
+            fi
+            
+            sleep 5
+          done
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+          limits:
+            cpu: "50m"      # CPU限制低于请求，会导致问题
+            memory: "64Mi"   # 内存限制低于请求，会导致OOM
+        # 存活性探针 - 会失败
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        # 就绪性探针 - 会失败
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 3
+---
+# 3. 有依赖问题的Service和Pod组合
+apiVersion: v1
+kind: Service
+metadata:
+  name: problematic-service
+  namespace: default
+  labels:
+    app: rca-test
+    test-type: multi-issue
+spec:
+  selector:
+    app: service-dependency-app  # 选择不存在的Pod
+  ports:
+  - port: 80
+    targetPort: 8080
+    protocol: TCP
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: service-client-pod
+  namespace: default
+  labels:
+    app: rca-test
+    test-type: multi-issue
+spec:
+  restartPolicy: Always
+  containers:
+  - name: client-app
+    image: busybox:1.35
+    command: ["/bin/sh"]
+    args:
+    - -c
+    - |
+      echo "启动服务客户端 - 将产生各种依赖问题"
+      
+      while true; do
+        echo "=== 服务依赖问题测试 ==="
+        
+        # 尝试连接不存在的Service后端
+        echo "尝试连接 problematic-service..."
+        nc -z problematic-service.default.svc.cluster.local 80 -w 5 2>&1 || {
+          echo "ERROR: service connection failed - no endpoints available"
+          echo "ERROR: upstream connect error or disconnect/reset before headers"
+          echo "WARN: service problematic-service has no ready endpoints"
+        }
+        
+        # 尝试连接外部依赖
+        echo "尝试连接外部依赖..."
+        nc -z external-database.company.com 5432 -w 5 2>&1 || {
+          echo "ERROR: external dependency unavailable"
+          echo "FATAL: cannot establish connection to critical service"
+        }
+        
+        # 模拟级联故障
+        echo "ERROR: cascade failure detected - multiple services down"
+        echo "ALERT: circuit breaker opened for downstream services"
+        echo "ERROR: request queue full - dropping incoming requests"
+        
+        sleep 12
+      done
+---
+# 4. 资源竞争和冲突的StatefulSet
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: resource-conflict-statefulset
+  namespace: default
+  labels:
+    app: rca-test
+    test-type: multi-issue
+spec:
+  serviceName: "resource-conflict-service"
+  replicas: 2
+  selector:
+    matchLabels:
+      app: resource-conflict-app
+  template:
+    metadata:
+      labels:
+        app: resource-conflict-app
+        test-type: multi-issue
+    spec:
+      containers:
+      - name: conflicting-app
+        image: busybox:1.35
+        command: ["/bin/sh"]
+        args:
+        - -c
+        - |
+          echo "StatefulSet实例启动: $HOSTNAME"
+          
+          while true; do
+            echo "=== 资源冲突和竞争测试 ==="
+            
+            # 文件锁竞争
+            echo "尝试获取文件锁..."
+            {
+              echo "WARN: waiting for exclusive file lock on /shared/data.lock"
+              echo "ERROR: lock acquisition timeout - another process holds lock"
+              echo "FATAL: deadlock detected in resource acquisition"
+            } &
+            
+            # 端口冲突
+            echo "ERROR: bind: address already in use (port 8080)"
+            echo "FATAL: cannot start server - port conflict detected"
+            
+            # 存储竞争
+            echo "ERROR: concurrent modification of shared storage"
+            echo "WARN: split-brain scenario detected in cluster"
+            
+            # 内存和CPU竞争
+            large_calc=""
+            for i in $(seq 1 5000); do
+              large_calc="${large_calc}${i}"
+            done &
+            
+            echo "资源竞争测试完成"
+            sleep 15
+          done
+        resources:
+          requests:
+            cpu: "200m"    # 高资源请求
+            memory: "256Mi"
+          limits:
+            cpu: "100m"    # 限制小于请求
+            memory: "128Mi" # 限制小于请求
+        volumeMounts:
+        - name: shared-storage
+          mountPath: /shared
+  volumeClaimTemplates:
+  - metadata:
+      name: shared-storage
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 1Gi

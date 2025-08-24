@@ -1,0 +1,59 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: oom-test-pod
+  namespace: default
+  labels:
+    app: rca-test
+    test-type: oom-killer
+spec:
+  restartPolicy: Always
+  containers:
+  - name: memory-eater
+    image: busybox:1.35
+    command: ["/bin/sh"]
+    args:
+    - -c
+    - |
+      echo "开始内存压力测试..."
+      # 分配200MB内存但限制只有100MB，触发OOM
+      /bin/sh -c 'i=0; while true; do i=$((i+1)); s="$s$i$(seq -s '' 1 10000)"; done'
+    resources:
+      limits:
+        memory: "100Mi"  # 设置较低的内存限制
+        cpu: "100m"
+      requests:
+        memory: "50Mi"
+        cpu: "50m"
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: oom-test-pod-2
+  namespace: default
+  labels:
+    app: rca-test
+    test-type: oom-killer
+spec:
+  restartPolicy: Always
+  containers:
+  - name: memory-stress
+    image: ubuntu:20.04
+    command: ["/bin/bash"]
+    args:
+    - -c
+    - |
+      apt-get update &> /dev/null || true
+      echo "启动内存压力测试进程..."
+      # 使用dd命令快速消耗内存
+      dd if=/dev/zero of=/dev/null bs=1M count=200 &
+      # 创建大文件在内存中
+      head -c 150M /dev/zero > /tmp/bigfile || true
+      sleep 300
+    resources:
+      limits:
+        memory: "80Mi"   # 更低的内存限制
+        cpu: "200m"
+      requests:
+        memory: "40Mi"
+        cpu: "100m"

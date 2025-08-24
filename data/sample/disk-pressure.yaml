@@ -1,0 +1,237 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: disk-pressure-test
+  namespace: default
+  labels:
+    app: rca-test
+    test-type: disk-pressure
+spec:
+  restartPolicy: Always
+  containers:
+  - name: disk-writer
+    image: busybox:1.35
+    command: ["/bin/sh"]
+    args:
+    - -c
+    - |
+      echo "开始磁盘压力测试..."
+      mkdir -p /tmp/disk-test
+      
+      # 持续写入数据直到磁盘满
+      counter=0
+      while true; do
+        counter=$((counter + 1))
+        echo "写入第 $counter 个大文件..."
+        
+        # 尝试创建大文件
+        dd if=/dev/zero of=/tmp/disk-test/bigfile_${counter}.dat bs=1M count=50 2>&1 || {
+          echo "ERROR: no space left on device - 磁盘空间不足!"
+          echo "FATAL: 无法写入文件 /tmp/disk-test/bigfile_${counter}.dat"
+          echo "disk full detected at $(date)"
+        }
+        
+        # 模拟磁盘满的错误日志
+        if [ $((counter % 10)) -eq 0 ]; then
+          echo "WARNING: disk usage at 95% capacity"
+          echo "ERROR: failed to allocate disk space for log rotation"
+          df -h /tmp || echo "ERROR: disk full"
+        fi
+        
+        sleep 5
+      done
+    resources:
+      requests:
+        memory: "32Mi"
+        cpu: "50m"
+      limits:
+        memory: "128Mi"
+        cpu: "200m"
+    volumeMounts:
+    - name: temp-storage
+      mountPath: /tmp
+  volumes:
+  - name: temp-storage
+    emptyDir:
+      sizeLimit: "100Mi"  # 限制临时存储大小，更容易触发磁盘满
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: disk-pressure-logs
+  namespace: default
+  labels:
+    app: rca-test
+    test-type: disk-pressure
+spec:
+  restartPolicy: Always
+  containers:
+  - name: log-generator
+    image: ubuntu:20.04
+    command: ["/bin/bash"]
+    args:
+    - -c
+    - |
+      echo "启动日志生成器..."
+      mkdir -p /var/log/app /tmp/cache
+      
+      while true; do
+        echo "=== 磁盘空间监控 $(date) ==="
+        
+        # 模拟磁盘满错误
+        echo "ERROR: write failed: no space left on device" >> /var/log/app/error.log 2>&1 || true
+        echo "FATAL: cannot create temp file: disk full" >> /var/log/app/fatal.log 2>&1 || true
+        echo "WARNING: low disk space - only 5% remaining" >> /var/log/app/warn.log 2>&1 || true
+        
+        # 尝试创建大量小文件
+        for i in $(seq 1 100); do
+          echo "Large log entry with lots of data: $(date) - Entry $i with padding data..." > /tmp/cache/log_${i}.tmp 2>&1 || {
+            echo "ERROR: failed to write log entry $i - disk full!"
+            break
+          }
+        done
+        
+        # 模拟数据库写入失败
+        echo "DATABASE ERROR: cannot write to table 'logs' - disk full"
+        echo "CACHE ERROR: failed to save session data - insufficient disk space"
+        echo "TEMP FILE ERROR: mktemp: cannot create temp file - disk full"
+        
+        # 清理一些文件以避免真的占满磁盘
+        rm -f /tmp/cache/log_*.tmp 2>/dev/null || true
+        
+        sleep 10
+      done
+    resources:
+      requests:
+        memory: "64Mi"
+        cpu: "50m"
+      limits:
+        memory: "128Mi"
+        cpu: "100m"
+---
+# 创建一个PVC并尝试写满它
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: disk-pressure-pvc
+  namespace: default
+  labels:
+    app: rca-test
+    test-type: disk-pressure
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Mi  # 小的存储空间，容易填满
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: disk-pressure-pvc-test
+  namespace: default
+  labels:
+    app: rca-test
+    test-type: disk-pressure
+spec:
+  restartPolicy: Always
+  containers:
+  - name: pvc-filler
+    image: busybox:1.35
+    command: ["/bin/sh"]
+    args:
+    - -c
+    - |
+      echo "开始填充PVC存储..."
+      cd /data
+      
+      counter=0
+      while true; do
+        counter=$((counter + 1))
+        echo "创建文件 datafile_${counter}.dat..."
+        
+        # 创建大文件直到PVC满
+        dd if=/dev/zero of=/data/datafile_${counter}.dat bs=1M count=10 2>&1 || {
+          echo "ERROR: write failed - PVC disk full!"
+          echo "FATAL: no space left on persistent volume"
+          df -h /data
+        }
+        
+        # 检查磁盘使用情况
+        disk_usage=$(df /data | tail -1 | awk '{print $5}' | sed 's/%//')
+        if [ "$disk_usage" -gt 90 ]; then
+          echo "WARNING: PVC disk usage at ${disk_usage}%"
+          echo "ALERT: approaching disk full condition"
+        fi
+        
+        sleep 8
+      done
+    resources:
+      requests:
+        memory: "32Mi"
+        cpu: "50m"
+      limits:
+        memory: "64Mi"
+        cpu: "100m"
+    volumeMounts:
+    - name: data-volume
+      mountPath: /data
+  volumes:
+  - name: data-volume
+    persistentVolumeClaim:
+      claimName: disk-pressure-pvc
+---
+# Deployment来模拟多个Pod同时产生磁盘压力
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: disk-pressure-deployment
+  namespace: default
+  labels:
+    app: rca-test
+    test-type: disk-pressure
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: disk-pressure-app
+  template:
+    metadata:
+      labels:
+        app: disk-pressure-app
+        test-type: disk-pressure
+    spec:
+      containers:
+      - name: disk-consumer
+        image: busybox:1.35
+        command: ["/bin/sh"]
+        args:
+        - -c
+        - |
+          echo "磁盘消耗应用启动 - Pod: $HOSTNAME"
+          
+          while true; do
+            # 模拟应用运行时的磁盘写入错误
+            echo "ERROR: $(date): Failed to write application data - disk full"
+            echo "ERROR: $(date): Log rotation failed - insufficient disk space"
+            echo "WARN: $(date): Temporary files cleanup failed - disk pressure detected"
+            echo "FATAL: $(date): Cannot save application state - no space left"
+            
+            # 尝试实际写入以产生真实错误
+            for i in $(seq 1 20); do
+              echo "Application log entry $i with timestamp $(date)" > /tmp/app_${i}.log 2>&1 || echo "Write failed for app log $i"
+            done
+            
+            # 清理文件
+            rm -f /tmp/app_*.log 2>/dev/null || true
+            
+            echo "Disk pressure simulation cycle completed at $(date)"
+            sleep 15
+          done
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "50m"
+          limits:
+            memory: "64Mi"
+            cpu: "100m"

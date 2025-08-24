@@ -1,0 +1,245 @@
+# 首先创建一个严格的资源配额
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: rca-test-quota
+  namespace: default
+  labels:
+    app: rca-test
+    test-type: resource-quota
+spec:
+  hard:
+    # Pod数量限制
+    pods: "2"
+    # CPU资源限制（总共只允许200m CPU）
+    requests.cpu: "200m"
+    limits.cpu: "500m"
+    # 内存资源限制（总共只允许200Mi内存）
+    requests.memory: "200Mi"
+    limits.memory: "400Mi"
+    # 存储限制
+    requests.storage: "1Gi"
+    # 服务账户限制
+    count/persistentvolumeclaims: "2"
+    count/services: "2"
+    count/secrets: "5"
+    count/configmaps: "5"
+---
+# 创建第一个Pod（在配额范围内）
+apiVersion: v1
+kind: Pod
+metadata:
+  name: quota-test-pod-1
+  namespace: default
+  labels:
+    app: rca-test
+    test-type: resource-quota
+spec:
+  restartPolicy: Always
+  containers:
+  - name: app-container
+    image: busybox:1.35
+    command: ["sleep", "3600"]
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "100Mi"
+      limits:
+        cpu: "200m"
+        memory: "150Mi"
+---
+# 创建第二个Pod（仍在配额范围内，但接近上限）
+apiVersion: v1
+kind: Pod
+metadata:
+  name: quota-test-pod-2
+  namespace: default
+  labels:
+    app: rca-test
+    test-type: resource-quota
+spec:
+  restartPolicy: Always
+  containers:
+  - name: app-container
+    image: busybox:1.35
+    command: ["sleep", "3600"]
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "100Mi"
+      limits:
+        cpu: "200m"
+        memory: "150Mi"
+---
+# 尝试创建第三个Pod（超出Pod数量限制，应该失败）
+apiVersion: v1
+kind: Pod
+metadata:
+  name: quota-exceed-pod-count
+  namespace: default
+  labels:
+    app: rca-test
+    test-type: resource-quota
+spec:
+  restartPolicy: Always
+  containers:
+  - name: app-container
+    image: busybox:1.35
+    command: ["sleep", "3600"]
+    resources:
+      requests:
+        cpu: "50m"
+        memory: "50Mi"
+      limits:
+        cpu: "100m"
+        memory: "100Mi"
+---
+# 创建超出CPU配额的Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: quota-exceed-cpu
+  namespace: default
+  labels:
+    app: rca-test
+    test-type: resource-quota
+spec:
+  replicas: 3  # 尝试创建3个副本，但配额不足
+  selector:
+    matchLabels:
+      app: quota-exceed-cpu-app
+  template:
+    metadata:
+      labels:
+        app: quota-exceed-cpu-app
+        test-type: resource-quota
+    spec:
+      containers:
+      - name: cpu-heavy-app
+        image: busybox:1.35
+        command: ["sleep", "3600"]
+        resources:
+          requests:
+            cpu: "300m"  # 单个Pod就超出总配额
+            memory: "50Mi"
+          limits:
+            cpu: "400m"
+            memory: "100Mi"
+---
+# 创建超出内存配额的Pod
+apiVersion: v1
+kind: Pod
+metadata:
+  name: quota-exceed-memory
+  namespace: default
+  labels:
+    app: rca-test
+    test-type: resource-quota
+spec:
+  restartPolicy: Always
+  containers:
+  - name: memory-heavy-app
+    image: busybox:1.35
+    command: ["sleep", "3600"]
+    resources:
+      requests:
+        cpu: "50m"
+        memory: "500Mi"  # 超出内存配额
+      limits:
+        cpu: "100m"
+        memory: "800Mi"
+---
+# 创建多个PVC来超出存储配额
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: quota-test-pvc-1
+  namespace: default
+  labels:
+    app: rca-test
+    test-type: resource-quota
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 500Mi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: quota-test-pvc-2
+  namespace: default
+  labels:
+    app: rca-test
+    test-type: resource-quota
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 500Mi
+---
+# 尝试创建第三个PVC（超出count限制）
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: quota-exceed-pvc-count
+  namespace: default
+  labels:
+    app: rca-test
+    test-type: resource-quota
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 200Mi
+---
+# 尝试创建超出存储配额的PVC
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: quota-exceed-storage-size
+  namespace: default
+  labels:
+    app: rca-test
+    test-type: resource-quota
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi  # 超出总存储配额
+---
+# 创建ReplicaSet来测试调度失败
+apiVersion: apps/v1
+kind: ReplicaSet
+metadata:
+  name: quota-exceed-replicaset
+  namespace: default
+  labels:
+    app: rca-test
+    test-type: resource-quota
+spec:
+  replicas: 5  # 尝试创建5个副本，但配额只允许2个Pod
+  selector:
+    matchLabels:
+      app: quota-exceed-rs-app
+  template:
+    metadata:
+      labels:
+        app: quota-exceed-rs-app
+        test-type: resource-quota
+    spec:
+      containers:
+      - name: resource-app
+        image: busybox:1.35
+        command: ["sleep", "3600"]
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "100Mi"
+          limits:
+            cpu: "150m"
+            memory: "150Mi"

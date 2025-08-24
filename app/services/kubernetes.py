@@ -415,6 +415,30 @@ class KubernetesService:
             raise RuntimeError("Kubernetes未初始化，无法获取Pod日志")
 
         try:
+            # 先获取Pod状态，检查容器是否就绪
+            pod = self.core_v1.read_namespaced_pod(name=pod_name, namespace=namespace)
+            
+            # 确定要查询的容器名称
+            if not container_name and pod.spec.containers:
+                container_name = pod.spec.containers[0].name
+            
+            # 检查容器状态
+            if pod.status.container_statuses:
+                for container_status in pod.status.container_statuses:
+                    if container_status.name == container_name:
+                        # 如果容器处于waiting状态，返回状态信息而不是尝试获取日志
+                        if container_status.state.waiting:
+                            reason = container_status.state.waiting.reason
+                            message = container_status.state.waiting.message or ""
+                            logger.info(f"容器 {container_name} 处于waiting状态: {reason} - {message}")
+                            # 返回状态信息而不是None，以便调用者知道发生了什么
+                            return f"[容器等待中] {reason}: {message}"
+                        # 如果容器从未运行过（没有lastState.terminated），跳过
+                        elif not container_status.ready and not container_status.state.running:
+                            if not (container_status.last_state and container_status.last_state.terminated):
+                                logger.info(f"容器 {container_name} 尚未运行，无法获取日志")
+                                return "[容器未运行]"
+            
             # 构建日志查询参数
             kwargs = {
                 "name": pod_name,

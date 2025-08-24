@@ -1,0 +1,110 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: cpu-throttling-test
+  namespace: default
+  labels:
+    app: rca-test
+    test-type: cpu-throttling
+spec:
+  restartPolicy: Always
+  containers:
+  - name: cpu-stress
+    image: busybox:1.35
+    command: ["/bin/sh"]
+    args:
+    - -c
+    - |
+      echo "开始CPU压力测试..."
+      # 启动多个CPU密集型进程以超出限制
+      while true; do echo "CPU stress process running..."; done &
+      while true; do dd if=/dev/zero of=/dev/null bs=1M count=1; done &
+      while true; do find /tmp -name "*" 2>/dev/null; done &
+      wait
+    resources:
+      limits:
+        cpu: "50m"      # 极低的CPU限制，强制触发throttling
+        memory: "64Mi"
+      requests:
+        cpu: "50m"
+        memory: "32Mi"
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: cpu-stress-test-2
+  namespace: default
+  labels:
+    app: rca-test
+    test-type: cpu-throttling
+spec:
+  restartPolicy: Always
+  containers:
+  - name: high-cpu-app
+    image: ubuntu:20.04
+    command: ["/bin/bash"]
+    args:
+    - -c
+    - |
+      echo "启动高CPU使用率进程..."
+      # 运行多个CPU密集型任务
+      for i in {1..4}; do
+        (while true; do echo $((2**20)) > /dev/null; done) &
+      done
+      # 计算密集型任务
+      while true; do
+        for j in {1..1000}; do
+          result=$((j * j * j))
+        done
+        sleep 0.1
+      done
+    resources:
+      limits:
+        cpu: "100m"     # 限制CPU为0.1核
+        memory: "128Mi"
+      requests:
+        cpu: "100m"
+        memory: "64Mi"
+---
+apiVersion: v1
+kind: Deployment
+metadata:
+  name: cpu-throttling-deployment
+  namespace: default
+  labels:
+    app: rca-test
+    test-type: cpu-throttling
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: cpu-throttling-app
+  template:
+    metadata:
+      labels:
+        app: cpu-throttling-app
+        test-type: cpu-throttling
+    spec:
+      containers:
+      - name: cpu-intensive
+        image: busybox:1.35
+        command: ["/bin/sh"]
+        args:
+        - -c
+        - |
+          echo "CPU密集型Deployment启动..."
+          # 持续的CPU密集型操作
+          while true; do
+            # 计算斐波那契数列
+            a=1; b=1; for i in $(seq 1 10000); do c=$((a+b)); a=$b; b=$c; done
+            # 字符串操作
+            str="test"; for i in $(seq 1 1000); do str="${str}${i}"; done
+            echo "Cycle completed at $(date)"
+          done
+        resources:
+          limits:
+            cpu: "30m"      # 非常低的CPU限制
+            memory: "64Mi"
+          requests:
+            cpu: "30m"
+            memory: "32Mi"

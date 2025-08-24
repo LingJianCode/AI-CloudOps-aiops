@@ -1,0 +1,136 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: crash-loop-test-pod
+  namespace: default
+  labels:
+    app: rca-test
+    test-type: crash-loop
+spec:
+  restartPolicy: Always  # 确保Pod会重启
+  containers:
+  - name: failing-app
+    image: busybox:1.35
+    command: ["/bin/sh"]
+    args:
+    - -c
+    - |
+      echo "应用启动中..."
+      echo "模拟应用初始化过程..."
+      sleep 5
+      echo "致命错误：数据库连接失败!"
+      echo "panic: runtime error: invalid memory address or nil pointer dereference"
+      echo "Stack trace:"
+      echo "  main.go:45 +0x1a"
+      echo "  runtime/panic.go:221 +0x222"
+      exit 1  # 立即失败，触发重启
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: crash-loop-segfault
+  namespace: default
+  labels:
+    app: rca-test
+    test-type: crash-loop
+spec:
+  restartPolicy: Always
+  containers:
+  - name: segfault-app
+    image: ubuntu:20.04
+    command: ["/bin/bash"]
+    args:
+    - -c
+    - |
+      echo "启动应用程序..."
+      sleep 3
+      echo "ERROR: segmentation fault (core dumped)"
+      echo "程序因内存访问违规而崩溃"
+      echo "Stack trace:"
+      echo "  #0  0x0000000000400526 in main ()"
+      echo "  #1  0x00007f8b8c0ec830 in __libc_start_main ()"
+      kill -SEGV $$  # 发送段错误信号
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: crash-loop-deployment
+  namespace: default
+  labels:
+    app: rca-test
+    test-type: crash-loop
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: crash-loop-app
+  template:
+    metadata:
+      labels:
+        app: crash-loop-app
+        test-type: crash-loop
+    spec:
+      restartPolicy: Always
+      containers:
+      - name: unstable-app
+        image: busybox:1.35
+        command: ["/bin/sh"]
+        args:
+        - -c
+        - |
+          echo "不稳定应用启动..."
+          # 随机崩溃模式
+          rand=$(( ( RANDOM % 3 ) + 1 ))
+          case $rand in
+            1)
+              echo "ERROR: OutOfMemoryError - Java heap space"
+              echo "	at java.util.Arrays.copyOf(Arrays.java:3332)"
+              echo "	at java.lang.AbstractStringBuilder.ensureCapacityInternal(AbstractStringBuilder.java:124)"
+              ;;
+            2)
+              echo "FATAL: database connection pool exhausted"
+              echo "Connection timeout after 30s"
+              ;;
+            3)
+              echo "panic: runtime error: index out of range [5] with length 3"
+              echo "goroutine 1 [running]:"
+              echo "main.processData(0xc000010200, 0x5, 0x3)"
+              ;;
+          esac
+          sleep $(( ( RANDOM % 10 ) + 5 ))  # 随机运行5-15秒后崩溃
+          exit 1
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "50m"
+          limits:
+            memory: "64Mi"
+            cpu: "100m"
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: crash-loop-panic-test
+  namespace: default
+  labels:
+    app: rca-test
+    test-type: crash-loop
+spec:
+  restartPolicy: Always
+  containers:
+  - name: panic-app
+    image: busybox:1.35
+    command: ["/bin/sh"]
+    args:
+    - -c
+    - |
+      echo "应用程序启动..."
+      echo "正在初始化服务..."
+      sleep 2
+      echo "PANIC: 无法连接到关键服务"
+      echo "fatal error: all goroutines are asleep - deadlock!"
+      echo ""
+      echo "goroutine 1 [semacquire]:"
+      echo "sync.runtime_Semacquire(0x0?)"
+      echo "	runtime/sema.go:56 +0x25"
+      exit 2  # 使用不同的退出码
