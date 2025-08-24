@@ -1,0 +1,137 @@
+---
+# Service配置有问题
+apiVersion: v1
+kind: Service
+metadata:
+  name: health-check-failed-service
+  namespace: default
+  labels:
+    app: health-check-test
+    problem: health-check-failure
+  annotations:
+    description: "This service and pod have health check issues that will cause failures"
+spec:
+  type: LoadBalancer
+  selector:
+    app: health-check-test
+  ports:
+  # 问题1：端口配置错误
+  - name: http
+    port: 80
+    targetPort: 8080  # Pod实际在8081端口监听
+    protocol: TCP
+  - name: https
+    port: 443
+    targetPort: 8443  # Pod没有HTTPS支持
+    protocol: TCP
+  # 问题2：不必要的端口暴露
+  - name: admin
+    port: 9090
+    targetPort: 9090  # 管理端口不应对外暴露
+    protocol: TCP
+  # 问题3：会话亲和性配置不当
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 86400  # 24小时的会话保持，过长
+
+---
+# 配套的Pod配置，健康检查有各种问题
+apiVersion: v1
+kind: Pod
+metadata:
+  name: health-check-failed-pod
+  namespace: default
+  labels:
+    app: health-check-test
+    version: v1.0.0
+spec:
+  containers:
+  - name: web-app
+    image: nginx:1.20
+    ports:
+    - containerPort: 8081  # 实际监听端口，与Service不匹配
+      name: http
+    # 问题1：健康检查路径不存在
+    livenessProbe:
+      httpGet:
+        path: /health
+        port: 8081
+        scheme: HTTP
+      initialDelaySeconds: 30
+      periodSeconds: 10
+      failureThreshold: 3
+      timeoutSeconds: 1
+      successThreshold: 1
+    # 问题2：就绪检查配置过于严格
+    readinessProbe:
+      httpGet:
+        path: /ready
+        port: 8081
+        scheme: HTTP
+      initialDelaySeconds: 5
+      periodSeconds: 5
+      failureThreshold: 1  # 一次失败就标记为不就绪
+      timeoutSeconds: 1
+      successThreshold: 3  # 需要连续3次成功才标记为就绪，太严格
+    # 问题3：启动探针配置不当
+    startupProbe:
+      httpGet:
+        path: /startup
+        port: 8081
+      initialDelaySeconds: 0
+      periodSeconds: 1
+      failureThreshold: 5  # 只允许5次失败，对于慢启动应用不够
+      timeoutSeconds: 1
+    # 问题4：环境变量配置错误
+    env:
+    - name: SERVER_PORT
+      value: "8080"  # 环境变量说是8080，但实际容器在8081监听
+    - name: HEALTH_CHECK_PATH
+      value: "/healthz"  # 但健康检查路径配置的是/health
+    # 问题5：资源限制不合理
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 50m   # limit小于request
+        memory: 64Mi
+    # 问题6：卷挂载配置错误
+    volumeMounts:
+    - name: config-volume
+      mountPath: /etc/nginx/nginx.conf
+      subPath: nginx.conf
+      readOnly: true
+  # 问题7：引用不存在的ConfigMap
+  volumes:
+  - name: config-volume
+    configMap:
+      name: non-existent-nginx-config
+      defaultMode: 0644
+  # 问题8：DNS策略配置不当
+  dnsPolicy: None  # 使用自定义DNS但没有配置DNS服务器
+  dnsConfig:
+    nameservers: []  # 空的DNS服务器列表
+    searches:
+    - local.cluster
+    options:
+    - name: ndots
+      value: "5"
+  # 问题9：重启策略配置不合理
+  restartPolicy: Never  # 永不重启，但这是一个长期运行的服务
+  # 问题10：容器安全上下文有问题
+  securityContext:
+    runAsUser: 0  # 以root运行
+    runAsGroup: 0
+    fsGroup: 0
+  # 问题11：调度配置有问题
+  nodeSelector:
+    disktype: ssd    # 可能没有这样标签的节点
+    node-role: worker
+  tolerations:
+  - key: "node.kubernetes.io/memory-pressure"
+    operator: "Equal"
+    value: "true"
+    effect: "NoExecute"
+    tolerationSeconds: 0  # 立即驱逐，不给缓冲时间

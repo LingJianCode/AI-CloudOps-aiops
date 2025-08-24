@@ -1,0 +1,65 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: resource-limit-problem-pod
+  namespace: default
+  labels:
+    app: resource-test
+    problem: resource-limit
+  annotations:
+    description: "This pod has excessive resource requests that will cause scheduling issues"
+spec:
+  containers:
+  - name: resource-hungry-app
+    image: nginx:1.20
+    ports:
+    - containerPort: 80
+    # 问题1：请求的CPU和内存资源过多，超出节点限制
+    resources:
+      requests:
+        cpu: "16"       # 请求16个CPU，通常节点只有4-8个CPU
+        memory: "64Gi"  # 请求64GB内存，通常节点内存不足
+      limits:
+        cpu: "32"       # 限制更高，会导致争用
+        memory: "128Gi" # 限制极高，可能导致OOM killer
+    # 问题2：环境变量配置不当
+    env:
+    - name: JAVA_OPTS
+      value: "-Xmx60g -Xms60g"  # JVM堆设置接近内存限制，危险
+    # 问题3：缺少必要的健康检查
+    livenessProbe:
+      httpGet:
+        path: /health
+        port: 8080  # 错误端口，nginx在80端口
+      initialDelaySeconds: 5
+      periodSeconds: 10
+    readinessProbe:
+      httpGet:
+        path: /ready
+        port: 8080  # 错误端口
+      initialDelaySeconds: 5
+      periodSeconds: 5
+  # 问题4：节点选择器要求不存在的标签
+  nodeSelector:
+    node-type: high-memory
+    gpu: tesla-v100
+  # 问题5：容忍度配置错误
+  tolerations:
+  - key: "node.kubernetes.io/not-ready"
+    operator: "Equal"
+    value: "true"
+    effect: "NoSchedule"
+    tolerationSeconds: 0  # 立即驱逐，不给恢复时间
+  # 问题6：亲和性规则过于严格
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: kubernetes.io/arch
+            operator: In
+            values: ["arm64"]  # 如果集群都是x86_64节点，这会失败
+          - key: node.kubernetes.io/instance-type
+            operator: In
+            values: ["c5.24xlarge"]  # 特定实例类型，可能不存在
+  restartPolicy: Always

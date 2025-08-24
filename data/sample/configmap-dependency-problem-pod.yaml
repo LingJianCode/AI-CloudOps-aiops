@@ -1,0 +1,167 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: configmap-dependency-problem-pod
+  namespace: default
+  labels:
+    app: configmap-test
+    problem: configmap-dependency
+  annotations:
+    description: "This pod has various ConfigMap and Secret dependency issues"
+spec:
+  containers:
+  - name: app-container
+    image: busybox:1.35
+    command: ["/bin/sh"]
+    args: ["-c", "while true; do sleep 30; done"]
+    # 问题1：引用不存在的ConfigMap作为环境变量
+    envFrom:
+    - configMapRef:
+        name: non-existent-config
+    - configMapRef:
+        name: missing-app-config
+    - secretRef:
+        name: non-existent-secret
+    # 问题2：引用不存在的ConfigMap键作为环境变量
+    env:
+    - name: DATABASE_URL
+      valueFrom:
+        configMapKeyRef:
+          name: existing-config  # 假设存在但键不存在
+          key: non-existent-key
+    - name: API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: missing-secret
+          key: api-key
+    # 问题3：可选配置标记错误
+    - name: OPTIONAL_CONFIG
+      valueFrom:
+        configMapKeyRef:
+          name: optional-config
+          key: optional-key
+          optional: false  # 标记为必需但ConfigMap不存在
+    # 问题4：卷挂载引用不存在的ConfigMap
+    volumeMounts:
+    - name: config-volume-1
+      mountPath: /etc/config
+      readOnly: true
+    - name: config-volume-2
+      mountPath: /etc/secrets
+      readOnly: true
+    - name: config-volume-3
+      mountPath: /app/config.yaml
+      subPath: config.yaml
+      readOnly: true
+    # 问题5：挂载路径冲突
+    - name: config-volume-4
+      mountPath: /etc/config  # 与config-volume-1相同路径
+      readOnly: true
+  # 问题6：初始化容器也有ConfigMap依赖问题
+  initContainers:
+  - name: init-config-checker
+    image: alpine:3.17
+    command: ['sh', '-c']
+    args:
+    - |
+      echo "Checking configuration..."
+      cat /init-config/database.conf  # 引用不存在的配置文件
+      echo "Configuration check complete"
+    volumeMounts:
+    - name: init-config-volume
+      mountPath: /init-config
+  volumes:
+  # 问题7：引用不存在的ConfigMap
+  - name: config-volume-1
+    configMap:
+      name: non-existent-main-config
+      defaultMode: 0644
+  # 问题8：引用不存在的Secret
+  - name: config-volume-2
+    secret:
+      secretName: non-existent-secret
+      defaultMode: 0600
+  # 问题9：引用不存在的ConfigMap子项
+  - name: config-volume-3
+    configMap:
+      name: partial-config
+      items:
+      - key: non-existent-key
+        path: config.yaml
+      defaultMode: 0644
+  # 问题10：权限模式设置不当
+  - name: config-volume-4
+    configMap:
+      name: another-missing-config
+      defaultMode: 0777  # 过于宽松的权限
+  # 问题11：初始化容器的ConfigMap依赖
+  - name: init-config-volume
+    configMap:
+      name: missing-init-config
+      items:
+      - key: database.conf
+        path: database.conf
+  # 问题12：投射卷配置错误
+  - name: projected-volume
+    projected:
+      sources:
+      - configMap:
+          name: missing-projected-config
+      - secret:
+          name: missing-projected-secret
+      - downwardAPI:
+          items:
+          - path: labels
+            fieldRef:
+              fieldPath: metadata.labels['non-existent-label']
+      defaultMode: 0644
+  # 问题13：重启策略与容器配置不匹配
+  restartPolicy: OnFailure  # 容器是长期运行的，应该用Always
+  # 问题14：服务账号引用问题
+  serviceAccountName: non-existent-service-account
+  # 问题15：自动挂载服务账号令牌但服务账号不存在
+  automountServiceAccountToken: true
+
+---
+# 相关的有问题的ConfigMap（故意配置错误）
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: broken-config-example
+  namespace: default
+  labels:
+    app: configmap-test
+    problem: invalid-data
+data:
+  # 问题1：JSON格式错误
+  invalid-json: |
+    {
+      "database": {
+        "host": "localhost",
+        "port": 5432,
+        "name": "myapp"
+        # 缺少闭合括号和引号
+  # 问题2：YAML格式错误
+  invalid-yaml: |
+    database:
+      host: localhost
+      port: 5432
+    credentials:
+        username: admin  # 缩进错误
+      password: secret123
+    - invalid_list_item  # 列表项位置错误
+  # 问题3：配置值类型错误
+  app-config: |
+    server:
+      port: "not-a-number"  # 应该是数字
+      timeout: true         # 应该是数值
+      max_connections: []   # 应该是数字
+  # 问题4：包含敏感信息（应该用Secret）
+  database-config: |
+    DB_HOST=production-db.company.com
+    DB_USER=admin
+    DB_PASSWORD=super-secret-password-123  # 敏感信息不应在ConfigMap中
+    API_KEY=sk-1234567890abcdef  # API密钥应该在Secret中
+  # 问题5：二进制数据在ConfigMap中（应该用Secret）
+binaryData:
+  certificate.p12: "MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7..."  # 证书应该在Secret中

@@ -1,0 +1,194 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: storage-mount-problem-statefulset
+  namespace: default
+  labels:
+    app: storage-test
+    problem: storage-mount-issue
+  annotations:
+    description: "This StatefulSet has various storage and volume mounting issues"
+spec:
+  serviceName: storage-test-headless  # 引用不存在的headless service
+  replicas: 3
+  selector:
+    matchLabels:
+      app: storage-test
+  template:
+    metadata:
+      labels:
+        app: storage-test
+    spec:
+      containers:
+      - name: database
+        image: postgres:14
+        env:
+        - name: POSTGRES_DB
+          value: testdb
+        - name: POSTGRES_USER
+          value: postgres
+        - name: POSTGRES_PASSWORD
+          value: password123
+        ports:
+        - containerPort: 5432
+          name: postgres
+        # 问题1：挂载路径错误
+        volumeMounts:
+        - name: data-volume
+          mountPath: /var/lib/postgresql/data/pgdata  # 正确路径
+        - name: config-volume
+          mountPath: /etc/postgresql/postgresql.conf
+          subPath: postgresql.conf
+          readOnly: true
+        # 问题2：挂载路径冲突
+        - name: another-data-volume
+          mountPath: /var/lib/postgresql  # 与data-volume路径冲突
+        # 问题3：权限问题
+        - name: logs-volume
+          mountPath: /var/log/postgresql
+          readOnly: true  # 日志目录不应只读
+        # 问题4：临时文件系统配置不当
+        - name: tmp-volume
+          mountPath: /tmp
+          # 缺少size限制，可能耗尽节点存储
+      # 问题5：初始化容器存储问题
+      initContainers:
+      - name: init-db
+        image: postgres:14
+        command: ['sh', '-c']
+        args:
+        - |
+          echo "Initializing database..."
+          mkdir -p /data/init
+          echo "CREATE DATABASE myapp;" > /data/init/init.sql
+        volumeMounts:
+        - name: non-existent-init-volume
+          mountPath: /data/init
+      volumes:
+      # 问题6：引用不存在的PVC
+      - name: data-volume
+        persistentVolumeClaim:
+          claimName: non-existent-pvc
+      # 问题7：ConfigMap挂载问题
+      - name: config-volume
+        configMap:
+          name: postgres-config  # 不存在的ConfigMap
+          items:
+          - key: postgresql.conf
+            path: postgresql.conf
+          defaultMode: 0644
+      # 问题8：emptyDir配置不当
+      - name: another-data-volume
+        emptyDir:
+          sizeLimit: 1Ti  # 过大的size限制，可能超过节点容量
+          medium: Memory  # 使用内存存储数据库数据，重启丢失
+      # 问题9：日志卷配置错误
+      - name: logs-volume
+        hostPath:
+          path: /var/log/postgresql  # 主机路径可能不存在
+          type: DirectoryOrCreate
+      # 问题10：临时文件系统
+      - name: tmp-volume
+        emptyDir:
+          medium: Memory
+          # 没有sizeLimit，可能耗尽内存
+      # 问题11：初始化卷引用错误
+      - name: non-existent-init-volume
+        persistentVolumeClaim:
+          claimName: init-pvc-that-does-not-exist
+      # 问题12：资源限制不合理
+      resources:
+        requests:
+          cpu: 2
+          memory: 4Gi
+        limits:
+          cpu: 1     # limit小于request
+          memory: 2Gi
+      # 问题13：安全上下文配置不当
+      securityContext:
+        runAsUser: 0  # 以root运行数据库
+        runAsGroup: 0
+        fsGroup: 0
+  # 问题14：卷声明模板配置错误
+  volumeClaimTemplates:
+  - metadata:
+      name: problematic-storage
+      labels:
+        app: storage-test
+    spec:
+      accessModes: 
+      - ReadWriteOnce
+      - ReadOnlyMany  # 冲突的访问模式
+      storageClassName: non-existent-storage-class  # 不存在的存储类
+      resources:
+        requests:
+          storage: 1000Gi  # 过大的存储请求
+      # 问题15：卷模式配置错误
+      volumeMode: Block  # 数据库需要文件系统，不是块设备
+  # 问题16：更新策略配置不当
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 100%  # 全部不可用，有状态应用不应这样配置
+  # 问题17：Pod管理策略错误
+  podManagementPolicy: Parallel  # 数据库应该用OrderedReady
+  # 问题18：分区更新配置错误
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      partition: 10  # 分区数大于副本数
+
+---
+# 相关的有问题的PVC
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: problematic-pvc
+  namespace: default
+  labels:
+    app: storage-test
+    problem: pvc-config-issue
+spec:
+  accessModes:
+  - ReadWriteOnce
+  - ReadWriteMany    # 冲突的访问模式
+  storageClassName: fast-ssd-that-does-not-exist
+  resources:
+    requests:
+      storage: 500Gi  # 过大的存储请求
+  # 问题1：数据源配置错误
+  dataSource:
+    name: non-existent-snapshot
+    kind: VolumeSnapshot
+    apiGroup: snapshot.storage.k8s.io
+  # 问题2：卷模式不匹配
+  volumeMode: Block  # 但应用期望文件系统
+  # 问题3：选择器配置过于严格
+  selector:
+    matchLabels:
+      volume-type: ultra-fast-nvme  # 可能没有匹配的PV
+    matchExpressions:
+    - key: failure-domain.beta.kubernetes.io/zone
+      operator: In
+      values: ["non-existent-zone"]
+
+---
+# 问题：引用的Headless Service不存在或配置错误
+apiVersion: v1
+kind: Service
+metadata:
+  name: storage-test-headless-broken
+  namespace: default
+  labels:
+    app: storage-test
+    problem: headless-service-issue
+spec:
+  type: ClusterIP
+  clusterIP: "10.96.0.100"  # 指定了IP，不是None，不是headless
+  selector:
+    app: wrong-app-label  # 选择器标签错误
+  ports:
+  - port: 5432
+    targetPort: 3306     # 目标端口错误，PostgreSQL是5432不是3306
+    protocol: TCP
+    name: database

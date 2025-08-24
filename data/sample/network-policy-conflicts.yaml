@@ -1,0 +1,251 @@
+---
+# 网络策略1：过度限制性策略
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: overly-restrictive-policy
+  namespace: default
+  labels:
+    app: network-test
+    problem: overly-restrictive
+  annotations:
+    description: "This policy is too restrictive and will block necessary communication"
+spec:
+  podSelector:
+    matchLabels:
+      app: web-app
+  policyTypes:
+  - Ingress
+  - Egress
+  # 问题1：过度限制入口流量
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: load-balancer
+          version: v1.0.0        # 过于具体的版本要求
+          environment: production # 环境标签可能不存在
+    - namespaceSelector:
+        matchLabels:
+          name: frontend-only     # 限制命名空间过于严格
+    ports:
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 8443  # 只允许特定端口，可能阻止健康检查等
+  # 问题2：出口规则过于严格
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: database
+          tier: production    # 可能数据库没有这个标签
+    ports:
+    - protocol: TCP
+      port: 5432
+    # 缺少DNS出口规则，会阻止域名解析
+  # 问题3：缺少系统必需的出口规则（如DNS、健康检查等）
+
+---
+# 网络策略2：冲突的策略
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: conflicting-policy-1
+  namespace: default
+  labels:
+    app: network-test
+    problem: policy-conflict
+spec:
+  podSelector:
+    matchLabels:
+      app: web-app  # 与上一个策略选择相同的Pod
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: admin-panel  # 只允许admin-panel访问
+    ports:
+    - protocol: TCP
+      port: 8080
+
+---
+# 网络策略3：另一个冲突的策略
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: conflicting-policy-2
+  namespace: default
+  labels:
+    app: network-test
+    problem: policy-conflict
+spec:
+  podSelector:
+    matchLabels:
+      app: web-app  # 与前面策略选择相同的Pod
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: user-service  # 只允许user-service访问，与前面冲突
+    ports:
+    - protocol: TCP
+      port: 8080
+
+---
+# 网络策略4：语法错误和逻辑错误的策略
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: broken-syntax-policy
+  namespace: default
+  labels:
+    app: network-test
+    problem: syntax-error
+spec:
+  podSelector:
+    matchLabels:
+      app: api-server
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # 问题1：CIDR格式错误
+  - from:
+    - ipBlock:
+        cidr: 192.168.1.0/300  # 无效的CIDR，掩码不能超过32
+        except:
+        - 192.168.1.1/33       # 无效的CIDR
+    ports:
+    - protocol: TCP
+      port: "eight-thousand"   # 端口应该是数字
+    - protocol: UDP
+      port: 53.5               # 端口不能是小数
+  # 问题2：端口范围错误
+  - from:
+    - podSelector: {}
+    ports:
+    - protocol: TCP
+      port: 65536              # 端口号超出范围（最大65535）
+    - protocol: TCP
+      port: -1                 # 负数端口号
+  egress:
+  # 问题3：目标配置错误
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          invalid-label-key.: "value"  # 无效的标签键格式
+    - podSelector:
+        matchExpressions:
+        - key: app
+          operator: InvalidOperator     # 无效的操作符
+          values: ["database"]
+  # 问题4：协议名称错误
+  - to: []
+    ports:
+    - protocol: HTTP             # 无效协议，应该是TCP
+      port: 80
+    - protocol: HTTPS            # 无效协议，应该是TCP
+      port: 443
+
+---
+# 网络策略5：安全漏洞策略
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: security-hole-policy
+  namespace: default
+  labels:
+    app: network-test
+    problem: security-vulnerability
+spec:
+  podSelector:
+    matchLabels:
+      app: sensitive-app
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # 问题1：允许所有入口流量（安全风险）
+  - from: []  # 空的from数组允许任何来源
+    ports:
+    - protocol: TCP
+      port: 22    # SSH端口对所有来源开放
+    - protocol: TCP
+      port: 3306  # 数据库端口对所有来源开放
+  # 问题2：允许来自不受信任的网络段
+  - from:
+    - ipBlock:
+        cidr: 0.0.0.0/0  # 允许互联网上的任何IP
+  egress:
+  # 问题3：允许所有出口流量
+  - to: []       # 允许访问任何目标
+    ports: []    # 允许所有端口
+
+---
+# 网络策略6：性能影响策略
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: performance-impact-policy
+  namespace: default
+  labels:
+    app: network-test
+    problem: performance-impact
+spec:
+  podSelector: {}  # 选择命名空间中的所有Pod
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # 问题1：过于复杂的规则，影响性能
+  - from:
+    - podSelector:
+        matchExpressions:
+        - key: app
+          operator: In
+          values: ["app1", "app2", "app3", "app4", "app5", "app6", "app7", "app8", "app9", "app10"]
+        - key: version
+          operator: NotIn
+          values: ["v0.1", "v0.2", "v0.3", "v0.4", "v0.5"]
+        - key: environment
+          operator: Exists
+        - key: deprecated
+          operator: DoesNotExist
+    ports:
+    - protocol: TCP
+      port: 80
+  - from:
+    - namespaceSelector:
+        matchExpressions:
+        # 问题2：过多的命名空间选择表达式
+        - key: team
+          operator: In
+          values: ["frontend", "backend", "data", "ml", "devops", "security", "qa", "staging"]
+        - key: environment
+          operator: NotIn
+          values: ["test", "dev", "sandbox", "experimental"]
+  egress:
+  # 问题3：大量的出口规则
+  - to:
+    - ipBlock:
+        cidr: 10.0.0.0/8
+        except:
+        - 10.0.1.0/24
+        - 10.0.2.0/24
+        - 10.0.3.0/24
+        # ... 省略更多except规则
+    ports:
+    - protocol: TCP
+      port: 80
+    - protocol: TCP
+      port: 443
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 8443
+    # ... 省略更多端口规则

@@ -28,8 +28,8 @@ testing:
 
 # Kubernetes配置
 kubernetes:
-  in_cluster: true # 是否在K8s集群内部运行
-  config_path: ./deploy/kubernetes/config # K8s配置文件路径（仅in_cluster为false时需要）
+  in_cluster: false # 是否在K8s集群内部运行
+  config_path: /app/deploy/kubernetes/config # K8s配置文件路径（仅in_cluster为false时需要）
   namespace: default # 默认命名空间
 
 # 根因分析配置

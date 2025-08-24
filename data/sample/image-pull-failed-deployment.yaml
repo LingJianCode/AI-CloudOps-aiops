@@ -1,0 +1,105 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: image-pull-failed-deployment
+  namespace: default
+  labels:
+    app: image-pull-test
+    problem: image-pull-error
+  annotations:
+    description: "This deployment has various image pull issues that will cause failures"
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: image-pull-test
+  template:
+    metadata:
+      labels:
+        app: image-pull-test
+    spec:
+      containers:
+      # 问题1：使用不存在的镜像
+      - name: non-existent-image
+        image: nonexistent-registry.com/fake-app:v1.0.0
+        ports:
+        - containerPort: 8080
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+      # 问题2：使用私有镜像但缺少认证
+      - name: private-image-no-auth
+        image: private-registry.company.com/secret-app:latest
+        ports:
+        - containerPort: 9090
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+      # 问题3：使用错误的标签
+      - name: wrong-tag-image
+        image: redis:non-existent-tag-999
+        ports:
+        - containerPort: 6379
+      # 问题4：使用已弃用/删除的镜像
+      - name: deprecated-image
+        image: deprecated/old-app:1.0.0-deprecated
+        ports:
+        - containerPort: 3000
+        env:
+        - name: NODE_ENV
+          value: production
+      # 问题5：镜像拉取策略配置不当
+      imagePullPolicy: Always  # 总是拉取，但镜像不存在
+      # 问题6：指定错误的镜像拉取密钥
+      imagePullSecrets:
+      - name: non-existent-secret
+      - name: expired-registry-key
+      # 问题7：容器启动命令错误
+      command: ["/bin/bash"]
+      args: ["-c", "non-existent-command --start"]
+      # 问题8：健康检查配置错误
+      livenessProbe:
+        httpGet:
+          path: /health
+          port: 8080
+        initialDelaySeconds: 10
+        periodSeconds: 30
+        failureThreshold: 3
+        timeoutSeconds: 1  # 超时时间太短
+      readinessProbe:
+        httpGet:
+          path: /ready
+          port: 8080
+        initialDelaySeconds: 5
+        periodSeconds: 10
+        failureThreshold: 1  # 失败阈值太低
+        timeoutSeconds: 1
+      # 问题9：安全上下文配置有问题
+      securityContext:
+        runAsUser: 0  # 以root用户运行，安全风险
+        runAsGroup: 0
+        fsGroup: 0
+        privileged: true  # 特权模式，安全风险
+      # 问题10：资源配置不当
+      resources:
+        requests:
+          cpu: 2
+          memory: 4Gi
+        limits:
+          cpu: 1    # limit小于request，不合理
+          memory: 2Gi
+  # 问题11：部署策略配置问题
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 100%  # 全部不可用，会导致服务中断
+      maxSurge: 0%          # 不允许额外Pod，滚动更新会失败
+  # 问题12：进度截止时间设置过短
+  progressDeadlineSeconds: 30  # 30秒内必须完成部署，通常不够
+  # 问题13：历史版本保留过多
+  revisionHistoryLimit: 100    # 保留100个版本，占用资源
