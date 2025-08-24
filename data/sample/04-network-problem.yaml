@@ -1,0 +1,167 @@
+# Network Issue 问题演示
+# 网络配置错误，DNS解析失败，连接超时
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rca-test-network
+  labels:
+    test-scenario: "network-issue"
+    created-by: "rca-testing"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: network-problem-app
+  namespace: rca-test-network
+  labels:
+    app: network-problem
+    test-type: "network-issue"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: network-problem
+  template:
+    metadata:
+      labels:
+        app: network-problem
+        test-type: "network-issue"
+    spec:
+      # 故意使用错误的DNS配置
+      dnsPolicy: None
+      dnsConfig:
+        nameservers:
+        - "192.168.255.255"  # 不存在的DNS服务器
+        - "10.255.255.255"   # 不存在的DNS服务器
+        searches:
+        - "nonexistent.local"
+        - "invalid.internal"
+        options:
+        - name: timeout
+          value: "1"
+        - name: attempts
+          value: "2"
+      containers:
+      - name: network-client
+        image: busybox:1.35
+        command:
+        - sh
+        - -c
+        - |
+          echo "开始网络连接测试..."
+          # 尝试连接各种不存在的服务
+          SERVICES=(
+            "nonexistent-database:5432"
+            "invalid-cache:6379"  
+            "broken-api:8080"
+            "missing-service:9090"
+            "wrong-endpoint:3306"
+          )
+          
+          while true; do
+            for service in "${SERVICES[@]}"; do
+              echo "尝试连接: $service"
+              # 这些连接都会失败
+              timeout 5 nc -zv ${service/:/ } 2>&1 || echo "连接 $service 失败: connection refused"
+              
+              # 尝试DNS解析
+              nslookup ${service%:*} 2>&1 || echo "DNS解析 ${service%:*} 失败"
+              
+              # 尝试HTTP请求
+              timeout 3 wget -q -O- "http://$service/health" 2>&1 || echo "HTTP请求 $service 超时"
+            done
+            
+            echo "网络检查完成，等待重试..."
+            sleep 10
+          done
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "50m"
+          limits:
+            memory: "64Mi"
+            cpu: "100m"
+        # 故意配置错误的环境变量
+        env:
+        - name: DATABASE_HOST
+          value: "nonexistent-db.invalid"
+        - name: REDIS_HOST
+          value: "broken-cache.local"
+        - name: API_ENDPOINT
+          value: "http://missing-api:8080"
+        # 健康检查也会失败
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        readinessProbe:
+          exec:
+            command:
+            - sh
+            - -c
+            - "nc -z nonexistent-service 80"  # 这个检查会失败
+          initialDelaySeconds: 5
+          periodSeconds: 3
+          timeoutSeconds: 2
+          failureThreshold: 2
+      restartPolicy: Always
+---
+# 创建一个指向不存在后端的Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: broken-backend-service
+  namespace: rca-test-network
+spec:
+  selector:
+    app: nonexistent-backend  # 故意选择不存在的Pod
+  ports:
+  - port: 80
+    targetPort: 8080
+    name: http
+  - port: 5432
+    targetPort: 5432
+    name: postgres
+  type: ClusterIP
+---
+# 创建一个NetworkPolicy阻止某些连接
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: restrictive-policy
+  namespace: rca-test-network
+spec:
+  podSelector:
+    matchLabels:
+      app: network-problem
+  policyTypes:
+  - Ingress
+  - Egress
+  egress:
+  # 故意限制出站流量，只允许DNS
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 53
+  # 阻止其他所有出站连接
+  ingress: []  # 阻止所有入站连接
+---
+# 故意配置错误的Endpoints
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: broken-backend-service
+  namespace: rca-test-network
+subsets:
+- addresses:
+  - ip: "192.168.255.254"  # 不存在的IP
+  - ip: "10.255.255.254"   # 不存在的IP
+  ports:
+  - port: 8080
+    name: http
+  - port: 5432
+    name: postgres

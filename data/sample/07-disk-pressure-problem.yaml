@@ -1,0 +1,321 @@
+# Disk Pressure 问题演示
+# 大量磁盘I/O操作，消耗磁盘空间，触发磁盘压力
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rca-test-disk
+  labels:
+    test-scenario: "disk-pressure"
+    created-by: "rca-testing"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: disk-intensive-app
+  namespace: rca-test-disk
+  labels:
+    app: disk-intensive
+    test-type: "disk-pressure"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: disk-intensive
+  template:
+    metadata:
+      labels:
+        app: disk-intensive
+        test-type: "disk-pressure"
+    spec:
+      containers:
+      - name: disk-consumer
+        image: busybox:1.35
+        command:
+        - sh
+        - -c
+        - |
+          echo "开始磁盘压力测试..."
+          mkdir -p /data/logs /data/temp /data/cache
+          
+          # 启动多个并发的磁盘写入任务
+          (
+            # 任务1：持续写入大文件
+            while true; do
+              echo "写入大文件: $(date)"
+              dd if=/dev/zero of=/data/bigfile_$$.dat bs=1M count=100 2>/dev/null
+              sync
+              sleep 5
+              rm -f /data/bigfile_$$.dat 2>/dev/null
+            done
+          ) &
+          
+          (
+            # 任务2：创建大量小文件
+            while true; do
+              echo "创建大量小文件: $(date)"
+              for i in $(seq 1 1000); do
+                echo "临时数据 $i $(date)" > /data/temp/file_${i}_$$.tmp
+              done
+              sync
+              sleep 10
+              rm -rf /data/temp/*.tmp
+            done
+          ) &
+          
+          (
+            # 任务3：持续日志写入
+            while true; do
+              logfile="/data/logs/app_$(date +%Y%m%d_%H).log"
+              echo "写入日志: $logfile"
+              for i in $(seq 1 100); do
+                echo "$(date): 应用日志记录 $i - 这是一个很长的日志消息，包含大量详细信息" >> "$logfile"
+              done
+              sync
+              sleep 2
+            done
+          ) &
+          
+          (
+            # 任务4：缓存文件操作
+            while true; do
+              echo "缓存操作: $(date)"
+              # 创建缓存文件
+              for i in $(seq 1 50); do
+                cache_file="/data/cache/cache_${i}_$$.cache"
+                dd if=/dev/urandom of="$cache_file" bs=1K count=100 2>/dev/null
+              done
+              sync
+              sleep 15
+              # 清理旧缓存
+              find /data/cache -name "*.cache" -mmin +1 -delete 2>/dev/null
+            done
+          ) &
+          
+          # 保持主进程运行
+          wait
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "300m"
+        volumeMounts:
+        - name: data-volume
+          mountPath: /data
+        # 健康检查
+        livenessProbe:
+          exec:
+            command:
+            - sh
+            - -c
+            - "df -h /data | grep -v Filesystem"
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          exec:
+            command:
+            - sh  
+            - -c
+            - "[ $(df /data | tail -1 | awk '{print $5}' | sed 's/%//') -lt 95 ]"  # 磁盘使用率小于95%
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          failureThreshold: 3
+      volumes:
+      - name: data-volume
+        emptyDir:
+          sizeLimit: "1Gi"  # 限制磁盘空间，更容易触发压力
+      restartPolicy: Always
+---
+# 使用PVC的Deployment来模拟持久存储压力
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: disk-pressure-pvc
+  namespace: rca-test-disk
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi  # 小容量存储，容易写满
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: log-aggregator
+  namespace: rca-test-disk
+  labels:
+    app: log-aggregator
+    test-type: "disk-pressure"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: log-aggregator
+  template:
+    metadata:
+      labels:
+        app: log-aggregator
+        test-type: "disk-pressure"
+    spec:
+      containers:
+      - name: log-writer
+        image: busybox:1.35
+        command:
+        - sh
+        - -c
+        - |
+          echo "日志聚合器启动..."
+          mkdir -p /persistent/logs/{app1,app2,app3,system}
+          
+          # 模拟多个应用的高频日志写入
+          (
+            # 应用1日志
+            while true; do
+              logfile="/persistent/logs/app1/app_$(date +%Y%m%d_%H%M).log"
+              for i in $(seq 1 200); do
+                echo "$(date '+%Y-%m-%d %H:%M:%S.%3N') [INFO] App1: 处理请求 $i - 详细的业务日志信息，包含用户操作、系统状态、性能指标等" >> "$logfile"
+              done
+              sync
+              sleep 1
+            done
+          ) &
+          
+          (
+            # 应用2错误日志
+            while true; do
+              logfile="/persistent/logs/app2/error_$(date +%Y%m%d_%H%M).log"
+              for i in $(seq 1 100); do
+                echo "$(date '+%Y-%m-%d %H:%M:%S.%3N') [ERROR] App2: 错误详情 $i - 堆栈跟踪信息，异常类型，错误代码，请求上下文" >> "$logfile"
+              done
+              sync
+              sleep 2
+            done
+          ) &
+          
+          (
+            # 系统日志
+            while true; do
+              logfile="/persistent/logs/system/system_$(date +%Y%m%d_%H).log"
+              for i in $(seq 1 50); do
+                echo "$(date '+%Y-%m-%d %H:%M:%S.%3N') [SYSTEM] 系统事件 $i - 资源使用情况，网络状态，进程监控，系统配置变更" >> "$logfile"
+              done
+              sync
+              sleep 3
+            done
+          ) &
+          
+          # 保持主进程
+          wait
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "150m"
+        volumeMounts:
+        - name: persistent-storage
+          mountPath: /persistent
+      volumes:
+      - name: persistent-storage
+        persistentVolumeClaim:
+          claimName: disk-pressure-pvc
+---
+# DaemonSet模拟节点级别的磁盘压力
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: disk-monitor
+  namespace: rca-test-disk
+  labels:
+    app: disk-monitor
+    test-type: "disk-pressure"
+spec:
+  selector:
+    matchLabels:
+      app: disk-monitor
+  template:
+    metadata:
+      labels:
+        app: disk-monitor
+        test-type: "disk-pressure"
+    spec:
+      containers:
+      - name: disk-monitor
+        image: busybox:1.35
+        command:
+        - sh
+        - -c
+        - |
+          echo "磁盘监控器启动..."
+          
+          # 创建监控数据目录
+          mkdir -p /host-data/monitoring/{metrics,alerts,reports}
+          
+          while true; do
+            timestamp=$(date '+%Y%m%d_%H%M%S')
+            
+            # 收集磁盘使用情况并写入文件
+            echo "收集磁盘指标: $timestamp"
+            {
+              echo "时间戳: $timestamp"
+              df -h
+              echo "---"
+              iostat 2>/dev/null || echo "iostat not available"
+              echo "---"
+              du -sh /host-data/* 2>/dev/null
+              echo "==================================="
+            } >> "/host-data/monitoring/metrics/disk_metrics_${timestamp}.log"
+            
+            # 生成告警文件
+            if [ $((RANDOM % 10)) -eq 0 ]; then
+              {
+                echo "ALERT: 磁盘使用率告警 - $timestamp"
+                echo "描述: 模拟磁盘空间不足告警"
+                echo "详细信息: 磁盘使用率超过阈值，需要清理空间或扩容"
+              } >> "/host-data/monitoring/alerts/disk_alert_${timestamp}.alert"
+            fi
+            
+            # 生成报告文件
+            if [ $((RANDOM % 20)) -eq 0 ]; then
+              {
+                echo "磁盘使用报告 - $timestamp"
+                echo "报告内容: 详细的磁盘分析报告，包含使用趋势、空间分布、IO统计等"
+                for i in $(seq 1 100); do
+                  echo "报告行 $i: 详细数据和分析结果"
+                done
+              } >> "/host-data/monitoring/reports/disk_report_${timestamp}.rpt"
+            fi
+            
+            sync
+            sleep 5
+          done
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "25m"
+          limits:
+            memory: "64Mi"
+            cpu: "50m"
+        volumeMounts:
+        - name: host-data
+          mountPath: /host-data
+      volumes:
+      - name: host-data
+        emptyDir:
+          sizeLimit: "500Mi"  # 小空间，容易填满
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: disk-intensive-service
+  namespace: rca-test-disk
+spec:
+  selector:
+    app: disk-intensive
+  ports:
+  - port: 80
+    targetPort: 8080
+  type: ClusterIP

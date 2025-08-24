@@ -1,0 +1,126 @@
+# Crash Loop BackOff 问题演示
+# 应用会持续崩溃，触发重启循环
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rca-test-crashloop
+  labels:
+    test-scenario: "crash-loop"
+    created-by: "rca-testing"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: crash-loop-app
+  namespace: rca-test-crashloop
+  labels:
+    app: crash-loop
+    test-type: "crash-loop"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: crash-loop
+  template:
+    metadata:
+      labels:
+        app: crash-loop
+        test-type: "crash-loop"
+    spec:
+      containers:
+      - name: unstable-app
+        image: busybox:1.35
+        command:
+        - sh
+        - -c
+        - |
+          echo "应用启动中... PID: $$"
+          echo "模拟应用初始化..."
+          sleep $((RANDOM % 20 + 10))  # 随机等待10-30秒
+          
+          # 随机选择崩溃类型
+          CRASH_TYPE=$((RANDOM % 4))
+          case $CRASH_TYPE in
+            0)
+              echo "致命错误: 数据库连接失败!"
+              echo "panic: database connection refused"
+              exit 1
+              ;;
+            1)
+              echo "严重错误: 内存访问违例!"
+              echo "fatal error: segmentation fault"
+              kill -SEGV $$
+              ;;
+            2)
+              echo "应用异常: 配置文件损坏!"
+              echo "ERROR: invalid configuration file"
+              exit 2
+              ;;
+            3)
+              echo "运行时错误: 空指针异常!"
+              echo "panic: runtime error: invalid memory address"
+              exit 3
+              ;;
+          esac
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "50m"
+          limits:
+            memory: "64Mi"
+            cpu: "100m"
+        # 健康检查会加速检测到容器问题
+        livenessProbe:
+          exec:
+            command:
+            - sh
+            - -c
+            - "ps aux | grep -v grep | grep -q 'sh -c'"
+          initialDelaySeconds: 5
+          periodSeconds: 3
+          timeoutSeconds: 1
+          failureThreshold: 2
+        readinessProbe:
+          exec:
+            command:
+            - sh
+            - -c
+            - "echo 'readiness check failed'; exit 1"
+          initialDelaySeconds: 2
+          periodSeconds: 2
+          timeoutSeconds: 1
+          failureThreshold: 1
+      restartPolicy: Always  # 确保容器会重启
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: crash-loop-service
+  namespace: rca-test-crashloop
+spec:
+  selector:
+    app: crash-loop
+  ports:
+  - port: 80
+    targetPort: 8080
+    name: http
+  type: ClusterIP
+---
+# 添加一个ConfigMap模拟配置问题
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: broken-config
+  namespace: rca-test-crashloop
+data:
+  app.properties: |
+    # 故意的错误配置
+    database.url=invalid://broken:connection
+    server.port=invalid_port
+    log.level=UNKNOWN_LEVEL
+  startup.sh: |
+    #!/bin/bash
+    echo "加载配置文件..."
+    # 这个脚本包含错误，会导致启动失败
+    source /nonexistent/path/config.sh
+    exec "$@"

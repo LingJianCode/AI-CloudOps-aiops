@@ -1,106 +1,174 @@
-# Kubernetes问题资源示例
+# RCA测试用问题资源
 
-本目录包含了各种有问题的Kubernetes资源配置文件，用于测试根因分析模块的效果。
+本目录包含用于测试根因分析(RCA)模块的Kubernetes资源文件。这些资源被特意设计为包含各种常见的Kubernetes问题，以展示RCA引擎的检测和分析能力。
 
-## 文件说明
+## 📋 问题类型覆盖
 
-### 1. resource-limit-problem-pod.yaml
-**问题类型**: 资源限制问题
-- 请求过多CPU和内存资源（16 CPU, 64GB内存）
-- 资源limit设置不合理
-- 健康检查端口配置错误
-- 节点选择器要求不存在的标签
-- 亲和性规则过于严格
+根据RCA引擎的检测能力，创建了以下7类问题资源：
 
-### 2. image-pull-failed-deployment.yaml  
-**问题类型**: 镜像拉取失败
-- 使用不存在的镜像
-- 引用私有镜像但缺少认证
-- 使用错误的镜像标签
-- 镜像拉取密钥不存在
-- 部署策略配置问题
-- 资源配置不当（limit < request）
+### 1. OOM (内存不足) - `01-oom-problem.yaml`
+- **问题**: 容器内存限制设置过小(50Mi)，而应用尝试消耗200MB内存
+- **触发条件**: 应用启动后约30-60秒会触发OOMKilled
+- **RCA检测点**:
+  - 指标: `container_memory_usage_bytes`, `container_memory_working_set_bytes`
+  - 事件: `OOMKilled`, `Killing`
+  - 日志: `out of memory`, `oom`, `memory exhausted`
 
-### 3. health-check-failed-service.yaml
-**问题类型**: 健康检查失败  
-- Service端口与Pod端口不匹配
-- 健康检查路径不存在
-- 就绪检查配置过于严格
-- ConfigMap依赖不存在
-- DNS策略配置错误
-- 安全上下文配置有问题
+### 2. CPU限制 - `02-cpu-throttling-problem.yaml`
+- **问题**: CPU限制设置过小(100m)，而应用启动4个CPU密集型并发任务
+- **触发条件**: 立即开始CPU throttling，HPA会尝试扩容
+- **RCA检测点**:
+  - 指标: `container_cpu_cfs_throttled_periods_total`, `container_cpu_usage_seconds_total`
+  - 事件: `CPUThrottling`, `HighCPU`
+  - 日志: `cpu throttled`, `high cpu usage`
 
-### 4. configmap-dependency-problem-pod.yaml
-**问题类型**: ConfigMap依赖问题
-- 引用不存在的ConfigMap和Secret
-- ConfigMap键不存在
-- 卷挂载路径冲突
-- 初始化容器ConfigMap依赖失败
-- ConfigMap数据格式错误（JSON/YAML语法错误）
-- 敏感信息存储在ConfigMap中（应该用Secret）
+### 3. 崩溃循环 - `03-crash-loop-problem.yaml`
+- **问题**: 应用随机崩溃(4种不同的崩溃模式)，健康检查失败
+- **触发条件**: 启动后10-30秒随机崩溃，进入CrashLoopBackOff
+- **RCA检测点**:
+  - 指标: `kube_pod_container_status_restarts_total`
+  - 事件: `CrashLoopBackOff`, `BackOff`, `Failed`
+  - 日志: `panic`, `fatal error`, `segmentation fault`
 
-### 5. storage-mount-problem-statefulset.yaml
-**问题类型**: 存储卷挂载问题
-- 引用不存在的PVC
-- 卷挂载路径冲突
-- 存储类不存在
-- 访问模式冲突
-- 存储请求过大
-- StatefulSet配置不当
-- Headless Service配置错误
+### 4. 网络问题 - `04-network-problem.yaml`
+- **问题**: DNS配置错误，网络策略限制，连接不存在的服务
+- **触发条件**: Pod启动后立即出现网络连接失败
+- **RCA检测点**:
+  - 指标: `container_network_receive_errors_total`, `container_network_transmit_errors_total`
+  - 事件: `NetworkNotReady`, `NetworkPluginNotReady`
+  - 日志: `connection refused`, `timeout`, `network unreachable`
 
-### 6. network-policy-conflicts.yaml
-**问题类型**: 网络策略冲突
-- 过度限制的网络策略
-- 多个策略选择相同Pod但规则冲突
-- CIDR格式错误
-- 端口配置错误
-- 协议名称错误
-- 安全漏洞（允许所有流量）
-- 性能影响（过于复杂的规则）
+### 5. 镜像拉取失败 - `05-image-pull-problem.yaml`
+- **问题**: 使用不存在的镜像、错误的私有仓库、无效的镜像标签
+- **触发条件**: Pod创建后立即进入ImagePullBackOff状态
+- **RCA检测点**:
+  - 事件: `ImagePullBackOff`, `ErrImagePull`
+  - 日志: `pull access denied`, `image not found`
 
-## 测试用途
+### 6. 资源配额不足 - `06-resource-quota-problem.yaml`
+- **问题**: 严格的ResourceQuota限制，多个Deployment竞争有限资源
+- **触发条件**: 第二个和第三个Deployment无法创建Pod
+- **RCA检测点**:
+  - 指标: `kube_resourcequota`
+  - 事件: `FailedScheduling`, `InsufficientCPU`, `InsufficientMemory`, `FailedCreate`
+  - 日志: `exceeded quota`, `insufficient resources`, `forbidden`
 
-这些文件设计用于：
+### 7. 磁盘压力 - `07-disk-pressure-problem.yaml`
+- **问题**: 大量磁盘I/O操作，持续写入大文件和日志
+- **触发条件**: 启动后持续消耗磁盘空间，可能触发磁盘空间不足
+- **RCA检测点**:
+  - 指标: `node_filesystem_avail_bytes`, `node_filesystem_size_bytes`
+  - 事件: `DiskPressure`, `EvictedByNodeCondition`
+  - 日志: `no space left`, `disk full`
 
-1. **测试根因分析引擎**：验证系统能否正确识别和分析各种Kubernetes资源问题
-2. **验证告警机制**：测试监控系统是否能及时发现这些配置问题
-3. **评估修复建议**：检查系统是否能提供有效的问题修复建议
-4. **压力测试**：使用多个有问题的资源进行系统稳定性测试
+### 8. 综合问题 - `08-complex-problems.yaml`
+- **问题**: 包含多种问题的复杂场景
+- **组合**: 内存泄漏+网络问题, CPU密集+镜像拉取失败, 崩溃循环+磁盘压力
+- **目的**: 测试RCA引擎的综合分析和关联分析能力
 
-## 使用方法
+## 🚀 使用方法
 
+### 1. 逐个测试单一问题类型
 ```bash
-# 部署测试资源（注意：这些资源故意包含错误）
-kubectl apply -f data/sample/
+# 测试OOM问题
+kubectl apply -f 01-oom-problem.yaml
 
-# 查看资源状态
-kubectl get pods,deployments,services,statefulsets,networkpolicies -l problem
+# 等待问题出现后运行RCA分析
+curl -X POST "http://localhost:8000/api/v1/rca/analyze" \
+  -H "Content-Type: application/json" \
+  -d '{"namespace": "rca-test-oom", "time_window_hours": 0.5}'
 
-# 查看事件（用于根因分析）
-kubectl get events --sort-by='.lastTimestamp'
-
-# 清理测试资源
-kubectl delete -f data/sample/
+# 清理资源
+kubectl delete -f 01-oom-problem.yaml
 ```
 
-## 注意事项
+### 2. 批量测试多种问题
+```bash
+# 应用所有问题资源
+kubectl apply -f .
 
-⚠️ **警告**：这些文件包含故意设计的错误配置，仅用于测试目的。不要在生产环境中使用。
+# 等待5-10分钟让问题充分暴露
 
-- 部分资源可能会一直处于Pending或Failed状态
-- 某些配置可能会占用大量资源
-- 网络策略可能会阻断正常的集群通信
-- 建议在独立的测试命名空间中使用
+# 分析各个namespace
+for ns in rca-test-oom rca-test-cpu rca-test-crashloop rca-test-network rca-test-imagepull rca-test-quota rca-test-disk rca-test-complex; do
+  echo "分析namespace: $ns"
+  curl -X POST "http://localhost:8000/api/v1/rca/analyze" \
+    -H "Content-Type: application/json" \
+    -d "{\"namespace\": \"$ns\", \"time_window_hours\": 1.0}"
+  echo ""
+done
+```
 
-## 问题统计
+### 3. 快速诊断测试
+```bash
+# 快速诊断所有问题namespace
+for ns in rca-test-oom rca-test-cpu rca-test-crashloop rca-test-network rca-test-imagepull rca-test-quota rca-test-disk rca-test-complex; do
+  curl -X POST "http://localhost:8000/api/v1/rca/quick-diagnosis" \
+    -H "Content-Type: application/json" \
+    -d "{\"namespace\": \"$ns\"}"
+done
+```
 
-总计包含以下类型的问题：
-- 资源限制问题：6个
-- 镜像拉取问题：13个  
-- 健康检查问题：11个
-- ConfigMap/Secret依赖问题：15个
-- 存储挂载问题：18个
-- 网络策略问题：20+个
+## 📊 预期的RCA分析结果
 
-这些问题覆盖了Kubernetes集群中最常见的故障场景，为根因分析系统提供了全面的测试用例。
+### OOM问题分析
+- **根因类型**: OOM
+- **置信度**: 0.9+
+- **关键证据**: 
+  - 内存使用指标异常
+  - OOMKilled事件
+  - 容器重启次数增加
+- **建议**: 增加内存限制，优化内存使用
+
+### CPU限制问题分析  
+- **根因类型**: CPU_THROTTLING
+- **置信度**: 0.85+
+- **关键证据**:
+  - CPU throttling指标异常
+  - CPU使用率指标异常
+  - HPA扩容事件
+- **建议**: 增加CPU限制，优化CPU使用
+
+### 崩溃循环问题分析
+- **根因类型**: CRASH_LOOP
+- **置信度**: 0.95+
+- **关键证据**:
+  - 容器重启次数指标异常
+  - CrashLoopBackOff事件
+  - panic/fatal error日志
+- **建议**: 检查应用代码，修复崩溃原因
+
+### 其他问题类型...
+每种问题类型都应该能被RCA引擎准确识别，并提供相应的根因分析和解决建议。
+
+## 🧹 清理资源
+
+测试完成后，清理所有测试资源：
+
+```bash
+# 删除所有测试namespace及其资源
+kubectl delete namespace rca-test-oom rca-test-cpu rca-test-crashloop rca-test-network rca-test-imagepull rca-test-quota rca-test-disk rca-test-complex
+
+# 或者逐个删除资源文件
+kubectl delete -f .
+```
+
+## ⚠️ 注意事项
+
+1. **资源消耗**: 这些测试资源会消耗集群资源，建议在测试环境中使用
+2. **时间窗口**: 某些问题需要时间才能充分暴露，建议等待5-10分钟后进行分析
+3. **集群影响**: 磁盘压力和CPU密集型任务可能影响集群性能
+4. **存储需求**: 某些测试需要PV支持，确保集群有足够的存储资源
+5. **网络策略**: 如果集群启用了网络策略，某些网络问题测试可能需要调整
+
+## 🔍 调试提示
+
+如果RCA分析结果不如预期：
+
+1. **检查数据收集**: 确保Prometheus、Kubernetes API、日志系统正常工作
+2. **调整时间窗口**: 某些问题可能需要更长的时间窗口才能检测到
+3. **查看详细日志**: 检查RCA引擎的日志输出，了解分析过程
+4. **验证指标**: 使用Prometheus UI验证相关指标是否正常收集
+5. **手动验证**: 使用kubectl命令手动检查Pod状态、事件和日志
+
+这些测试资源覆盖了RCA引擎的所有主要检测模式，可以全面验证根因分析功能的准确性和完整性。

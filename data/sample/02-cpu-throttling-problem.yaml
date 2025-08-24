@@ -1,0 +1,93 @@
+# CPU Throttling 问题演示
+# CPU限制设置过小，高负载任务会被频繁限制
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rca-test-cpu
+  labels:
+    test-scenario: "cpu-throttling"
+    created-by: "rca-testing"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cpu-intensive-app
+  namespace: rca-test-cpu
+  labels:
+    app: cpu-intensive
+    test-type: "cpu-throttling"
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: cpu-intensive
+  template:
+    metadata:
+      labels:
+        app: cpu-intensive
+        test-type: "cpu-throttling"
+    spec:
+      containers:
+      - name: cpu-burner
+        image: busybox:1.35
+        command:
+        - sh
+        - -c
+        - |
+          echo "开始CPU密集型计算..."
+          # 启动4个并发的CPU密集型任务，但CPU限制很小
+          for i in 1 2 3 4; do
+            (
+              while true; do
+                # 计算密集型操作
+                dd if=/dev/zero of=/dev/null bs=1M count=100 2>/dev/null
+                # 数学计算
+                seq 1 100000 | while read n; do echo $((n*n*n)) >/dev/null; done
+                echo "CPU burner $i: $(date)"
+              done
+            ) &
+          done
+          # 保持主进程运行
+          wait
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"      # 请求50m CPU
+          limits:
+            memory: "128Mi"
+            cpu: "100m"     # 但限制只有100m，会导致严重的CPU throttling
+      restartPolicy: Always
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cpu-intensive-service
+  namespace: rca-test-cpu
+spec:
+  selector:
+    app: cpu-intensive
+  ports:
+  - port: 80
+    targetPort: 8080
+  type: ClusterIP
+---
+# 添加HPA来模拟扩容场景
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: cpu-intensive-hpa
+  namespace: rca-test-cpu
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: cpu-intensive-app
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 50  # 50% CPU使用率就触发扩容

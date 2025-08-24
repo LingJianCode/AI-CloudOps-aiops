@@ -1,0 +1,220 @@
+# Resource Quota 问题演示
+# 资源配额不足，导致Pod无法调度或创建失败
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rca-test-quota
+  labels:
+    test-scenario: "resource-quota"
+    created-by: "rca-testing"
+---
+# 设置严格的资源配额
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: strict-quota
+  namespace: rca-test-quota
+spec:
+  hard:
+    # 极低的资源限制
+    requests.cpu: "200m"      # 总共只有200m CPU
+    requests.memory: "256Mi"  # 总共只有256MB内存
+    limits.cpu: "500m"        # 总CPU限制500m
+    limits.memory: "512Mi"    # 总内存限制512MB
+    pods: "3"                 # 最多3个Pod
+    persistentvolumeclaims: "1"  # 最多1个PVC
+    services: "2"             # 最多2个Service
+    count/deployments.apps: "2"  # 最多2个Deployment
+---
+# 第一个Deployment - 正常创建
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: normal-app
+  namespace: rca-test-quota
+  labels:
+    app: normal-app
+    test-type: "resource-quota"
+spec:
+  replicas: 1  # 只要1个副本
+  selector:
+    matchLabels:
+      app: normal-app
+  template:
+    metadata:
+      labels:
+        app: normal-app
+    spec:
+      containers:
+      - name: app
+        image: busybox:1.35
+        command:
+        - sh
+        - -c
+        - "echo '正常应用运行中...'; sleep 3600"
+        resources:
+          requests:
+            memory: "100Mi"  # 使用100MB内存配额
+            cpu: "100m"      # 使用100m CPU配额
+          limits:
+            memory: "150Mi"
+            cpu: "200m"
+---
+# 第二个Deployment - 会因为资源不足而失败
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: resource-hungry-app
+  namespace: rca-test-quota
+  labels:
+    app: resource-hungry
+    test-type: "resource-quota"
+spec:
+  replicas: 3  # 尝试创建3个副本，但会因配额不足失败
+  selector:
+    matchLabels:
+      app: resource-hungry
+  template:
+    metadata:
+      labels:
+        app: resource-hungry
+    spec:
+      containers:
+      - name: hungry-container
+        image: busybox:1.35
+        command:
+        - sh
+        - -c
+        - "echo '资源密集型应用启动中...'; sleep 3600"
+        resources:
+          requests:
+            memory: "200Mi"  # 请求200MB，但配额已不足
+            cpu: "150m"      # 请求150m CPU，加上之前的会超过配额
+          limits:
+            memory: "300Mi"
+            cpu: "250m"
+---
+# 第三个Deployment - 会完全失败
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: oversized-app
+  namespace: rca-test-quota
+  labels:
+    app: oversized
+    test-type: "resource-quota"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: oversized
+  template:
+    metadata:
+      labels:
+        app: oversized
+    spec:
+      containers:
+      - name: oversized-container
+        image: busybox:1.35
+        command:
+        - sh
+        - -c
+        - "echo '超大应用启动中...'; sleep 3600"
+        resources:
+          requests:
+            memory: "400Mi"  # 超过配额总量
+            cpu: "300m"      # 超过配额总量
+          limits:
+            memory: "600Mi"  # 超过配额总量
+            cpu: "400m"      # 超过配额总量
+---
+# 尝试创建PVC - 第一个会成功，第二个会失败
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: data-pvc-1
+  namespace: rca-test-quota
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: data-pvc-2  # 这个会因为PVC配额不足而失败
+  namespace: rca-test-quota
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+---
+# 服务创建 - 前2个会成功，第3个会失败
+apiVersion: v1
+kind: Service
+metadata:
+  name: normal-service
+  namespace: rca-test-quota
+spec:
+  selector:
+    app: normal-app
+  ports:
+  - port: 80
+    targetPort: 8080
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hungry-service
+  namespace: rca-test-quota
+spec:
+  selector:
+    app: resource-hungry
+  ports:
+  - port: 80
+    targetPort: 8080
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: oversized-service  # 这个会因为Service配额不足而失败
+  namespace: rca-test-quota
+spec:
+  selector:
+    app: oversized
+  ports:
+  - port: 80
+    targetPort: 8080
+  type: ClusterIP
+---
+# 添加LimitRange来加剧资源限制
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: strict-limits
+  namespace: rca-test-quota
+spec:
+  limits:
+  - default:
+      memory: "128Mi"
+      cpu: "100m"
+    defaultRequest:
+      memory: "64Mi"
+      cpu: "50m"
+    max:
+      memory: "256Mi"  # 单个容器最大内存
+      cpu: "200m"      # 单个容器最大CPU
+    min:
+      memory: "32Mi"   # 单个容器最小内存
+      cpu: "25m"       # 单个容器最小CPU
+    type: Container
+  - max:
+      memory: "512Mi"  # 单个Pod最大内存
+      cpu: "400m"      # 单个Pod最大CPU
+    type: Pod

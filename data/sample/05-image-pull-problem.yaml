@@ -1,0 +1,187 @@
+# Image Pull Error 问题演示
+# 使用不存在的镜像，触发ImagePullBackOff
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rca-test-imagepull
+  labels:
+    test-scenario: "image-pull-error"
+    created-by: "rca-testing"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: image-pull-error-app
+  namespace: rca-test-imagepull
+  labels:
+    app: image-pull-error
+    test-type: "image-pull"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: image-pull-error
+  template:
+    metadata:
+      labels:
+        app: image-pull-error
+        test-type: "image-pull"
+    spec:
+      containers:
+      - name: nonexistent-image
+        image: "nonexistent-registry.local/missing-app:latest"  # 不存在的镜像
+        imagePullPolicy: Always  # 强制每次都拉取
+        command:
+        - echo
+        - "这个容器永远不会运行，因为镜像不存在"
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "50m"
+          limits:
+            memory: "64Mi"
+            cpu: "100m"
+      - name: wrong-registry
+        image: "private-registry.invalid:5000/secret-app:v1.0"  # 不存在的私有仓库
+        imagePullPolicy: Always
+        command:
+        - /bin/sh
+        - -c
+        - "echo '应用启动'; sleep 3600"
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "50m"
+          limits:
+            memory: "64Mi"
+            cpu: "100m"
+      - name: bad-tag
+        image: "nginx:nonexistent-tag-12345"  # 存在的镜像但错误的标签
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 80
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "50m"
+          limits:
+            memory: "64Mi"
+            cpu: "100m"
+      # 故意配置错误的镜像拉取密钥
+      imagePullSecrets:
+      - name: nonexistent-secret
+      - name: invalid-registry-secret
+      restartPolicy: Always
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: image-pull-service
+  namespace: rca-test-imagepull
+spec:
+  selector:
+    app: image-pull-error
+  ports:
+  - port: 80
+    targetPort: 80
+  type: ClusterIP
+---
+# 第二个Deployment用于测试不同类型的镜像拉取问题
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth-required-app
+  namespace: rca-test-imagepull
+  labels:
+    app: auth-required
+    test-type: "image-pull"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: auth-required
+  template:
+    metadata:
+      labels:
+        app: auth-required
+        test-type: "image-pull"
+    spec:
+      containers:
+      - name: private-image
+        image: "gcr.io/private-project/protected-app:latest"  # 需要认证的私有镜像
+        imagePullPolicy: Always
+        command:
+        - /app/start
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "100m"
+          limits:
+            memory: "128Mi"
+            cpu: "200m"
+      restartPolicy: Always
+---
+# 创建一个错误的Secret来模拟认证失败
+apiVersion: v1
+kind: Secret
+metadata:
+  name: broken-registry-secret
+  namespace: rca-test-imagepull
+type: kubernetes.io/dockerconfigjson
+data:
+  .dockerconfigjson: ewogICJhdXRocyI6IHsKICAgICJwcml2YXRlLXJlZ2lzdHJ5LmludmFsaWQiOiB7CiAgICAgICJ1c2VybmFtZSI6ICJ3cm9uZ3VzZXIiLAogICAgICAicGFzc3dvcmQiOiAid3JvbmdwYXNzd29yZCIsCiAgICAgICJhdXRoIjogImQzSnZibWQxYzJWeU9uZHliMjVuY0dGemMzZHZjbVE9IgogICAgfQogIH0KfQo=  # 错误的认证信息
+---
+# DaemonSet也测试镜像拉取问题
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: monitoring-agent-broken
+  namespace: rca-test-imagepull
+  labels:
+    app: monitoring-agent
+    test-type: "image-pull"
+spec:
+  selector:
+    matchLabels:
+      app: monitoring-agent
+  template:
+    metadata:
+      labels:
+        app: monitoring-agent
+        test-type: "image-pull"
+    spec:
+      containers:
+      - name: agent
+        image: "company-registry.internal/monitoring/agent:v2.1.0"  # 内部仓库镜像，外部无法访问
+        imagePullPolicy: Always
+        command:
+        - /usr/local/bin/agent
+        - --config=/etc/agent/config.yaml
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        volumeMounts:
+        - name: config
+          mountPath: /etc/agent
+      volumes:
+      - name: config
+        configMap:
+          name: agent-config
+      restartPolicy: Always
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agent-config
+  namespace: rca-test-imagepull
+data:
+  config.yaml: |
+    server:
+      host: monitoring.local
+      port: 8080
+    collection:
+      interval: 30s
