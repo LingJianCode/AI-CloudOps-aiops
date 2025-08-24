@@ -109,19 +109,20 @@ class RCAService(BaseService, HealthCheckMixin):
         try:
             self._ensure_initialized()
 
-            # 生成缓存键
-            cache_key = self._generate_rca_cache_key(
-                operation="analyze",
-                namespace=namespace,
-                time_window_hours=time_window_hours,
-                metrics=metrics,
-            )
+            # 暂时禁用缓存
+            # # 生成缓存键
+            # cache_key = self._generate_rca_cache_key(
+            #     operation="analyze",
+            #     namespace=namespace,
+            #     time_window_hours=time_window_hours,
+            #     metrics=metrics,
+            # )
 
-            # 尝试从缓存获取结果
-            cached_result = await self._get_from_cache(cache_key)
-            if cached_result:
-                self.logger.info(f"RCA分析缓存命中，直接返回结果: namespace={namespace}")
-                return cached_result
+            # # 尝试从缓存获取结果
+            # cached_result = await self._get_from_cache(cache_key)
+            # if cached_result:
+            #     self.logger.info(f"RCA分析缓存命中，直接返回结果: namespace={namespace}")
+            #     return cached_result
 
             # 准备参数
             time_window = timedelta(hours=time_window_hours)
@@ -179,8 +180,9 @@ class RCAService(BaseService, HealthCheckMixin):
                 "analysis_duration_seconds": duration,
             }
 
-            # 保存到缓存（30分钟缓存）
-            await self._save_to_cache(cache_key, result, ttl=1800)
+            # 暂时禁用缓存保存
+            # # 保存到缓存（30分钟缓存）
+            # await self._save_to_cache(cache_key, result, ttl=1800)
 
             self.logger.info(
                 f"RCA分析完成: 发现 {len(root_causes)} 个根因, 耗时 {duration:.2f}秒"
@@ -393,18 +395,19 @@ class RCAService(BaseService, HealthCheckMixin):
         try:
             self._ensure_initialized()
 
-            # 生成缓存键
-            cache_key = self._generate_rca_cache_key(
-                operation="quick_diagnosis",
-                namespace=namespace,
-                time_window_hours=1.0,
-            )
+            # 暂时禁用缓存
+            # # 生成缓存键
+            # cache_key = self._generate_rca_cache_key(
+            #     operation="quick_diagnosis",
+            #     namespace=namespace,
+            #     time_window_hours=1.0,
+            # )
 
-            # 尝试从缓存获取结果
-            cached_result = await self._get_from_cache(cache_key)
-            if cached_result:
-                self.logger.info(f"快速诊断缓存命中，直接返回结果: namespace={namespace}")
-                return cached_result
+            # # 尝试从缓存获取结果
+            # cached_result = await self._get_from_cache(cache_key)
+            # if cached_result:
+            #     self.logger.info(f"快速诊断缓存命中，直接返回结果: namespace={namespace}")
+            #     return cached_result
 
             # 检查依赖服务状态
             health_checks = await self._gather_health_checks()
@@ -492,8 +495,9 @@ class RCAService(BaseService, HealthCheckMixin):
                 "confidence_score": analysis_result.confidence_score if hasattr(analysis_result, 'confidence_score') else 0.8,
             }
 
-            # 保存到缓存（15分钟缓存，快速诊断需要更快的更新）
-            await self._save_to_cache(cache_key, result, ttl=900)
+            # 暂时禁用缓存保存
+            # # 保存到缓存（15分钟缓存，快速诊断需要更快的更新）
+            # await self._save_to_cache(cache_key, result, ttl=900)
 
             return result
 
@@ -526,18 +530,19 @@ class RCAService(BaseService, HealthCheckMixin):
         try:
             self._ensure_initialized()
 
-            # 生成缓存键
-            cache_key = self._generate_rca_cache_key(
-                operation="event_patterns",
-                namespace=namespace,
-                time_window_hours=hours,
-            )
+            # 暂时禁用缓存
+            # # 生成缓存键
+            # cache_key = self._generate_rca_cache_key(
+            #     operation="event_patterns",
+            #     namespace=namespace,
+            #     time_window_hours=hours,
+            # )
 
-            # 尝试从缓存获取结果
-            cached_result = await self._get_from_cache(cache_key)
-            if cached_result:
-                self.logger.info(f"事件模式分析缓存命中，直接返回结果: namespace={namespace}")
-                return cached_result
+            # # 尝试从缓存获取结果
+            # cached_result = await self._get_from_cache(cache_key)
+            # if cached_result:
+            #     self.logger.info(f"事件模式分析缓存命中，直接返回结果: namespace={namespace}")
+            #     return cached_result
 
             # 时间范围
             end_time = datetime.now(timezone.utc)
@@ -548,8 +553,9 @@ class RCAService(BaseService, HealthCheckMixin):
                 namespace=namespace, start_time=start_time, end_time=end_time
             )
 
-            # 保存到缓存（20分钟缓存）
-            await self._save_to_cache(cache_key, patterns, ttl=1200)
+            # 暂时禁用缓存保存
+            # # 保存到缓存（20分钟缓存）
+            # await self._save_to_cache(cache_key, patterns, ttl=1200)
 
             return patterns
 
@@ -564,26 +570,28 @@ class RCAService(BaseService, HealthCheckMixin):
         try:
             self._ensure_initialized()
 
-            # 生成缓存键
-            cache_key = self._generate_rca_cache_key(
-                operation="error_summary",
-                namespace=namespace,
-                time_window_hours=hours,
-            )
+            # 暂时禁用缓存
+            # # 生成缓存键
+            # cache_key = self._generate_rca_cache_key(
+            #     operation="error_summary",
+            #     namespace=namespace,
+            #     time_window_hours=hours,
+            # )
 
-            # 尝试从缓存获取结果
-            cached_result = await self._get_from_cache(cache_key)
-            if cached_result:
-                self.logger.info(f"错误摘要缓存命中，直接返回结果: namespace={namespace}")
-                return cached_result
+            # # 尝试从缓存获取结果
+            # cached_result = await self._get_from_cache(cache_key)
+            # if cached_result:
+            #     self.logger.info(f"错误摘要缓存命中，直接返回结果: namespace={namespace}")
+            #     return cached_result
 
             # 获取错误摘要
             summary = await self._logs_collector.get_error_summary(
                 namespace=namespace, time_window=timedelta(hours=hours)
             )
 
-            # 保存到缓存（20分钟缓存）
-            await self._save_to_cache(cache_key, summary, ttl=1200)
+            # 暂时禁用缓存保存
+            # # 保存到缓存（20分钟缓存）
+            # await self._save_to_cache(cache_key, summary, ttl=1200)
 
             return summary
 
