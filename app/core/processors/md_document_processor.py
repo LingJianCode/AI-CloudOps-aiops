@@ -868,6 +868,149 @@ class MDDocumentProcessor:
         except Exception as e:
             logger.warning(f"权重调整失败: {e}")
 
+    def _get_cache_key(self, content: str, metadata_str: str) -> str:
+        """生成缓存键"""
+        content_hash = hashlib.md5(content.encode()).hexdigest()[:16]
+        metadata_hash = hashlib.md5(metadata_str.encode()).hexdigest()[:8]
+        return f"{content_hash}_{metadata_hash}"
+
+    def clear_cache(self):
+        """清理缓存"""
+        if self._chunk_cache:
+            self._chunk_cache.clear()
+        if self._pattern_cache:
+            self._pattern_cache.clear()
+        logger.info("MD文档处理器缓存已清理")
+
+    def _assess_document_complexity(self, content: str) -> str:
+        """快速评估文档复杂度"""
+        # 快速指标检查
+        char_count = len(content)
+        if char_count < 1000:
+            return "simple"
+
+        # 检查结构复杂度
+        has_headers = bool(self.patterns["has_headers"].search(content))
+        has_code_blocks = bool(self.patterns["has_code_blocks"].search(content))
+        has_lists = bool(self.patterns["has_lists"].search(content))
+
+        complexity_score = sum([has_headers, has_code_blocks, has_lists])
+
+        if char_count > 5000 or complexity_score >= 2:
+            return "complex"
+        elif char_count > 2000 or complexity_score >= 1:
+            return "moderate"
+        else:
+            return "simple"
+
+    def _process_document_sequential(
+        self, content: str, metadata: Dict[str, Any]
+    ) -> List[MDChunk]:
+        """顺序处理文档"""
+        # 解析文档结构
+        elements = self._parse_elements(content)
+
+        # 构建标题层级
+        title_hierarchy = self._build_title_hierarchy(elements)
+
+        # 智能分块
+        chunks = self._intelligent_chunking(elements, title_hierarchy, metadata)
+
+        # 计算权重和元数据
+        self._calculate_weights_and_metadata(chunks)
+
+        # 如果启用了元数据增强器，进行增强处理
+        if self.metadata_enhancer:
+            self._enhance_chunks_metadata(chunks, content, metadata)
+
+        return chunks
+
+    def _process_document_parallel(
+        self, content: str, metadata: Dict[str, Any]
+    ) -> List[MDChunk]:
+        """并行处理文档"""
+        # 解析文档结构
+        elements = self._parse_elements(content)
+
+        # 构建标题层级
+        title_hierarchy = self._build_title_hierarchy(elements)
+
+        # 智能分块
+        chunks = self._intelligent_chunking(elements, title_hierarchy, metadata)
+
+        # 并行计算权重和元数据
+        futures = []
+        chunk_batches = self._split_chunks_for_parallel(chunks)
+
+        for batch in chunk_batches:
+            future = self._executor.submit(self._process_chunk_batch, batch)
+            futures.append(future)
+
+        # 等待所有批次完成
+        for future in futures:
+            future.result()
+
+        # 计算全局权重和元数据
+        self._calculate_weights_and_metadata(chunks)
+
+        # 如果启用了元数据增强器，进行增强处理
+        if self.metadata_enhancer:
+            self._enhance_chunks_metadata(chunks, content, metadata)
+
+        return chunks
+
+    def _split_chunks_for_parallel(self, chunks: List[MDChunk]) -> List[List[MDChunk]]:
+        """将块分割为并行处理的批次"""
+        if len(chunks) <= self.max_workers:
+            return [chunks]
+
+        batch_size = max(1, len(chunks) // self.max_workers)
+        batches = []
+
+        for i in range(0, len(chunks), batch_size):
+            batch = chunks[i : i + batch_size]
+            batches.append(batch)
+
+        return batches
+
+    def _process_chunk_batch(self, chunks: List[MDChunk]):
+        """处理一个批次的块"""
+        for chunk in chunks:
+            # 预计算一些可以并行处理的元数据
+            chunk.metadata["word_count"] = len(chunk.content.split())
+            chunk.metadata["char_count"] = len(chunk.content)
+            chunk.metadata["line_count"] = chunk.content.count("\n") + 1
+
+    def _update_stats(self, chunk_count: int, processing_time: float):
+        """更新统计信息"""
+        self.stats["documents_processed"] += 1
+        self.stats["chunks_generated"] += chunk_count
+        self.stats["processing_time_total"] += processing_time
+
+        # 计算平均处理时间
+        if self.stats["documents_processed"] > 0:
+            self.stats["average_processing_time"] = (
+                self.stats["processing_time_total"] / self.stats["documents_processed"]
+            )
+
+    def get_stats(self) -> Dict[str, Any]:
+        """获取处理统计信息"""
+        stats = self.stats.copy()
+        stats.update(
+            {
+                "cache_size": len(self._chunk_cache) if self._chunk_cache else 0,
+                "max_cache_size": self.chunk_cache_size,
+                "parallel_processing_enabled": self.enable_parallel_processing,
+                "max_workers": self.max_workers,
+            }
+        )
+        return stats
+
+    def __del__(self):
+        """析构函数，清理资源"""
+        if hasattr(self, "_executor") and self._executor:
+            self._executor.shutdown(wait=False)
+
 
 class MDEnhancedQueryProcessor:
     """MD文档增强查询处理器"""
@@ -1065,150 +1208,3 @@ class MDEnhancedQueryProcessor:
         )
 
         return min(final_score, 2.0)  # 限制最大加成
-
-    def _get_cache_key(self, content: str, metadata_str: str) -> str:
-        """生成缓存键"""
-        content_hash = hashlib.md5(content.encode()).hexdigest()[:16]
-        metadata_hash = hashlib.md5(metadata_str.encode()).hexdigest()[:8]
-        return f"{content_hash}_{metadata_hash}"
-
-    def _assess_document_complexity(self, content: str) -> str:
-        """快速评估文档复杂度"""
-        # 快速指标检查
-        char_count = len(content)
-        if char_count < 1000:
-            return "simple"
-
-        # 检查结构复杂度
-        has_headers = bool(self.patterns["has_headers"].search(content))
-        has_code_blocks = bool(self.patterns["has_code_blocks"].search(content))
-        has_lists = bool(self.patterns["has_lists"].search(content))
-
-        complexity_score = sum([has_headers, has_code_blocks, has_lists])
-
-        if char_count > 5000 or complexity_score >= 2:
-            return "complex"
-        elif char_count > 2000 or complexity_score >= 1:
-            return "moderate"
-        else:
-            return "simple"
-
-    def _process_document_sequential(
-        self, content: str, metadata: Dict[str, Any]
-    ) -> List[MDChunk]:
-        """顺序处理文档"""
-        # 解析文档结构
-        elements = self._parse_elements(content)
-
-        # 构建标题层级
-        title_hierarchy = self._build_title_hierarchy(elements)
-
-        # 智能分块
-        chunks = self._intelligent_chunking(elements, title_hierarchy, metadata)
-
-        # 计算权重和元数据
-        self._calculate_weights_and_metadata(chunks)
-
-        # 如果启用了元数据增强器，进行增强处理
-        if self.metadata_enhancer:
-            self._enhance_chunks_metadata(chunks, content, metadata)
-
-        return chunks
-
-    def _process_document_parallel(
-        self, content: str, metadata: Dict[str, Any]
-    ) -> List[MDChunk]:
-        """并行处理文档"""
-        # 解析文档结构
-        elements = self._parse_elements(content)
-
-        # 构建标题层级
-        title_hierarchy = self._build_title_hierarchy(elements)
-
-        # 智能分块
-        chunks = self._intelligent_chunking(elements, title_hierarchy, metadata)
-
-        # 并行计算权重和元数据
-        futures = []
-        chunk_batches = self._split_chunks_for_parallel(chunks)
-
-        for batch in chunk_batches:
-            future = self._executor.submit(self._process_chunk_batch, batch)
-            futures.append(future)
-
-        # 等待所有批次完成
-        for future in futures:
-            future.result()
-
-        # 计算全局权重和元数据
-        self._calculate_weights_and_metadata(chunks)
-
-        # 如果启用了元数据增强器，进行增强处理
-        if self.metadata_enhancer:
-            self._enhance_chunks_metadata(chunks, content, metadata)
-
-        return chunks
-
-    def _split_chunks_for_parallel(self, chunks: List[MDChunk]) -> List[List[MDChunk]]:
-        """将块分割为并行处理的批次"""
-        if len(chunks) <= self.max_workers:
-            return [chunks]
-
-        batch_size = max(1, len(chunks) // self.max_workers)
-        batches = []
-
-        for i in range(0, len(chunks), batch_size):
-            batch = chunks[i : i + batch_size]
-            batches.append(batch)
-
-        return batches
-
-    def _process_chunk_batch(self, chunks: List[MDChunk]):
-        """处理一个批次的块"""
-        for chunk in chunks:
-            # 预计算一些可以并行处理的元数据
-            chunk.metadata["word_count"] = len(chunk.content.split())
-            chunk.metadata["char_count"] = len(chunk.content)
-            chunk.metadata["line_count"] = chunk.content.count("\n") + 1
-
-    def _update_stats(self, chunk_count: int, processing_time: float):
-        """更新统计信息"""
-        self.stats["documents_processed"] += 1
-        self.stats["chunks_generated"] += chunk_count
-        self.stats["processing_time_total"] += processing_time
-
-        # 计算平均处理时间
-        if self.stats["documents_processed"] > 0:
-            self.stats["average_processing_time"] = (
-                self.stats["processing_time_total"] / self.stats["documents_processed"]
-            )
-
-    def get_stats(self) -> Dict[str, Any]:
-        """获取处理统计信息"""
-        stats = self.stats.copy()
-        stats.update(
-            {
-                "cache_size": len(self._chunk_cache),
-                "max_cache_size": self.chunk_cache_size,
-                "parallel_processing_enabled": self.enable_parallel_processing,
-                "max_workers": self.max_workers,
-            }
-        )
-        return stats
-
-    def _get_cache_key(self, content: str, metadata_str: str) -> str:
-        """生成缓存键"""
-        content_hash = hashlib.md5(content.encode()).hexdigest()[:16]
-        metadata_hash = hashlib.md5(metadata_str.encode()).hexdigest()[:8]
-        return f"{content_hash}_{metadata_hash}"
-
-    def clear_cache(self):
-        """清理缓存"""
-        self._chunk_cache.clear()
-        self._pattern_cache.clear()
-        logger.info("MD文档处理器缓存已清理")
-
-    def __del__(self):
-        """析构函数，清理资源"""
-        if hasattr(self, "_executor"):
-            self._executor.shutdown(wait=False)
