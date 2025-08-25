@@ -334,8 +334,8 @@ class RCAAnalysisEngine:
         collection_names = ["指标收集", "事件收集", "日志收集"]
         for i, result in enumerate(results):
             if isinstance(result, Exception):
-                self.logger.error(
-                    f"{collection_names[i]}失败: {str(result)}", exc_info=True
+                self.logger.warning(
+                    f"{collection_names[i]}失败: {str(result)}"
                 )
             else:
                 self.logger.info(
@@ -355,8 +355,8 @@ class RCAAnalysisEngine:
         }
 
         for metric in metrics:
-            # 高异常分数的指标
-            if metric.anomaly_score > 0.7:
+            # 高异常分数的指标 - 降低阈值以提高敏感度
+            if metric.anomaly_score > 0.5:  # 从0.7降低到0.5
                 anomalies["high_anomaly_metrics"].append(
                     {
                         "name": metric.name,
@@ -380,6 +380,17 @@ class RCAAnalysisEngine:
             violations = self._check_threshold_violations(metric)
             if violations:
                 anomalies["threshold_violations"].extend(violations)
+            
+            # 即使没有超过高阈值，也记录中等异常
+            elif metric.anomaly_score > 0.3 and metric.anomaly_score <= 0.5:
+                anomalies["trending_metrics"].append(
+                    {
+                        "name": metric.name,
+                        "score": metric.anomaly_score,
+                        "trend": metric.trend,
+                        "labels": metric.labels,
+                    }
+                )
 
         return anomalies
 
@@ -466,7 +477,7 @@ class RCAAnalysisEngine:
 
         # 时间关联 - 查找同一时间窗口内的异常
         time_correlated = self._find_temporal_correlations(
-            metric_anomalies, event_patterns, log_patterns
+            metric_anomalies, event_patterns, log_patterns, start_time, end_time
         )
         if time_correlated:
             correlations.append(time_correlated)
@@ -506,7 +517,7 @@ class RCAAnalysisEngine:
 
             self.logger.debug(f"模式匹配: {cause_type} - 置信度: {confidence:.2f}")
 
-            if confidence > 0.3:  # 置信度阈值
+            if confidence > 0.2:  # 降低置信度阈值，从0.3降低到0.2
                 self.logger.info(
                     f"模式匹配成功: {cause_type} (置信度: {confidence:.2f})"
                 )
@@ -650,7 +661,7 @@ class RCAAnalysisEngine:
 
         # 添加指标异常
         for metric in metrics:
-            if metric.anomaly_score > 0.8:
+            if metric.anomaly_score > 0.6:  # 降低阈值从0.8到0.6
                 # 取最新的值
                 if metric.values:
                     latest_value = metric.values[-1]
@@ -860,6 +871,8 @@ class RCAAnalysisEngine:
         metric_anomalies: Dict[str, Any],
         event_patterns: Dict[str, Any],
         log_patterns: Dict[str, Any],
+        start_time: datetime = None,
+        end_time: datetime = None,
     ) -> Optional[CorrelationResult]:
         """查找时间相关性"""
         # 简化实现 - 实际应该使用更复杂的时间序列分析
@@ -873,11 +886,37 @@ class RCAAnalysisEngine:
             evidence.append("发现错误日志")
 
         if len(evidence) >= 2:
+            # 构建时间线
+            timeline = []
+            
+            # 添加指标异常到时间线
+            for metric in metric_anomalies.get("high_anomaly_metrics", []):
+                # 使用传入的时间范围或当前时间
+                timestamp = end_time if end_time else datetime.now(timezone.utc)
+                timeline.append({
+                    "timestamp": timestamp.isoformat(),
+                    "type": "metric_anomaly",
+                    "description": f"指标 {metric.get('name')} 异常 (异常分数: {metric.get('score', 0):.2f})",
+                    "severity": "high" if metric.get('score', 0) > 0.8 else "medium"
+                })
+            
+            # 添加关键事件到时间线
+            for event in event_patterns.get("critical_events", [])[:5]:  # 限制数量
+                timeline.append({
+                    "timestamp": event.get("timestamp", datetime.now(timezone.utc).isoformat()),
+                    "type": "critical_event",
+                    "description": f"{event.get('reason', '')}: {event.get('message', '')[:100]}",
+                    "severity": event.get("severity", "high")
+                })
+            
+            # 按时间排序
+            timeline.sort(key=lambda x: x["timestamp"])
+            
             return CorrelationResult(
                 confidence=0.7 + 0.1 * len(evidence),
                 correlation_type="temporal",
                 evidence=evidence,
-                timeline=[],
+                timeline=timeline[:10],  # 限制返回最多10条
             )
 
         return None
@@ -911,6 +950,17 @@ class RCAAnalysisEngine:
         ]
 
         if multi_source_components:
+            # 构建组件相关的时间线
+            timeline = []
+            for comp in multi_source_components[:3]:
+                timeline.append({
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "type": "component_anomaly",
+                    "description": f"组件 {comp} 在多个数据源中出现异常",
+                    "component": comp,
+                    "severity": "high"
+                })
+            
             return CorrelationResult(
                 confidence=0.75,
                 correlation_type="component",
@@ -918,7 +968,7 @@ class RCAAnalysisEngine:
                     f"组件 {comp} 在多个数据源中出现异常"
                     for comp in multi_source_components[:3]
                 ],
-                timeline=[],
+                timeline=timeline,
             )
 
         return None
@@ -951,11 +1001,22 @@ class RCAAnalysisEngine:
                     chain.append("服务异常")
 
         if len(chain) >= 2:
+            # 构建因果链时间线
+            timeline = []
+            for i, step in enumerate(chain):
+                timeline.append({
+                    "timestamp": (datetime.now(timezone.utc) - timedelta(minutes=len(chain)-i)).isoformat(),
+                    "type": "causal_step",
+                    "description": step,
+                    "step_number": i + 1,
+                    "severity": "high" if i == 0 else "medium"
+                })
+            
             return CorrelationResult(
                 confidence=0.8,
                 correlation_type="causal",
                 evidence=[f"因果链: {' -> '.join(chain)}"],
-                timeline=[],
+                timeline=timeline,
             )
 
         return None

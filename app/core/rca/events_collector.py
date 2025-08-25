@@ -205,24 +205,28 @@ class EventsCollector(BaseDataCollector):
         object_names: Set[str],
     ) -> Optional[EventData]:
         """处理单个事件"""
-        # 解析时间
-        event_time = self._parse_event_time(event)
+        try:
+            # 解析时间
+            event_time = self._parse_event_time(event)
 
-        # 时间过滤
-        if not (start_time <= event_time <= end_time):
-            return None
-
-        # 类型过滤
-        if event_types and event.get("type") not in event_types:
-            return None
-
-        # 对象名称过滤
-        if object_names:
-            involved_object = event.get("involvedObject", {})
-            if involved_object.get("name") not in object_names:
+            # 时间过滤
+            if not (start_time <= event_time <= end_time):
                 return None
 
-        return self._convert_to_event_data(event)
+            # 类型过滤
+            if event_types and event.get("type") not in event_types:
+                return None
+
+            # 对象名称过滤
+            if object_names:
+                involved_object = event.get("involvedObject", {})
+                if involved_object.get("name") not in object_names:
+                    return None
+
+            return self._convert_to_event_data(event)
+        except Exception as e:
+            self.logger.debug(f"处理单个事件时出错: {e}, 事件: {event.get('reason', 'Unknown')}")
+            return None
 
     def _parse_event_time(self, event: Dict[str, Any]) -> datetime:
         """优化的时间解析"""
@@ -283,11 +287,14 @@ class EventsCollector(BaseDataCollector):
             except (ValueError, TypeError):
                 count = 1
 
+        # 注意：Kubernetes API返回的是involvedObject（驼峰命名）
         involved_object = event.get("involvedObject", {})
+        
+        # 确保所有字段都有值，避免空字段
         object_info = {
-            "kind": involved_object.get("kind", ""),
-            "name": involved_object.get("name", ""),
-            "namespace": involved_object.get("namespace", ""),
+            "kind": involved_object.get("kind", "Unknown"),
+            "name": involved_object.get("name", "Unknown"),
+            "namespace": involved_object.get("namespace", "default"),
             "uid": involved_object.get("uid", ""),
         }
 

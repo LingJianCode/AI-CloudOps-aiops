@@ -104,94 +104,154 @@ class RCAService(BaseService, HealthCheckMixin):
         time_window_hours: float = 1.0,
         metrics: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
+        """执行根因分析"""
         start_time = time.time()
 
         try:
             self._ensure_initialized()
 
-            # 暂时禁用缓存
-            # # 生成缓存键
-            # cache_key = self._generate_rca_cache_key(
-            #     operation="analyze",
-            #     namespace=namespace,
-            #     time_window_hours=time_window_hours,
-            #     metrics=metrics,
-            # )
-
-            # # 尝试从缓存获取结果
-            # cached_result = await self._get_from_cache(cache_key)
-            # if cached_result:
-            #     self.logger.info(f"RCA分析缓存命中，直接返回结果: namespace={namespace}")
-            #     return cached_result
-
-            # 准备参数
-            time_window = timedelta(hours=time_window_hours)
-
-            self.logger.info(
-                f"开始RCA分析: namespace={namespace}, time_window={time_window_hours}小时"
+            # 尝试从缓存获取结果
+            cached_result = await self._try_get_cached_result(
+                namespace, time_window_hours, metrics
             )
+            if cached_result:
+                return cached_result
 
             # 执行分析
-            analysis_result = await self._engine.analyze(
-                namespace=namespace, time_window=time_window, metrics=metrics
+            analysis_result = await self._perform_analysis(
+                namespace, time_window_hours, metrics
             )
 
-            # 转换根因数据
-            root_causes = []
-            for cause in analysis_result.root_causes:
-                root_causes.append(
-                    {
-                        "cause_type": cause.cause_type,
-                        "description": cause.description,
-                        "confidence": cause.confidence,
-                        "affected_components": cause.affected_components,
-                        "evidence": cause.evidence,
-                        "recommendations": cause.recommendations,
-                    }
-                )
-            
-            # 转换关联数据
-            correlations = []
-            for correlation in analysis_result.correlations:
-                if hasattr(correlation, '__dict__'):
-                    # 如果是对象，转换为字典
-                    correlations.append({
-                        "confidence": correlation.confidence,
-                        "correlation_type": correlation.correlation_type,
-                        "evidence": correlation.evidence,
-                        "timeline": correlation.timeline,
-                    })
-                else:
-                    # 如果已经是字典，直接使用
-                    correlations.append(correlation)
+            # 构建响应
+            result = self._build_analysis_response(
+                analysis_result, time.time() - start_time
+            )
 
-            duration = time.time() - start_time
-
-            result = {
-                "success": True,
-                "timestamp": analysis_result.timestamp,
-                "namespace": analysis_result.namespace,
-                "root_causes": root_causes,
-                "anomalies": analysis_result.anomalies,  # 添加异常数据
-                "correlations": correlations,  # 添加关联数据
-                "confidence_score": analysis_result.confidence_score,
-                "recommendations": analysis_result.recommendations,
-                "timeline_events": len(analysis_result.timeline),
-                "analysis_duration_seconds": duration,
-            }
-
-            # 暂时禁用缓存保存
-            # # 保存到缓存（30分钟缓存）
-            # await self._save_to_cache(cache_key, result, ttl=1800)
+            # 保存到缓存（30分钟缓存）
+            cache_key = self._generate_rca_cache_key(
+                operation="analyze",
+                namespace=namespace,
+                time_window_hours=time_window_hours,
+                metrics=metrics,
+            )
+            await self._save_to_cache(cache_key, result, ttl=1800)
 
             self.logger.info(
-                f"RCA分析完成: 发现 {len(root_causes)} 个根因, 耗时 {duration:.2f}秒"
+                f"RCA分析完成: 发现 {len(result['root_causes'])} 个根因, "
+                f"耗时 {result['analysis_duration_seconds']:.2f}秒"
             )
             return result
 
         except Exception as e:
             self.logger.error(f"RCA分析失败: {str(e)}", exc_info=True)
             raise RCAError(f"分析失败: {str(e)}")
+
+    async def _try_get_cached_result(
+        self,
+        namespace: str,
+        time_window_hours: float,
+        metrics: Optional[List[str]],
+    ) -> Optional[Dict[str, Any]]:
+        """尝试从缓存获取分析结果"""
+        if not self._cache_manager:
+            return None
+        
+        try:
+            cache_key = self._generate_rca_cache_key(
+                operation="analyze",
+                namespace=namespace,
+                time_window_hours=time_window_hours,
+                metrics=metrics,
+            )
+
+            cached_result = await self._get_from_cache(cache_key)
+            if cached_result:
+                self.logger.info(f"RCA分析缓存命中，直接返回结果: namespace={namespace}")
+                # 添加缓存命中标识
+                cached_result["cache_hit"] = True
+                cached_result["cache_key"] = cache_key
+                return cached_result
+            return None
+        except Exception as e:
+            self.logger.warning(f"尝试获取缓存结果失败: {str(e)}")
+            return None
+
+    async def _perform_analysis(
+        self,
+        namespace: str,
+        time_window_hours: float,
+        metrics: Optional[List[str]],
+    ) -> Any:
+        """执行实际的根因分析"""
+        time_window = timedelta(hours=time_window_hours)
+        
+        self.logger.info(
+            f"开始RCA分析: namespace={namespace}, time_window={time_window_hours}小时"
+        )
+
+        return await self._engine.analyze(
+            namespace=namespace,
+            time_window=time_window,
+            metrics=metrics
+        )
+
+    def _build_analysis_response(
+        self,
+        analysis_result: Any,
+        duration: float,
+    ) -> Dict[str, Any]:
+        """构建分析响应"""
+        # 转换根因数据
+        root_causes = self._convert_root_causes(analysis_result.root_causes)
+        
+        # 转换关联数据
+        correlations = self._convert_correlations(analysis_result.correlations)
+
+        return {
+            "success": True,
+            "timestamp": analysis_result.timestamp,
+            "namespace": analysis_result.namespace,
+            "root_causes": root_causes,
+            "anomalies": analysis_result.anomalies,
+            "correlations": correlations,
+            "confidence_score": analysis_result.confidence_score,
+            "recommendations": analysis_result.recommendations,
+            "timeline_events": len(analysis_result.timeline),
+            "analysis_duration_seconds": duration,
+        }
+
+    def _convert_root_causes(self, root_causes: List[Any]) -> List[Dict[str, Any]]:
+        """转换根因数据格式"""
+        converted = []
+        for cause in root_causes:
+            converted.append(
+                {
+                    "cause_type": cause.cause_type,
+                    "description": cause.description,
+                    "confidence": cause.confidence,
+                    "affected_components": cause.affected_components,
+                    "evidence": cause.evidence,
+                    "recommendations": cause.recommendations,
+                }
+            )
+        return converted
+
+    def _convert_correlations(self, correlations: List[Any]) -> List[Dict[str, Any]]:
+        """转换关联数据格式"""
+        converted = []
+        for correlation in correlations:
+            if hasattr(correlation, '__dict__'):
+                # 如果是对象，转换为字典
+                converted.append({
+                    "confidence": correlation.confidence,
+                    "correlation_type": correlation.correlation_type,
+                    "evidence": correlation.evidence,
+                    "timeline": correlation.timeline,
+                })
+            else:
+                # 如果已经是字典，直接使用
+                converted.append(correlation)
+        return converted
 
     async def get_metrics(
         self,
@@ -395,19 +455,18 @@ class RCAService(BaseService, HealthCheckMixin):
         try:
             self._ensure_initialized()
 
-            # 暂时禁用缓存
-            # # 生成缓存键
-            # cache_key = self._generate_rca_cache_key(
-            #     operation="quick_diagnosis",
-            #     namespace=namespace,
-            #     time_window_hours=1.0,
-            # )
+            # 生成缓存键
+            cache_key = self._generate_rca_cache_key(
+                operation="quick_diagnosis",
+                namespace=namespace,
+                time_window_hours=1.0,
+            )
 
-            # # 尝试从缓存获取结果
-            # cached_result = await self._get_from_cache(cache_key)
-            # if cached_result:
-            #     self.logger.info(f"快速诊断缓存命中，直接返回结果: namespace={namespace}")
-            #     return cached_result
+            # 尝试从缓存获取结果
+            cached_result = await self._get_from_cache(cache_key)
+            if cached_result:
+                self.logger.info(f"快速诊断缓存命中，直接返回结果: namespace={namespace}")
+                return cached_result
 
             # 检查依赖服务状态
             health_checks = await self._gather_health_checks()
@@ -495,9 +554,8 @@ class RCAService(BaseService, HealthCheckMixin):
                 "confidence_score": analysis_result.confidence_score if hasattr(analysis_result, 'confidence_score') else 0.8,
             }
 
-            # 暂时禁用缓存保存
-            # # 保存到缓存（15分钟缓存，快速诊断需要更快的更新）
-            # await self._save_to_cache(cache_key, result, ttl=900)
+            # 保存到缓存（15分钟缓存，快速诊断需要更快的更新）
+            await self._save_to_cache(cache_key, result, ttl=900)
 
             return result
 
@@ -530,19 +588,18 @@ class RCAService(BaseService, HealthCheckMixin):
         try:
             self._ensure_initialized()
 
-            # 暂时禁用缓存
-            # # 生成缓存键
-            # cache_key = self._generate_rca_cache_key(
-            #     operation="event_patterns",
-            #     namespace=namespace,
-            #     time_window_hours=hours,
-            # )
+            # 生成缓存键
+            cache_key = self._generate_rca_cache_key(
+                operation="event_patterns",
+                namespace=namespace,
+                time_window_hours=hours,
+            )
 
-            # # 尝试从缓存获取结果
-            # cached_result = await self._get_from_cache(cache_key)
-            # if cached_result:
-            #     self.logger.info(f"事件模式分析缓存命中，直接返回结果: namespace={namespace}")
-            #     return cached_result
+            # 尝试从缓存获取结果
+            cached_result = await self._get_from_cache(cache_key)
+            if cached_result:
+                self.logger.info(f"事件模式分析缓存命中，直接返回结果: namespace={namespace}")
+                return cached_result
 
             # 时间范围
             end_time = datetime.now(timezone.utc)
@@ -553,9 +610,8 @@ class RCAService(BaseService, HealthCheckMixin):
                 namespace=namespace, start_time=start_time, end_time=end_time
             )
 
-            # 暂时禁用缓存保存
-            # # 保存到缓存（20分钟缓存）
-            # await self._save_to_cache(cache_key, patterns, ttl=1200)
+            # 保存到缓存（20分钟缓存）
+            await self._save_to_cache(cache_key, patterns, ttl=1200)
 
             return patterns
 
@@ -570,28 +626,26 @@ class RCAService(BaseService, HealthCheckMixin):
         try:
             self._ensure_initialized()
 
-            # 暂时禁用缓存
-            # # 生成缓存键
-            # cache_key = self._generate_rca_cache_key(
-            #     operation="error_summary",
-            #     namespace=namespace,
-            #     time_window_hours=hours,
-            # )
+            # 生成缓存键
+            cache_key = self._generate_rca_cache_key(
+                operation="error_summary",
+                namespace=namespace,
+                time_window_hours=hours,
+            )
 
-            # # 尝试从缓存获取结果
-            # cached_result = await self._get_from_cache(cache_key)
-            # if cached_result:
-            #     self.logger.info(f"错误摘要缓存命中，直接返回结果: namespace={namespace}")
-            #     return cached_result
+            # 尝试从缓存获取结果
+            cached_result = await self._get_from_cache(cache_key)
+            if cached_result:
+                self.logger.info(f"错误摘要缓存命中，直接返回结果: namespace={namespace}")
+                return cached_result
 
             # 获取错误摘要
             summary = await self._logs_collector.get_error_summary(
                 namespace=namespace, time_window=timedelta(hours=hours)
             )
 
-            # 暂时禁用缓存保存
-            # # 保存到缓存（20分钟缓存）
-            # await self._save_to_cache(cache_key, summary, ttl=1200)
+            # 保存到缓存（20分钟缓存）
+            await self._save_to_cache(cache_key, summary, ttl=1200)
 
             return summary
 
@@ -675,41 +729,39 @@ class RCAService(BaseService, HealthCheckMixin):
         metrics: Optional[List[str]] = None,
         **kwargs
     ) -> str:
-        """生成RCA缓存键"""
+        """生成RCA缓存键 - 优化版本"""
         try:
-            # 构建缓存输入参数
-            cache_params = {
-                "operation": operation,
-                "namespace": namespace,
-                "time_window": time_window_hours or 1.0,
-            }
+            # 使用更简洁的缓存键生成策略
+            key_parts = ["rca", operation, namespace]
             
-            # 添加指标参数（如果有）
+            # 添加时间窗口
+            if time_window_hours is not None:
+                key_parts.append(f"tw{int(time_window_hours * 10)}")
+            
+            # 添加指标哈希（如果有）
             if metrics:
-                # 对指标进行排序确保一致性
-                sorted_metrics = sorted(metrics)
-                cache_params["metrics"] = "|".join(sorted_metrics)
+                metrics_str = "|".join(sorted(metrics))
+                metrics_hash = hashlib.md5(metrics_str.encode()).hexdigest()[:8]
+                key_parts.append(f"m{metrics_hash}")
             
-            # 添加其他重要参数
-            for key, value in kwargs.items():
-                if key in ["pod_name", "severity", "error_only", "max_lines"]:
-                    cache_params[key] = value
+            # 添加其他参数的哈希
+            if kwargs:
+                important_params = {k: v for k, v in kwargs.items() 
+                                  if k in ["pod_name", "severity", "error_only", "max_lines"]}
+                if important_params:
+                    params_str = "|".join([f"{k}:{v}" for k, v in sorted(important_params.items())])
+                    params_hash = hashlib.md5(params_str.encode()).hexdigest()[:6]
+                    key_parts.append(f"p{params_hash}")
             
-            # 生成缓存键字符串
-            cache_input = "|".join([f"{k}:{v}" for k, v in sorted(cache_params.items())])
-            
-            # 生成哈希
-            cache_hash = hashlib.sha256(cache_input.encode('utf-8')).hexdigest()[:16]
-            
-            return f"rca:{operation}:{namespace}:{cache_hash}"
+            return ":".join(key_parts)
             
         except Exception as e:
-            self.logger.error(f"生成RCA缓存键失败: {str(e)}")
-            # 降级到简单键
+            self.logger.warning(f"生成优化缓存键失败，使用简单键: {str(e)}")
+            # 降级到更简单的键
             return f"rca:{operation}:{namespace}:{int(time_window_hours or 1)}"
 
     async def _get_from_cache(self, cache_key: str) -> Optional[Dict[str, Any]]:
-        """从缓存获取RCA结果"""
+        """从缓存获取RCA结果 - 增强错误处理"""
         if not self._cache_manager:
             return None
         
@@ -717,17 +769,29 @@ class RCAService(BaseService, HealthCheckMixin):
             cached_result = self._cache_manager.get(cache_key)
             if cached_result:
                 self.logger.debug(f"RCA缓存命中: {cache_key}")
+                
+                # 验证缓存数据完整性
+                if not isinstance(cached_result, dict):
+                    self.logger.warning(f"缓存数据格式无效: {cache_key}")
+                    return None
+                    
                 # 添加缓存标识
                 cached_result["from_cache"] = True
                 cached_result["cache_timestamp"] = datetime.now()
                 return cached_result
+        except ConnectionError as e:
+            self.logger.warning(f"Redis连接错误: {str(e)}")
+            # 连接错误时返回None，允许继续执行
+            return None
         except Exception as e:
             self.logger.warning(f"从缓存获取RCA数据失败: {str(e)}")
+            # 其他错误也返回None，不影响主流程
+            return None
         
         return None
 
     async def _save_to_cache(self, cache_key: str, result: Dict[str, Any], ttl: int = 1800) -> None:
-        """保存RCA结果到缓存"""
+        """保存RCA结果到缓存 - 增强错误处理"""
         if not self._cache_manager:
             return
         
@@ -736,6 +800,13 @@ class RCAService(BaseService, HealthCheckMixin):
             cache_result = result.copy()
             cache_result.pop("from_cache", None)
             cache_result.pop("cache_timestamp", None)
+            
+            # 验证数据大小（避免缓存过大的数据）
+            import sys
+            data_size = sys.getsizeof(str(cache_result))
+            if data_size > 1024 * 1024:  # 1MB限制
+                self.logger.warning(f"数据过大({data_size} bytes)，跳过缓存: {cache_key}")
+                return
             
             # 添加缓存元数据
             cache_result["cached_at"] = datetime.now().isoformat()
@@ -747,8 +818,12 @@ class RCAService(BaseService, HealthCheckMixin):
                 ttl=ttl
             )
             self.logger.debug(f"RCA结果已缓存: {cache_key}")
+        except ConnectionError as e:
+            self.logger.warning(f"Redis连接错误，无法保存缓存: {str(e)}")
+            # 连接错误不影响主流程
         except Exception as e:
             self.logger.warning(f"保存RCA结果到缓存失败: {str(e)}")
+            # 缓存失败不影响主流程
 
     async def get_config_info(self) -> Dict[str, Any]:
         """获取RCA服务配置信息"""
@@ -793,6 +868,180 @@ class RCAService(BaseService, HealthCheckMixin):
         except Exception as e:
             self.logger.error(f"获取RCA配置信息失败: {str(e)}")
             raise RCAError(f"获取配置信息失败: {str(e)}")
+
+    async def clear_all_cache(self) -> Dict[str, Any]:
+        """清理所有RCA缓存"""
+        try:
+            if not self._cache_manager:
+                return {
+                    "success": False,
+                    "message": "缓存管理器不可用",
+                    "cleared_count": 0,
+                }
+
+            # 获取所有RCA相关的缓存键
+            cleared_count = await self._clear_cache_by_pattern("rca_cache:*")
+            
+            self.logger.info(f"已清理所有RCA缓存，清理数量: {cleared_count}")
+            return {
+                "success": True,
+                "message": f"成功清理 {cleared_count} 个缓存项",
+                "cleared_count": cleared_count,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+
+        except Exception as e:
+            self.logger.error(f"清理所有缓存失败: {str(e)}")
+            return {
+                "success": False,
+                "message": f"清理缓存失败: {str(e)}",
+                "cleared_count": 0,
+            }
+
+    async def clear_namespace_cache(self, namespace: str) -> Dict[str, Any]:
+        """清理特定命名空间的缓存"""
+        try:
+            if not self._cache_manager:
+                return {
+                    "success": False,
+                    "message": "缓存管理器不可用",
+                    "cleared_count": 0,
+                }
+
+            # 清理该命名空间相关的所有缓存
+            pattern = f"rca_cache:*:{namespace}:*"
+            cleared_count = await self._clear_cache_by_pattern(pattern)
+            
+            self.logger.info(f"已清理命名空间 {namespace} 的缓存，清理数量: {cleared_count}")
+            return {
+                "success": True,
+                "message": f"成功清理命名空间 {namespace} 的 {cleared_count} 个缓存项",
+                "namespace": namespace,
+                "cleared_count": cleared_count,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+
+        except Exception as e:
+            self.logger.error(f"清理命名空间 {namespace} 缓存失败: {str(e)}")
+            return {
+                "success": False,
+                "message": f"清理缓存失败: {str(e)}",
+                "namespace": namespace,
+                "cleared_count": 0,
+            }
+
+    async def clear_operation_cache(self, operation: str) -> Dict[str, Any]:
+        """清理特定操作类型的缓存"""
+        try:
+            if not self._cache_manager:
+                return {
+                    "success": False,
+                    "message": "缓存管理器不可用",
+                    "cleared_count": 0,
+                }
+
+            # 清理该操作相关的所有缓存
+            pattern = f"rca_cache:{operation}:*"
+            cleared_count = await self._clear_cache_by_pattern(pattern)
+            
+            self.logger.info(f"已清理操作 {operation} 的缓存，清理数量: {cleared_count}")
+            return {
+                "success": True,
+                "message": f"成功清理操作 {operation} 的 {cleared_count} 个缓存项",
+                "operation": operation,
+                "cleared_count": cleared_count,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+
+        except Exception as e:
+            self.logger.error(f"清理操作 {operation} 缓存失败: {str(e)}")
+            return {
+                "success": False,
+                "message": f"清理缓存失败: {str(e)}",
+                "operation": operation,
+                "cleared_count": 0,
+            }
+
+    async def get_cache_stats(self) -> Dict[str, Any]:
+        """获取缓存统计信息"""
+        try:
+            if not self._cache_manager:
+                return {
+                    "available": False,
+                    "message": "缓存管理器不可用",
+                }
+
+            # 获取缓存管理器的健康状态
+            health_status = self._cache_manager.health_check()
+            
+            # 尝试获取Redis信息（如果可用）
+            cache_info = {
+                "available": True,
+                "healthy": health_status.get("status") == "healthy" if isinstance(health_status, dict) else health_status,
+                "cache_prefix": "rca_cache:",
+                "default_ttl": 1800,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+
+            # 如果缓存管理器有统计方法，调用它
+            if hasattr(self._cache_manager, 'get_stats'):
+                try:
+                    stats = self._cache_manager.get_stats()
+                    cache_info.update(stats)
+                except Exception as e:
+                    self.logger.debug(f"获取缓存统计信息失败: {str(e)}")
+
+            return cache_info
+
+        except Exception as e:
+            self.logger.error(f"获取缓存统计失败: {str(e)}")
+            return {
+                "available": False,
+                "message": f"获取缓存统计失败: {str(e)}",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+
+    async def _clear_cache_by_pattern(self, pattern: str) -> int:
+        """根据模式清理缓存（内部方法）"""
+        try:
+            if not self._cache_manager:
+                return 0
+
+            cleared_count = 0
+            
+            # 如果缓存管理器有按模式清理的方法
+            if hasattr(self._cache_manager, 'clear_by_pattern'):
+                try:
+                    cleared_count = self._cache_manager.clear_by_pattern(pattern)
+                except Exception as e:
+                    self.logger.warning(f"使用模式清理缓存失败: {str(e)}")
+
+            # 备用方案：如果有批量删除功能
+            elif hasattr(self._cache_manager, 'delete_batch'):
+                try:
+                    # 获取匹配的键（如果支持）
+                    if hasattr(self._cache_manager, 'get_keys'):
+                        keys = self._cache_manager.get_keys(pattern)
+                        if keys:
+                            self._cache_manager.delete_batch(keys)
+                            cleared_count = len(keys)
+                except Exception as e:
+                    self.logger.warning(f"使用批量删除清理缓存失败: {str(e)}")
+
+            # 最基础的方案：清理所有缓存（谨慎使用）
+            elif pattern == "rca_cache:*":
+                try:
+                    if hasattr(self._cache_manager, 'clear_all'):
+                        self._cache_manager.clear_all()
+                        cleared_count = 1  # 表示执行了清理操作
+                except Exception as e:
+                    self.logger.warning(f"清理所有缓存失败: {str(e)}")
+
+            return cleared_count
+
+        except Exception as e:
+            self.logger.error(f"按模式清理缓存失败: {str(e)}")
+            return 0
 
     async def cleanup(self) -> None:
         """清理RCA服务资源"""

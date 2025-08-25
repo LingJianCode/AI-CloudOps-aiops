@@ -116,7 +116,7 @@ class MetricsCollector(BaseDataCollector):
 
             # 安全检查指标列表
             if not metrics_to_collect:
-                self.logger.warning("没有指定要收集的指标")
+                self.logger.debug("没有指定要收集的指标，返回空列表")
                 return []
 
             # 并发收集所有指标
@@ -209,11 +209,12 @@ class MetricsCollector(BaseDataCollector):
             # 处理数据
             metric_data_list = self._process_metric_data_optimized(metric_name, data)
 
-            # 更新缓存
-            self._query_cache[cache_key] = {
-                "data": metric_data_list,
-                "timestamp": datetime.now(),
-            }
+            # 只缓存非空结果
+            if metric_data_list:
+                self._query_cache[cache_key] = {
+                    "data": metric_data_list,
+                    "timestamp": datetime.now(),
+                }
 
             # 限制缓存大小
             if len(self._query_cache) > self.cache_size:
@@ -292,7 +293,9 @@ class MetricsCollector(BaseDataCollector):
 
         try:
             # 安全检查
-            if data is None or data.empty:
+            if data is None:
+                return []
+            if hasattr(data, 'empty') and data.empty:
                 return []
 
             # 智能分组
@@ -383,11 +386,11 @@ class MetricsCollector(BaseDataCollector):
 
             scores = []
 
-            # 1. 快速Z-Score检测
+            # 1. 快速Z-Score检测 - 降低阈值
             z_scores = np.abs(stats.zscore(values))
             max_z = np.max(z_scores)
-            if max_z > 3:
-                scores.append(min(max_z / 5.0, 1.0))
+            if max_z > 2:  # 从3降低到2
+                scores.append(min(max_z / 3.0, 1.0))  # 调整标准化系数
 
             # 2. 快速IQR检测
             q1, q3 = np.percentile(values, [25, 75])
@@ -396,17 +399,29 @@ class MetricsCollector(BaseDataCollector):
                 outlier_ratio = np.sum(
                     (values < q1 - 1.5 * iqr) | (values > q3 + 1.5 * iqr)
                 ) / len(values)
-                scores.append(outlier_ratio)
+                scores.append(min(outlier_ratio * 2, 1.0))  # 增加权重
 
             # 3. 变化率检测
             if len(values) > 1:
                 diff = np.diff(values)
                 if len(diff) > 0:
                     change_rate = np.std(diff) / (np.mean(np.abs(values)) + 1e-10)
-                    scores.append(min(change_rate, 1.0))
+                    scores.append(min(change_rate * 1.5, 1.0))  # 增加敏感度
+            
+            # 4. 添加移动平均异常检测
+            if len(values) > 10:
+                ma = values.rolling(window=5, min_periods=1).mean()
+                deviation = np.abs(values - ma) / (ma + 1e-10)
+                max_deviation = deviation.max()
+                if max_deviation > 0.5:
+                    scores.append(min(max_deviation, 1.0))
 
             # 计算最终分数
-            final_score = np.mean(scores) if scores else 0.0
+            if scores:
+                # 使用加权平均，给更高的分数更大权重
+                final_score = max(scores) * 0.6 + np.mean(scores) * 0.4
+            else:
+                final_score = 0.0
 
             # 缓存结果
             if len(self._anomaly_cache) < self.anomaly_cache_size:

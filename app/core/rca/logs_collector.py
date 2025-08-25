@@ -87,6 +87,7 @@ class LogsCollector(BaseDataCollector):
         # 缓存
         self._error_cache = {}  # 缓存错误模式匹配结果
         self._log_dedup = set()  # 用于去重
+        self._dedup_cleanup_counter = 0  # 计数器，用于定期清理
 
     def _compile_patterns(self) -> None:
         """编译所有正则表达式模式"""
@@ -287,15 +288,17 @@ class LogsCollector(BaseDataCollector):
     ) -> str:
         """获取容器日志"""
         try:
-            return await self.k8s.get_pod_logs(
+            logs = await self.k8s.get_pod_logs(
                 namespace=namespace,
                 pod_name=pod_name,
                 container_name=container_name,
                 since_time=since_time,
                 tail_lines=tail_lines,
             )
+            return logs if logs else ""
         except Exception as e:
-            self.logger.debug(f"获取容器 {container_name} 日志失败: {e}")
+            # 只记录debug级别日志，避免正常错误（如容器未启动）产生过多日志
+            self.logger.debug(f"获取Pod {pod_name} 容器 {container_name} 日志失败: {str(e)}")
             return ""
 
     def _parse_logs_optimized(
@@ -321,13 +324,22 @@ class LogsCollector(BaseDataCollector):
                 continue
 
             # 检查是否是堆栈跟踪的延续
-            if self._is_stack_trace(line):
+            if self._is_stack_trace(line) and current_entry:
                 stack_trace_lines.append(line)
-                continue
+                # 限制堆栈跟踪的行数
+                if len(stack_trace_lines) <= self.max_stack_trace_lines:
+                    continue
+                else:
+                    # 超过最大行数，停止收集
+                    current_entry.stack_trace = "\n".join(stack_trace_lines[:self.max_stack_trace_lines])
+                    stack_trace_lines = []
+                    continue
 
             # 如果有未处理的堆栈，添加到上一个日志条目
             if stack_trace_lines and current_entry:
-                current_entry.stack_trace = "\n".join(stack_trace_lines)
+                # 将堆栈跟踪添加到当前条目
+                if not current_entry.stack_trace:
+                    current_entry.stack_trace = "\n".join(stack_trace_lines[:self.max_stack_trace_lines])
                 stack_trace_lines = []
 
             # 解析新的日志条目
@@ -352,6 +364,15 @@ class LogsCollector(BaseDataCollector):
             log_hash = self._get_log_hash(pod_name, container_name, line)
             if log_hash not in self._log_dedup:
                 self._log_dedup.add(log_hash)
+                
+                # 定期清理去重缓存，防止内存泄漏
+                self._dedup_cleanup_counter += 1
+                if self._dedup_cleanup_counter >= 1000:
+                    if len(self._log_dedup) > self.dedup_cache_size:
+                        # 保留最近50%的缓存
+                        keep_size = self.dedup_cache_size // 2
+                        self._log_dedup = set(list(self._log_dedup)[-keep_size:])
+                    self._dedup_cleanup_counter = 0
 
                 current_entry = LogData(
                     timestamp=timestamp,
@@ -360,16 +381,17 @@ class LogsCollector(BaseDataCollector):
                     level=level,
                     message=line[: self.max_message_length],  # 限制消息长度
                     error_type=self._detect_error_type_fast(line),
-                    stack_trace=None,
+                    stack_trace=None,  # 初始化为None，后续会填充
                 )
 
                 parsed_logs.append(current_entry)
 
         # 处理最后的堆栈跟踪
         if stack_trace_lines and current_entry:
-            current_entry.stack_trace = "\n".join(
-                stack_trace_lines[: self.max_stack_trace_lines]
-            )  # 限制堆栈行数
+            if not current_entry.stack_trace:
+                current_entry.stack_trace = "\n".join(
+                    stack_trace_lines[: self.max_stack_trace_lines]
+                )  # 限制堆栈行数
 
         return parsed_logs
 
@@ -531,8 +553,15 @@ class LogsCollector(BaseDataCollector):
     def _is_stack_trace(self, line: str) -> bool:
         """快速判断是否为堆栈跟踪"""
         # 快速检查常见的堆栈跟踪特征
-        if line.startswith(("    at ", "  File ", "Traceback", "goroutine")):
+        if line.startswith(("    at ", "  File ", "Traceback", "goroutine", "\tat")):
             return True
+        
+        # 检查是否以空格或制表符开头（常见的堆栈跟踪缩进）
+        if line and (line[0] == ' ' or line[0] == '\t') and len(line.strip()) > 10:
+            # 检查是否包含函数调用或文件路径的特征
+            # 更严格的判断，避免误判
+            if any(indicator in line for indicator in ['.java:', '.py:', '.go:', '()', '.js:', 'line ', 'Line ', 'at ', 'File ']):
+                return True
 
         # 使用编译的模式
         return any(pattern.search(line) for pattern in self.compiled_stack_patterns[:3])
