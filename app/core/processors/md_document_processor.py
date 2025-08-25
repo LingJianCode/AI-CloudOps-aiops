@@ -1196,6 +1196,12 @@ class MDEnhancedQueryProcessor:
         )
         return stats
 
+    def _get_cache_key(self, content: str, metadata_str: str) -> str:
+        """生成缓存键"""
+        content_hash = hashlib.md5(content.encode()).hexdigest()[:16]
+        metadata_hash = hashlib.md5(metadata_str.encode()).hexdigest()[:8]
+        return f"{content_hash}_{metadata_hash}"
+
     def clear_cache(self):
         """清理缓存"""
         self._chunk_cache.clear()

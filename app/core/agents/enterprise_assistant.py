@@ -12,6 +12,7 @@ Description: AI-CloudOp小助手
 import asyncio
 import hashlib
 import logging
+import os
 import time
 from collections import OrderedDict, defaultdict, deque
 from dataclasses import dataclass, field
@@ -38,12 +39,12 @@ class QueryType(Enum):
 @dataclass
 class RetrievalStrategy:
     base_similarity: float = 0.7
-    min_similarity: float = 0.15  # 降低最小相似度阈值，提高召回率
-    initial_k: int = 30  # 增加初始检索数量
-    final_k: int = 8     # 增加最终返回数量
+    min_similarity: float = 0.1   # 进一步降低最小相似度阈值，提高召回率
+    initial_k: int = 50   # 增加初始检索数量
+    final_k: int = 10     # 增加最终返回数量
     enable_cache: bool = True
     cache_ttl: int = 3600
-    diversity_threshold: float = 0.6  # 降低多样性阈值，允许更多相关文档
+    diversity_threshold: float = 0.5  # 进一步降低多样性阈值，允许更多相关文档
 
 
 @dataclass
@@ -180,6 +181,10 @@ class QueryProcessor:
     ) -> List[str]:
         """生成查询扩展"""
         expansions = [query]
+        
+        # 检测平台介绍相关的查询
+        platform_intro_keywords = ["介绍", "平台", "概述", "什么是", "简介", "功能", "特性"]
+        is_platform_intro = any(keyword in query for keyword in platform_intro_keywords)
 
         # 基于查询类型的扩展
         if query_type == QueryType.TROUBLESHOOTING:
@@ -190,15 +195,25 @@ class QueryProcessor:
             expansions.extend(
                 [f"{query} 详细步骤", f"{query} 操作指南", f"如何 {query}"]
             )
-        elif query_type == QueryType.CONCEPTUAL:
-            expansions.extend([f"{query} 概念解释", f"{query} 工作原理"])
+        elif query_type == QueryType.CONCEPTUAL or is_platform_intro:
+            if is_platform_intro:
+                # 对于平台介绍查询，优化扩展策略
+                expansions.extend([
+                    "AI-CloudOps平台简介",
+                    "AI-CloudOps核心功能", 
+                    "AI-CloudOps平台总览",
+                    "智能运维平台介绍",
+                    "AI-CloudOps主要特性"
+                ])
+            else:
+                expansions.extend([f"{query} 概念解释", f"{query} 工作原理"])
 
         # 基于上下文的扩展
         if context and context.get("domain"):
             domain = context["domain"]
             expansions.append(f"{domain} {query}")
 
-        max_expansions = getattr(self.config, "max_query_expansions", 5)
+        max_expansions = getattr(self.config, "max_query_expansions", 7 if is_platform_intro else 5)
         return expansions[:max_expansions]
 
     def _record_query_for_learning(
@@ -707,10 +722,115 @@ class RAGAssistant:
             return {"success": False, "message": str(e), "cleared_items": 0}
 
     async def refresh_knowledge_base(self) -> Dict[str, Any]:
-        result = await self.clear_cache()
-        if not result.get("success"):
-            return {"success": False, "message": result.get("message", "失败")}
-        return {"success": True, "message": "知识库缓存已刷新"}
+        """刷新知识库 - 从文件系统重新加载所有文档"""
+        try:
+            logger.info("开始刷新知识库...")
+            
+            # 1. 清理缓存和向量存储
+            try:
+                logger.info("清理缓存...")
+                cache_result = await self.clear_cache()
+                logger.info(f"缓存清理结果: {cache_result}")
+                
+                logger.info("清理向量存储...")
+                clear_result = await self.vector_store.clear()
+                logger.info(f"向量存储清理结果: {clear_result}")
+            except Exception as clear_error:
+                logger.error(f"清理阶段失败: {clear_error}")
+                # 继续执行，不让清理失败阻止整个流程
+            
+            # 2. 从文件系统加载知识库
+            knowledge_base_path = self.config.rag.knowledge_base_path
+            logger.info(f"知识库路径: {knowledge_base_path}")
+            
+            if not os.path.exists(knowledge_base_path):
+                return {"success": False, "message": f"知识库路径不存在: {knowledge_base_path}"}
+            
+            # 3. 扫描知识库文件
+            loaded_files = []
+            failed_files = []
+            total_docs = 0
+            
+            # 列出所有文件
+            all_files = [f for f in os.listdir(knowledge_base_path) if f.endswith(('.md', '.txt'))]
+            logger.info(f"发现 {len(all_files)} 个知识库文件: {all_files}")
+            
+            for filename in all_files:
+                file_path = os.path.join(knowledge_base_path, filename)
+                try:
+                    logger.info(f"开始加载文件: {filename}")
+                    
+                    # 读取文件内容
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                    
+                    if not content.strip():
+                        logger.warning(f"文件为空，跳过: {filename}")
+                        continue
+                    
+                    logger.info(f"文件内容长度: {len(content)} 字符")
+                    
+                    # 创建文档数据
+                    document_data = {
+                        "content": content,
+                        "title": filename.split('.')[0],  # 添加标题
+                        "source": filename,
+                        "metadata": {
+                            "source": filename,
+                            "file_path": file_path,
+                            "file_type": filename.split('.')[-1],
+                            "loaded_at": datetime.now().isoformat()
+                        }
+                    }
+                    
+                    # 上传到向量存储
+                    logger.info(f"上传文档到向量存储: {filename}")
+                    upload_result = await self.upload_knowledge(document_data)
+                    logger.info(f"上传结果: {upload_result}")
+                    
+                    if upload_result.get("success"):
+                        loaded_files.append(filename)
+                        doc_count = upload_result.get("document_count", 1)
+                        total_docs += doc_count
+                        logger.info(f"✅ 成功加载 {filename}: {doc_count} 个文档片段")
+                    else:
+                        failed_files.append(filename)
+                        logger.error(f"❌ 加载失败 {filename}: {upload_result.get('message', '未知错误')}")
+                        
+                except Exception as e:
+                    failed_files.append(filename)
+                    logger.error(f"❌ 加载文件 {filename} 时出错: {e}")
+                    # 打印详细的错误堆栈
+                    import traceback
+                    logger.error(f"错误堆栈: {traceback.format_exc()}")
+            
+            # 4. 验证向量存储状态
+            try:
+                doc_count = await self.vector_store.get_document_count()
+                logger.info(f"向量存储中现有文档数量: {doc_count}")
+            except Exception as count_error:
+                logger.warning(f"无法获取文档数量: {count_error}")
+            
+            # 5. 返回结果
+            success = len(loaded_files) > 0
+            message = f"知识库刷新{'成功' if success else '失败'}。加载了 {len(loaded_files)} 个文件，共 {total_docs} 个文档片段"
+            if failed_files:
+                message += f"，{len(failed_files)} 个文件加载失败: {', '.join(failed_files)}"
+            
+            logger.info(message)
+            return {
+                "success": success,
+                "message": message,
+                "loaded_files": loaded_files,
+                "failed_files": failed_files,
+                "total_documents": total_docs
+            }
+            
+        except Exception as e:
+            logger.error(f"刷新知识库失败: {e}")
+            import traceback
+            logger.error(f"错误堆栈: {traceback.format_exc()}")
+            return {"success": False, "message": f"刷新知识库失败: {str(e)}"}
 
     async def create_session(
         self, session_id: str, info: Optional[Dict[str, Any]] = None
@@ -751,14 +871,39 @@ class RAGAssistant:
             # 检测是否是MD文档并使用专门的处理方法
             if self._is_markdown_content(content):
                 logger.info("检测到MD文档，使用专门处理流程")
-                ids = await self.vector_store.add_md_documents([content], [metadata])
-                return {
-                    "success": True,
-                    "document_ids": ids,
-                    "chunks_count": len(ids),
-                    "message": f"MD知识上传成功，生成 {len(ids)} 个结构化块",
-                    "document_type": "markdown",
-                }
+                try:
+                    # 检查向量存储是否支持MD文档处理
+                    if hasattr(self.vector_store, 'add_md_documents'):
+                        ids = await self.vector_store.add_md_documents([content], [metadata])
+                        document_count = len(ids)
+                    else:
+                        logger.warning("向量存储不支持MD文档专门处理，使用普通文档处理")
+                        # 如果不支持MD处理，使用普通文档处理
+                        from langchain_core.documents import Document
+                        docs = [Document(page_content=content, metadata=metadata)]
+                        ids = await self.vector_store.add_documents(docs)
+                        document_count = len(ids)
+                    
+                    return {
+                        "success": True,
+                        "document_ids": ids if isinstance(ids, list) else [ids],
+                        "document_count": document_count,
+                        "message": f"MD知识上传成功，生成 {document_count} 个结构化块",
+                        "document_type": "markdown",
+                    }
+                except Exception as md_error:
+                    logger.warning(f"MD文档专门处理失败，使用普通文档处理: {md_error}")
+                    # 回退到普通文档处理
+                    from langchain_core.documents import Document
+                    docs = [Document(page_content=content, metadata=metadata)]
+                    ids = await self.vector_store.add_documents(docs)
+                    return {
+                        "success": True,
+                        "document_id": ids[0] if ids else None,
+                        "document_count": len(ids),
+                        "message": f"知识上传成功（普通模式），生成 {len(ids)} 个文档块",
+                        "document_type": "plain",
+                    }
             else:
                 # 普通文档处理
                 from langchain_core.documents import Document
@@ -768,7 +913,8 @@ class RAGAssistant:
                 return {
                     "success": True,
                     "document_id": ids[0] if ids else None,
-                    "message": "知识上传成功",
+                    "document_count": len(ids),
+                    "message": f"知识上传成功，生成 {len(ids)} 个文档块",
                     "document_type": "plain",
                 }
         except Exception as e:
@@ -1021,25 +1167,48 @@ class AnswerGenerator:
 
     def _load_prompt_template(self) -> str:
         """从配置加载提示模板"""
-        default_prompt = """基于以下文档回答问题：
+        default_prompt = """你是AI-CloudOps智能运维平台的专业助手。请仔细分析用户问题，然后基于相关文档提供准确的回答。
 
-文档内容:
+**核心指导原则：**
+
+1. **问题意图识别**：首先准确理解用户问题的真实意图
+   - 如果用户询问"介绍"、"平台"、"概述"、"什么是"等，这是在寻求平台的整体介绍
+   - 如果用户询问"故障"、"问题"、"排查"等，这是在寻求技术支持
+
+2. **文档选择策略**：
+   - 对于平台介绍类问题：优先使用包含"平台总览"、"核心介绍"、"平台简介"的文档
+   - 对于技术问题：优先使用相关的技术文档和故障诊断资料
+   - 避免用技术细节回答概念性问题，避免用概念性内容回答技术问题
+
+3. **回答组织方式**：
+   - 先从最相关的文档中提取核心信息作为主要内容
+   - 然后补充其他文档的相关信息
+   - 确保回答直接回应用户的问题意图
+
+**可用文档：**
 {context}
 
-问题: {question}
+**用户问题：**{question}
 
-答案:"""
+**回答要求：**请根据问题类型，重点使用最匹配的文档内容，提供针对性的专业回答："""
         return getattr(self.config.rag, "prompt_template", default_prompt)
 
     def _load_md_prompt_template(self) -> str:
-        return """基于以下结构化文档回答问题，保持原有格式：
+        return """你是AI-CloudOps智能运维平台的专业助手。请基于以下结构化文档，为用户提供准确、详细的回答。
 
-文档内容:
+重要指导原则：
+1. 深入理解用户问题的具体需求
+2. 充分利用文档的结构化信息（标题、代码块、列表等）
+3. 整合相关文档内容，避免信息碎片化
+4. 保持技术准确性和实用性
+5. 对于概念性问题，提供清晰的定义和实际应用场景
+
+结构化文档内容：
 {context}
 
-问题: {question}
+用户问题：{question}
 
-答案:"""
+请提供结构化、专业的回答："""
 
     async def generate(
         self,
@@ -1057,6 +1226,12 @@ class AnswerGenerator:
             }
 
         is_md_content = self._has_markdown_documents(docs)
+        
+        # 确保context包含当前查询信息，用于智能文档排序
+        if context is None:
+            context = {}
+        context["recent_query"] = question
+        
         enhanced_context = self._prepare_enhanced_context(docs, context, is_md_content)
         generation_params = self._get_generation_params(query_type, context)
 
@@ -1155,7 +1330,10 @@ class AnswerGenerator:
         context_parts = []
         current_length = 0
 
-        for i, doc in enumerate(docs):
+        # 智能排序文档：根据内容类型和相关性重新排序
+        sorted_docs = self._smart_sort_documents(docs, context)
+
+        for i, doc in enumerate(sorted_docs):
             content = doc.page_content
 
             # 为MD文档添加更详细的元信息
@@ -1208,6 +1386,51 @@ class AnswerGenerator:
                 context_parts.append(recent_info)
 
         return "\n\n".join(context_parts)
+
+    def _smart_sort_documents(self, docs: List[Document], context: Optional[Dict]) -> List[Document]:
+        """智能排序文档：根据查询意图和内容类型优化排序"""
+        if not docs:
+            return docs
+        
+        # 获取查询上下文信息
+        recent_query = context.get("recent_query", "") if context else ""
+        
+        # 检测是否为平台介绍查询
+        platform_intro_keywords = ["介绍", "平台", "概述", "什么是", "简介", "功能", "特性", "总览"]
+        is_platform_intro = any(keyword in recent_query for keyword in platform_intro_keywords)
+        
+        def get_doc_priority(doc: Document) -> tuple:
+            """计算文档优先级"""
+            score = doc.metadata.get("score", 0)
+            source = doc.metadata.get("source", "").lower()
+            content = doc.page_content.lower()
+            
+            # 基础优先级
+            priority = 0
+            
+            if is_platform_intro:
+                # 对于平台介绍查询，更激进地调整优先级
+                if any(keyword in source for keyword in ["总览", "平台", "介绍", "核心"]):
+                    priority += 200  # 大幅提升平台相关文档优先级
+                elif any(keyword in content[:500] for keyword in ["ai-cloudops", "平台简介", "核心功能", "平台概述", "平台是"]):
+                    priority += 150
+                elif "故障诊断" in source or "故障" in content[:200]:
+                    priority -= 100  # 大幅降低故障诊断文档的优先级
+                elif "部署" in source or "配置" in source:
+                    priority -= 30   # 降低部署相关文档的优先级
+            else:
+                # 对于其他查询，保持原有逻辑
+                if "故障" in recent_query and ("故障" in source or "诊断" in source):
+                    priority += 50
+                elif "部署" in recent_query and "部署" in source:
+                    priority += 50
+            
+            # 考虑原始相关性分数
+            priority += score * 10
+            
+            return (-priority, -score)  # 负值用于降序排序
+        
+        return sorted(docs, key=get_doc_priority)
 
     def _smart_truncate_md_content(self, content: str, max_length: int) -> str:
         """智能截断MD内容，保持结构完整性"""
@@ -1389,6 +1612,24 @@ async def get_enterprise_assistant() -> RAGAssistant:
                     )
 
                     logger.info("优化的RAG助手初始化完成")
+                    
+                    # 检查向量存储是否为空，如果为空则自动加载知识库
+                    try:
+                        doc_count = await _assistant_instance.vector_store.get_document_count()
+                        logger.info(f"当前向量存储文档数量: {doc_count}")
+                        
+                        if doc_count == 0:
+                            logger.info("向量存储为空，开始自动加载知识库...")
+                            refresh_result = await _assistant_instance.refresh_knowledge_base()
+                            if refresh_result.get("success"):
+                                logger.info(f"自动加载知识库成功: {refresh_result.get('message')}")
+                            else:
+                                logger.warning(f"自动加载知识库失败: {refresh_result.get('message')}")
+                        else:
+                            logger.info("向量存储中已有数据，跳过自动加载")
+                    except Exception as e:
+                        logger.warning(f"检查向量存储状态失败: {e}")
+                        # 不中断初始化过程
 
                 except Exception as e:
                     logger.error(f"RAG助手初始化失败: {e}")

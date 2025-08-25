@@ -1643,6 +1643,138 @@ class EnhancedRedisVectorStore:
         except Exception as e:
             logger.warning(f"压缩稀疏term集合失败: {e}")
 
+    async def clear(self):
+        """清空向量存储中的所有数据"""
+        try:
+            logger.info(f"开始清空向量存储: {self.collection_name}")
+            start_time = time.time()
+            
+            async with self.get_redis_client() as client:
+                # 统计删除数量
+                deleted_counts = {
+                    "documents": 0,
+                    "vectors": 0,
+                    "terms": 0,
+                    "indices": 0
+                }
+                
+                # 1. 删除所有文档数据
+                doc_pattern = f"{self.collection_name}:doc:*"
+                cursor = 0
+                while True:
+                    cursor, keys = await asyncio.to_thread(
+                        client.scan, cursor, match=doc_pattern, count=1000
+                    )
+                    if keys:
+                        await asyncio.to_thread(client.delete, *keys)
+                        deleted_counts["documents"] += len(keys)
+                    if cursor == 0:
+                        break
+                
+                # 2. 删除所有向量数据
+                vec_pattern = f"{self.collection_name}:vec:*"
+                cursor = 0
+                while True:
+                    cursor, keys = await asyncio.to_thread(
+                        client.scan, cursor, match=vec_pattern, count=1000
+                    )
+                    if keys:
+                        await asyncio.to_thread(client.delete, *keys)
+                        deleted_counts["vectors"] += len(keys)
+                    if cursor == 0:
+                        break
+                
+                # 3. 删除所有倒排索引
+                term_pattern = f"{self.collection_name}:term:*"
+                cursor = 0
+                while True:
+                    cursor, keys = await asyncio.to_thread(
+                        client.scan, cursor, match=term_pattern, count=1000
+                    )
+                    if keys:
+                        await asyncio.to_thread(client.delete, *keys)
+                        deleted_counts["terms"] += len(keys)
+                    if cursor == 0:
+                        break
+                
+                # 4. 删除所有索引映射
+                idx_pattern = f"{self.collection_name}:idx:*"
+                cursor = 0
+                while True:
+                    cursor, keys = await asyncio.to_thread(
+                        client.scan, cursor, match=idx_pattern, count=1000
+                    )
+                    if keys:
+                        await asyncio.to_thread(client.delete, *keys)
+                        deleted_counts["indices"] += len(keys)
+                    if cursor == 0:
+                        break
+            
+            # 5. 清理FAISS索引
+            if self.index_manager and hasattr(self.index_manager, 'faiss_index') and self.index_manager.faiss_index:
+                try:
+                    # 重新创建空的FAISS索引
+                    self.index_manager.create_index(self.vector_dim, self.index_type)
+                    logger.info("FAISS索引已重新创建")
+                except Exception as e:
+                    logger.warning(f"重新创建FAISS索引失败: {e}")
+            
+            # 6. 清理查询缓存
+            if self.query_cache:
+                try:
+                    await self.query_cache.clear()
+                    logger.info("查询缓存已清空")
+                except Exception as e:
+                    logger.warning(f"清理查询缓存失败: {e}")
+            
+            # 7. 清理层次化检索器
+            if self.hierarchical_retriever:
+                try:
+                    # 重置聚类状态
+                    if hasattr(self.hierarchical_retriever, 'stats'):
+                        self.hierarchical_retriever.stats = {
+                            "total_documents": 0,
+                            "total_clusters": 0,
+                            "last_cluster_update": 0
+                        }
+                    logger.info("层次化检索器状态已重置")
+                except Exception as e:
+                    logger.warning(f"重置层次化检索器失败: {e}")
+            
+            # 8. 重置统计信息
+            self.stats = {
+                "search_count": 0,
+                "cache_hits": 0,
+                "error_count": 0,
+                "last_error": None,
+            }
+            
+            elapsed_time = time.time() - start_time
+            total_deleted = sum(deleted_counts.values())
+            
+            logger.info(
+                f"向量存储清空完成: 删除了 {total_deleted} 个条目 "
+                f"(文档: {deleted_counts['documents']}, 向量: {deleted_counts['vectors']}, "
+                f"词条: {deleted_counts['terms']}, 索引: {deleted_counts['indices']}), "
+                f"耗时: {elapsed_time:.3f}秒"
+            )
+            
+            return {
+                "success": True,
+                "deleted_counts": deleted_counts,
+                "total_deleted": total_deleted,
+                "processing_time": elapsed_time,
+                "message": "向量存储清空成功"
+            }
+            
+        except Exception as e:
+            logger.error(f"清空向量存储失败: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "message": f"向量存储清空失败: {str(e)}"
+            }
+
 
 class IndexManager:
     """索引管理器"""
