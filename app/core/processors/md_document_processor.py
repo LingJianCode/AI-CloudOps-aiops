@@ -890,9 +890,9 @@ class MDDocumentProcessor:
             return "simple"
 
         # 检查结构复杂度
-        has_headers = bool(self.patterns["has_headers"].search(content))
-        has_code_blocks = bool(self.patterns["has_code_blocks"].search(content))
-        has_lists = bool(self.patterns["has_lists"].search(content))
+        has_headers = bool(self.fast_patterns["has_headers"].search(content))
+        has_code_blocks = bool(self.fast_patterns["has_code_blocks"].search(content))
+        has_lists = bool(self.fast_patterns["has_lists"].search(content))
 
         complexity_score = sum([has_headers, has_code_blocks, has_lists])
 
