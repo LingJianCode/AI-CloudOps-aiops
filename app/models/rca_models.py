@@ -231,33 +231,66 @@ class RCAAnalyzeRequest(BaseModel):
         }
 
 
-class RCAMetricsRequest(BaseModel):
-    """指标查询请求模型"""
+class RCAMetricsDataRequest(BaseModel):
+    """指标数据查询请求模型"""
 
     namespace: str = Field(..., description="Kubernetes命名空间")
-    start_time: Optional[datetime] = Field(None, description="开始时间")
-    end_time: Optional[datetime] = Field(None, description="结束时间")
+    start_time: Optional[str] = Field(None, description="开始时间 (ISO格式)")
+    end_time: Optional[str] = Field(None, description="结束时间 (ISO格式)")
     metrics: Optional[str] = Field(None, description="逗号分隔的指标名称")
 
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "namespace": "production",
+                "start_time": "2024-01-01T00:00:00Z",
+                "end_time": "2024-01-01T01:00:00Z",
+                "metrics": "container_cpu_usage_seconds_total,container_memory_usage_bytes",
+            }
+        }
 
-class RCAEventsRequest(BaseModel):
-    """事件查询请求模型"""
+
+class RCAEventsDataRequest(BaseModel):
+    """事件数据查询请求模型"""
 
     namespace: str = Field(..., description="Kubernetes命名空间")
-    start_time: Optional[datetime] = Field(None, description="开始时间")
-    end_time: Optional[datetime] = Field(None, description="结束时间")
+    start_time: Optional[str] = Field(None, description="开始时间 (ISO格式)")
+    end_time: Optional[str] = Field(None, description="结束时间 (ISO格式)")
     severity: Optional[str] = Field(None, description="严重程度过滤")
 
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "namespace": "production",
+                "start_time": "2024-01-01T00:00:00Z",
+                "end_time": "2024-01-01T01:00:00Z",
+                "severity": "critical",
+            }
+        }
 
-class RCALogsRequest(BaseModel):
-    """日志查询请求模型"""
+
+class RCALogsDataRequest(BaseModel):
+    """日志数据查询请求模型"""
 
     namespace: str = Field(..., description="Kubernetes命名空间")
-    start_time: Optional[datetime] = Field(None, description="开始时间")
-    end_time: Optional[datetime] = Field(None, description="结束时间")
+    start_time: Optional[str] = Field(None, description="开始时间 (ISO格式)")
+    end_time: Optional[str] = Field(None, description="结束时间 (ISO格式)")
     pod_name: Optional[str] = Field(None, description="Pod名称")
     error_only: bool = Field(True, description="只返回错误日志")
     max_lines: int = Field(100, le=1000, description="最大日志行数")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "namespace": "production",
+                "start_time": "2024-01-01T00:00:00Z", 
+                "end_time": "2024-01-01T01:00:00Z",
+                "pod_name": "app-pod-1",
+                "error_only": True,
+                "max_lines": 100,
+            }
+        }
+
 
 
 class RCAQuickDiagnosisRequest(BaseModel):
@@ -280,7 +313,19 @@ class RCAErrorSummaryRequest(BaseModel):
     hours: float = Field(1.0, ge=0.1, le=24, description="分析时间范围（小时）")
 
 
-# 响应模型
+class RCAClearNamespaceCacheRequest(BaseModel):
+    """清理命名空间缓存请求模型"""
+
+    namespace: str = Field(..., description="Kubernetes命名空间")
+
+
+class RCAClearOperationCacheRequest(BaseModel):
+    """清理操作缓存请求模型"""
+
+    operation: str = Field(..., description="操作类型")
+
+
+# API响应模型
 class RCAAnalysisResponse(BaseModel):
     """根因分析响应模型"""
 
@@ -294,6 +339,81 @@ class RCAAnalysisResponse(BaseModel):
     recommendations: List[str] = []
     confidence_score: float = 0.0
     status: str = "completed"
+
+
+class RCADataResponse(BaseModel):
+    """数据查询通用响应模型"""
+
+    namespace: str
+    items: List[Dict[str, Any]]
+    total: int
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    query_params: Dict[str, Any] = {}
+    timestamp: str
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "namespace": "production", 
+                "items": [{"name": "cpu_usage", "values": [{"timestamp": "2024-01-01T00:00:00Z", "value": 0.5}]}],
+                "total": 1,
+                "start_time": "2024-01-01T00:00:00Z",
+                "end_time": "2024-01-01T01:00:00Z",
+                "query_params": {"metrics": "cpu_usage"},
+                "timestamp": "2024-01-01T01:00:00Z",
+            }
+        }
+
+
+class RCACacheStatsResponse(BaseModel):
+    """缓存统计响应模型"""
+
+    available: bool
+    healthy: Optional[bool] = None
+    cache_prefix: Optional[str] = None
+    default_ttl: Optional[int] = None
+    hit_rate: Optional[float] = None
+    total_keys: Optional[int] = None
+    memory_usage: Optional[str] = None
+    timestamp: str
+    message: Optional[str] = None
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "available": True,
+                "healthy": True,
+                "cache_prefix": "rca_cache:",
+                "default_ttl": 1800,
+                "hit_rate": 0.85,
+                "total_keys": 150,
+                "memory_usage": "2.5MB",
+                "timestamp": "2024-01-01T01:00:00Z",
+                "message": "缓存运行正常",
+            }
+        }
+
+
+class RCAClearCacheResponse(BaseModel):
+    """清理缓存响应模型"""
+
+    success: bool
+    message: str
+    cleared_count: int
+    operation: Optional[str] = None
+    namespace: Optional[str] = None
+    timestamp: str
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "success": True,
+                "message": "成功清理 50 个缓存项",
+                "cleared_count": 50,
+                "timestamp": "2024-01-01T01:00:00Z",
+            }
+        }
 
 
 class RCAHealthResponse(BaseModel):

@@ -15,6 +15,9 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
+from fastapi import HTTPException
+
+from ..common.constants import HttpStatusCodes
 from ..common.exceptions import RCAError
 from ..core.rca.events_collector import EventsCollector
 from ..core.rca.logs_collector import LogsCollector
@@ -450,8 +453,34 @@ class RCAService(BaseService, HealthCheckMixin):
                 "timestamp": datetime.now(timezone.utc),
             }
 
+    async def _get_cached_result_with_fallback(
+        self,
+        cache_key: str,
+        fallback_func,
+        ttl: int = 1800,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """
+        带回退策略的缓存获取统一方法
+        """
+        # 尝试从缓存获取
+        cached_result = await self._get_from_cache(cache_key)
+        if cached_result:
+            self.logger.debug(f"缓存命中: {cache_key}")
+            return cached_result
+        
+        # 缓存未命中，执行回退函数
+        self.logger.debug(f"缓存未命中，执行计算: {cache_key}")
+        result = await fallback_func(**kwargs)
+        
+        # 保存到缓存
+        if result:
+            await self._save_to_cache(cache_key, result, ttl)
+            
+        return result
+
     async def quick_diagnosis(self, namespace: str) -> Dict[str, Any]:
-        """快速诊断"""
+        """快速诊断 - 优化版本"""
         try:
             self._ensure_initialized()
 
@@ -462,129 +491,146 @@ class RCAService(BaseService, HealthCheckMixin):
                 time_window_hours=1.0,
             )
 
-            # 尝试从缓存获取结果
-            cached_result = await self._get_from_cache(cache_key)
-            if cached_result:
-                self.logger.info(f"快速诊断缓存命中，直接返回结果: namespace={namespace}")
-                return cached_result
-
-            # 检查依赖服务状态
-            health_checks = await self._gather_health_checks()
-            services_available = any(health_checks.values())
-            
-            if not services_available:
-                self.logger.warning("所有依赖服务不可用，返回降级的诊断结果")
-                return {
-                    "namespace": namespace,
-                    "diagnosis_time": datetime.now(timezone.utc).isoformat(),
-                    "critical_issues": [
-                        {
-                            "type": "service_unavailable",
-                            "severity": "high",
-                            "description": "监控数据服务不可用，无法获取实时状态",
-                            "confidence": 1.0,
-                        }
-                    ],
-                    "recommendations": [
-                        "检查Prometheus服务状态",
-                        "验证Kubernetes集群连接",
-                        "检查Redis缓存服务"
-                    ],
-                    "confidence_score": 0.0,
-                }
-
-            # 执行快速分析（最近1小时）
-            try:
-                analysis_result = await self._engine.analyze(
-                    namespace=namespace, time_window=timedelta(hours=1)
-                )
-            except Exception as analysis_error:
-                self.logger.warning(f"分析引擎执行失败: {str(analysis_error)}, 返回基础诊断结果")
-                return {
-                    "namespace": namespace,
-                    "diagnosis_time": datetime.now(timezone.utc).isoformat(),
-                    "critical_issues": [
-                        {
-                            "type": "analysis_error",
-                            "severity": "medium",
-                            "description": f"分析过程遇到问题: {str(analysis_error)[:100]}",
-                            "confidence": 0.5,
-                        }
-                    ],
-                    "recommendations": [
-                        "检查目标命名空间是否存在",
-                        "验证监控数据是否可用",
-                        "稍后重试诊断"
-                    ],
-                    "confidence_score": 0.3,
-                }
-
-            # 提取关键信息
-            critical_issues = []
-
-            # 获取最严重的根因
-            if analysis_result.root_causes:
-                top_cause = analysis_result.root_causes[0]
-                critical_issues.append(
-                    {
-                        "type": "root_cause",
-                        "severity": "critical",
-                        "description": top_cause.description,
-                        "confidence": top_cause.confidence,
-                    }
-                )
-
-            # 获取关键事件
-            for event in analysis_result.timeline[:5]:
-                if event.get("severity") in ["critical", "high"]:
-                    critical_issues.append(
-                        {
-                            "type": "event",
-                            "severity": event["severity"],
-                            "description": event["description"],
-                            "timestamp": event["timestamp"],
-                        }
-                    )
-
-            result = {
-                "namespace": namespace,
-                "diagnosis_time": datetime.now(timezone.utc).isoformat(),
-                "critical_issues": critical_issues,
-                "recommendations": analysis_result.recommendations[:3] if hasattr(analysis_result, 'recommendations') else [],
-                "confidence_score": analysis_result.confidence_score if hasattr(analysis_result, 'confidence_score') else 0.8,
-            }
-
-            # 保存到缓存（15分钟缓存，快速诊断需要更快的更新）
-            await self._save_to_cache(cache_key, result, ttl=900)
-
-            return result
+            # 使用统一的缓存处理方法
+            return await self._get_cached_result_with_fallback(
+                cache_key=cache_key,
+                fallback_func=self._perform_quick_diagnosis,
+                ttl=900,  # 15分钟缓存
+                namespace=namespace
+            )
 
         except Exception as e:
             self.logger.error(f"快速诊断失败: {str(e)}")
             # 返回基础错误信息而不是抛出异常
-            return {
-                "namespace": namespace,
-                "diagnosis_time": datetime.now(timezone.utc).isoformat(),
-                "critical_issues": [
+            return self._build_error_diagnosis_result(namespace, str(e))
+
+    async def _perform_quick_diagnosis(self, namespace: str) -> Dict[str, Any]:
+        """
+        执行快速诊断的具体逻辑（从原quick_diagnosis方法提取）
+        """
+        # 检查依赖服务状态
+        health_checks = await self._gather_health_checks()
+        services_available = any(health_checks.values())
+        
+        if not services_available:
+            self.logger.warning("所有依赖服务不可用，返回降级的诊断结果")
+            return self._build_degraded_diagnosis_result(namespace)
+
+        # 执行快速分析（最近1小时）
+        try:
+            analysis_result = await self._engine.analyze(
+                namespace=namespace, time_window=timedelta(hours=1)
+            )
+        except Exception as analysis_error:
+            self.logger.warning(f"分析引擎执行失败: {str(analysis_error)}, 返回基础诊断结果")
+            return self._build_analysis_error_diagnosis_result(namespace, str(analysis_error))
+
+        return self._build_diagnosis_result_from_analysis(namespace, analysis_result)
+
+    def _build_error_diagnosis_result(self, namespace: str, error_message: str) -> Dict[str, Any]:
+        """构建错误诊断结果"""
+        return {
+            "namespace": namespace,
+            "diagnosis_time": datetime.now(timezone.utc).isoformat(),
+            "critical_issues": [
+                {
+                    "type": "system_error",
+                    "severity": "high", 
+                    "description": f"快速诊断系统遇到未预期的错误: {error_message[:100]}",
+                    "confidence": 0.0,
+                }
+            ],
+            "recommendations": [
+                "联系系统管理员",
+                "检查服务日志获取详细信息",
+                "稍后重试"
+            ],
+            "confidence_score": 0.0,
+        }
+
+    def _build_degraded_diagnosis_result(self, namespace: str) -> Dict[str, Any]:
+        """构建服务降级时的诊断结果"""
+        return {
+            "namespace": namespace,
+            "diagnosis_time": datetime.now(timezone.utc).isoformat(),
+            "critical_issues": [
+                {
+                    "type": "service_unavailable",
+                    "severity": "high",
+                    "description": "监控数据服务不可用，无法获取实时状态",
+                    "confidence": 1.0,
+                }
+            ],
+            "recommendations": [
+                "检查Prometheus服务状态",
+                "验证Kubernetes集群连接",
+                "检查Redis缓存服务"
+            ],
+            "confidence_score": 0.0,
+        }
+
+    def _build_analysis_error_diagnosis_result(self, namespace: str, error_message: str) -> Dict[str, Any]:
+        """构建分析错误时的诊断结果"""
+        return {
+            "namespace": namespace,
+            "diagnosis_time": datetime.now(timezone.utc).isoformat(),
+            "critical_issues": [
+                {
+                    "type": "analysis_error",
+                    "severity": "medium",
+                    "description": f"分析过程遇到问题: {error_message[:100]}",
+                    "confidence": 0.5,
+                }
+            ],
+            "recommendations": [
+                "检查目标命名空间是否存在",
+                "验证监控数据是否可用",
+                "稍后重试诊断"
+            ],
+            "confidence_score": 0.3,
+        }
+
+    def _build_diagnosis_result_from_analysis(self, namespace: str, analysis_result) -> Dict[str, Any]:
+        """从分析结果构建诊断结果"""
+        # 提取关键信息
+        critical_issues = []
+
+        # 获取最严重的根因
+        if analysis_result.root_causes:
+            top_cause = analysis_result.root_causes[0]
+            critical_issues.append(
+                {
+                    "type": "root_cause",
+                    "severity": "critical",
+                    "description": top_cause.description,
+                    "confidence": top_cause.confidence,
+                }
+            )
+
+        # 获取关键事件
+        for event in analysis_result.timeline[:5]:
+            if event.get("severity") in ["critical", "high"]:
+                critical_issues.append(
                     {
-                        "type": "system_error",
-                        "severity": "high", 
-                        "description": f"快速诊断系统遇到未预期的错误: {str(e)[:100]}",
-                        "confidence": 0.0,
+                        "type": "event",
+                        "severity": event["severity"],
+                        "description": event["description"],
+                        "timestamp": event["timestamp"],
                     }
-                ],
-                "recommendations": [
-                    "联系系统管理员",
-                    "检查服务日志获取详细信息",
-                    "稍后重试"
-                ],
-                "confidence_score": 0.0,
-            }
+                )
+
+        return {
+            "namespace": namespace,
+            "diagnosis_time": datetime.now(timezone.utc).isoformat(),
+            "critical_issues": critical_issues,
+            "recommendations": analysis_result.recommendations[:3] if hasattr(analysis_result, 'recommendations') else [],
+            "confidence_score": analysis_result.confidence_score if hasattr(analysis_result, 'confidence_score') else 0.8,
+        }
 
     async def get_event_patterns(
         self, namespace: str, hours: float = 1.0
     ) -> Dict[str, Any]:
-        """获取事件模式分析"""
+        """获取事件模式分析 - 优化版本"""
         try:
             self._ensure_initialized()
 
@@ -595,29 +641,29 @@ class RCAService(BaseService, HealthCheckMixin):
                 time_window_hours=hours,
             )
 
-            # 尝试从缓存获取结果
-            cached_result = await self._get_from_cache(cache_key)
-            if cached_result:
-                self.logger.info(f"事件模式分析缓存命中，直接返回结果: namespace={namespace}")
-                return cached_result
-
-            # 时间范围
-            end_time = datetime.now(timezone.utc)
-            start_time = end_time - timedelta(hours=hours)
-
-            # 获取事件模式
-            patterns = await self._events_collector.get_event_patterns(
-                namespace=namespace, start_time=start_time, end_time=end_time
+            # 使用统一的缓存处理方法
+            return await self._get_cached_result_with_fallback(
+                cache_key=cache_key,
+                fallback_func=self._perform_event_patterns_analysis,
+                ttl=1200,  # 20分钟缓存
+                namespace=namespace,
+                hours=hours
             )
-
-            # 保存到缓存（20分钟缓存）
-            await self._save_to_cache(cache_key, patterns, ttl=1200)
-
-            return patterns
 
         except Exception as e:
             self.logger.error(f"获取事件模式失败: {str(e)}")
             raise RCAError(f"获取事件模式失败: {str(e)}")
+
+    async def _perform_event_patterns_analysis(self, namespace: str, hours: float) -> Dict[str, Any]:
+        """执行事件模式分析的具体逻辑"""
+        # 时间范围
+        end_time = datetime.now(timezone.utc)
+        start_time = end_time - timedelta(hours=hours)
+
+        # 获取事件模式
+        return await self._events_collector.get_event_patterns(
+            namespace=namespace, start_time=start_time, end_time=end_time
+        )
 
     async def get_error_summary(
         self, namespace: str, hours: float = 1.0
@@ -633,31 +679,31 @@ class RCAService(BaseService, HealthCheckMixin):
                 time_window_hours=hours,
             )
 
-            # 尝试从缓存获取结果
-            cached_result = await self._get_from_cache(cache_key)
-            if cached_result:
-                self.logger.info(f"错误摘要缓存命中，直接返回结果: namespace={namespace}")
-                return cached_result
-
-            # 获取错误摘要
-            summary = await self._logs_collector.get_error_summary(
-                namespace=namespace, time_window=timedelta(hours=hours)
+            # 使用统一的缓存处理方法
+            return await self._get_cached_result_with_fallback(
+                cache_key=cache_key,
+                fallback_func=self._perform_error_summary_analysis,
+                ttl=1200,  # 20分钟缓存
+                namespace=namespace,
+                hours=hours
             )
-
-            # 保存到缓存（20分钟缓存）
-            await self._save_to_cache(cache_key, summary, ttl=1200)
-
-            return summary
 
         except Exception as e:
             self.logger.error(f"获取错误摘要失败: {str(e)}")
             raise RCAError(f"获取错误摘要失败: {str(e)}")
 
+    async def _perform_error_summary_analysis(self, namespace: str, hours: float) -> Dict[str, Any]:
+        """执行错误摘要分析的具体逻辑"""
+        # 获取错误摘要
+        return await self._logs_collector.get_error_summary(
+            namespace=namespace, time_window=timedelta(hours=hours)
+        )
+
     async def cache_analysis_result(self, result: Any) -> None:
         """缓存分析结果（后台任务）"""
         try:
-            # 这里可以实现缓存逻辑
-            self.logger.info("分析结果已缓存")
+            # 记录分析结果已缓存（背景任务无需实际处理结果）
+            self.logger.info(f"分析结果已记录: {type(result).__name__}")
         except Exception as e:
             self.logger.error(f"缓存分析结果失败: {str(e)}")
 
@@ -1098,3 +1144,58 @@ class RCAService(BaseService, HealthCheckMixin):
         except Exception as e:
             self.logger.error(f"RCA服务资源清理失败: {str(e)}")
             raise
+
+    # 业务逻辑工具方法（从API层迁移）
+    def parse_iso_timestamp(self, timestamp_str: Optional[str], field_name: str) -> Optional[datetime]:
+        """
+        解析ISO格式时间戳的统一工具方法
+        
+        Args:
+            timestamp_str: 时间戳字符串
+            field_name: 字段名称用于错误提示
+            
+        Returns:
+            解析后的datetime对象或None
+            
+        Raises:
+            HTTPException: 时间格式错误时抛出
+        """
+        if not timestamp_str:
+            return None
+        
+        try:
+            return datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+        except ValueError:
+            raise HTTPException(
+                status_code=HttpStatusCodes.BAD_REQUEST,
+                detail=f"无效的{field_name}格式，请使用ISO格式"
+            )
+
+    def handle_service_error(self, operation: str, error: Exception) -> None:
+        """
+        统一的服务异常处理方法
+        
+        Args:
+            operation: 操作名称
+            error: 异常对象
+            
+        Raises:
+            HTTPException: 处理后的HTTP异常
+        """
+        error_message = f"{operation}失败: {str(error)}"
+        self.logger.error(error_message, exc_info=True)
+        
+        # 根据异常类型判断HTTP状态码
+        if isinstance(error, ValueError):
+            status_code = HttpStatusCodes.BAD_REQUEST
+        elif isinstance(error, ConnectionError):
+            status_code = HttpStatusCodes.SERVICE_UNAVAILABLE
+        elif isinstance(error, TimeoutError):
+            status_code = HttpStatusCodes.REQUEST_TIMEOUT
+        else:
+            status_code = HttpStatusCodes.INTERNAL_SERVER_ERROR
+        
+        raise HTTPException(
+            status_code=status_code,
+            detail=error_message,
+        )

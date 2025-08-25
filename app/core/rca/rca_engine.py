@@ -147,8 +147,10 @@ class RCAAnalysisEngine:
         time_window: timedelta = timedelta(hours=1),
         metrics: Optional[List[str]] = None,
     ) -> RootCauseAnalysis:
-        """执行根因分析"""
-        # 确定时间范围 - 总是使用当前时间作为结束时间
+        """
+        执行根因分析
+        """
+        # 确定时间范围
         end_time = datetime.now(timezone.utc)
         start_time = end_time - time_window
 
@@ -158,10 +160,93 @@ class RCAAnalysisEngine:
         )
 
         # 并行收集三种数据
-        metrics, events, logs = await self._collect_all_data(
+        metrics_data, events_data, logs_data = await self._collect_all_data(
             namespace, start_time, end_time, metrics
         )
 
+        # 记录数据收集情况
+        self._log_data_collection_summary(metrics_data, events_data, logs_data)
+
+        # 执行多维度分析
+        analysis_results = await self._perform_multi_dimensional_analysis(
+            metrics_data, events_data, logs_data
+        )
+
+        # 关联分析
+        correlations = self._correlate_data(
+            analysis_results['metrics'], 
+            analysis_results['events'], 
+            analysis_results['logs'],
+            start_time, 
+            end_time
+        )
+
+        # 识别根因
+        root_causes = self._identify_root_causes(
+            analysis_results['metrics'], 
+            analysis_results['events'], 
+            analysis_results['logs'], 
+            correlations
+        )
+
+        # 记录根因识别结果
+        self._log_root_cause_analysis_results(root_causes)
+
+        # 生成时间线
+        timeline = self._build_timeline(metrics_data, events_data, logs_data)
+
+        # 生成建议 (现在是异步的)
+        recommendations = await self._generate_recommendations(root_causes)
+
+        # 计算数据完整性
+        data_completeness = self._calculate_data_completeness(metrics_data, events_data, logs_data)
+
+        # 生成分析报告 (使用LLM)
+        analysis_report = await self._generate_analysis_report(
+            metrics_data, events_data, logs_data, root_causes, data_completeness
+        )
+        
+        # 整合异常数据
+        anomalies = {
+            "metrics": analysis_results['metrics'],
+            "events": analysis_results['events'],
+            "logs": analysis_results['logs']
+        }
+
+        return RootCauseAnalysis(
+            timestamp=datetime.now(timezone.utc),
+            namespace=namespace,
+            root_causes=root_causes,
+            anomalies=anomalies,
+            correlations=correlations,
+            timeline=timeline,
+            recommendations=recommendations,
+            confidence_score=self._calculate_confidence(root_causes),
+            analysis_metadata={
+                "start_time": start_time.isoformat(),
+                "end_time": end_time.isoformat(),
+                "metrics_analyzed": len(metrics_data),
+                "events_analyzed": len(events_data),
+                "logs_analyzed": len(logs_data),
+                "data_completeness": data_completeness,
+                "analysis_report": analysis_report,
+            },
+        )
+
+    def _log_data_collection_summary(
+        self, 
+        metrics: List[MetricData], 
+        events: List[EventData], 
+        logs: List[LogData]
+    ) -> None:
+        """
+        记录数据收集的摘要信息
+        
+        Args:
+            metrics: 收集到的指标数据
+            events: 收集到的事件数据  
+            logs: 收集到的日志数据
+        """
         # 记录收集到的数据量
         self.logger.info(
             f"数据收集完成: 指标数={len(metrics)}, 事件数={len(events)}, 日志数={len(logs)}"
@@ -173,7 +258,8 @@ class RCAAnalysisEngine:
             self.logger.info(f"收集到的指标: {metric_names}")
             for metric in metrics[:3]:  # 记录前3个指标的详细信息
                 self.logger.debug(
-                    f"指标 {metric.name}: 值数量={len(metric.values)}, 异常分数={metric.anomaly_score:.2f}, 趋势={metric.trend}"
+                    f"指标 {metric.name}: 值数量={len(metric.values)}, "
+                    f"异常分数={metric.anomaly_score:.2f}, 趋势={metric.trend}"
                 )
         else:
             self.logger.warning("未收集到任何指标数据")
@@ -181,8 +267,7 @@ class RCAAnalysisEngine:
         # 记录关键事件
         if events:
             critical_events = [
-                e
-                for e in events
+                e for e in events
                 if e.severity in [SeverityLevel.CRITICAL, SeverityLevel.HIGH]
             ]
             self.logger.info(f"关键事件数: {len(critical_events)}/{len(events)}")
@@ -200,6 +285,23 @@ class RCAAnalysisEngine:
         else:
             self.logger.warning("未收集到任何日志数据")
 
+    async def _perform_multi_dimensional_analysis(
+        self, 
+        metrics: List[MetricData], 
+        events: List[EventData], 
+        logs: List[LogData]
+    ) -> Dict[str, Dict[str, Any]]:
+        """
+        执行多维度分析的统一方法
+        
+        Args:
+            metrics: 指标数据
+            events: 事件数据
+            logs: 日志数据
+            
+        Returns:
+            包含各维度分析结果的字典
+        """
         # 执行多维度分析
         analysis_results = await asyncio.gather(
             self._analyze_metrics_anomalies(metrics),
@@ -208,98 +310,49 @@ class RCAAnalysisEngine:
             return_exceptions=True,
         )
 
-        # 处理分析结果
-        metric_anomalies = (
-            analysis_results[0]
-            if not isinstance(analysis_results[0], Exception)
-            else {}
-        )
-        event_patterns = (
-            analysis_results[1]
-            if not isinstance(analysis_results[1], Exception)
-            else {}
-        )
-        log_patterns = (
-            analysis_results[2]
-            if not isinstance(analysis_results[2], Exception)
-            else {}
-        )
+        # 处理分析结果和异常
+        metric_anomalies = self._handle_analysis_result(analysis_results[0], "指标分析")
+        event_patterns = self._handle_analysis_result(analysis_results[1], "事件分析") 
+        log_patterns = self._handle_analysis_result(analysis_results[2], "日志分析")
 
-        # 记录分析结果
+        # 记录分析结果摘要
         self.logger.info(
             f"分析结果: 指标异常={len(metric_anomalies.get('high_anomaly_metrics', []))}, "
             f"关键事件={len(event_patterns.get('critical_events', []))}, "
             f"错误类型={len(log_patterns.get('error_types', {}))}"
         )
 
-        # 记录异常处理
-        for i, result in enumerate(analysis_results):
-            if isinstance(result, Exception):
-                analysis_names = ["指标分析", "事件分析", "日志分析"]
-                self.logger.error(f"{analysis_names[i]}失败: {str(result)}")
+        return {
+            'metrics': metric_anomalies,
+            'events': event_patterns,
+            'logs': log_patterns
+        }
 
-        # 关联分析
-        correlations = self._correlate_data(
-            metric_anomalies, event_patterns, log_patterns, start_time, end_time
-        )
+    def _handle_analysis_result(self, result: Any, analysis_name: str) -> Dict[str, Any]:
+        """
+        处理分析结果，统一异常处理
+        """
+        if isinstance(result, Exception):
+            self.logger.error(f"{analysis_name}失败: {str(result)}")
+            return {}
+        return result
 
-        # 识别根因
-        root_causes = self._identify_root_causes(
-            metric_anomalies, event_patterns, log_patterns, correlations
-        )
-
+    def _log_root_cause_analysis_results(self, root_causes: List[RootCause]) -> None:
+        """
+        记录根因分析结果的摘要
+        """
         # 记录根因识别结果
         self.logger.info(f"根因识别完成: 发现 {len(root_causes)} 个根因")
         for i, cause in enumerate(root_causes):
             self.logger.info(
-                f"根因 {i+1}: {cause.cause_type} (置信度: {cause.confidence:.2f}) - {cause.description}"
+                f"根因 {i+1}: {cause.cause_type} "
+                f"(置信度: {cause.confidence:.2f}) - {cause.description}"
             )
 
         if not root_causes:
             self.logger.warning(
                 "未识别到任何根因，可能原因：1)数据不足 2)没有明显异常 3)异常模式未知"
             )
-
-        # 生成时间线
-        timeline = self._build_timeline(metrics, events, logs)
-
-        # 生成建议 (现在是异步的)
-        recommendations = await self._generate_recommendations(root_causes)
-
-        # 计算数据完整性
-        data_completeness = self._calculate_data_completeness(metrics, events, logs)
-
-        # 生成分析报告 (使用LLM)
-        analysis_report = await self._generate_analysis_report(
-            metrics, events, logs, root_causes, data_completeness
-        )
-        
-        # 整合异常数据
-        anomalies = {
-            "metrics": metric_anomalies,
-            "events": event_patterns,
-            "logs": log_patterns
-        }
-
-        return RootCauseAnalysis(
-            timestamp=datetime.now(timezone.utc),
-            namespace=namespace,
-            root_causes=root_causes,
-            anomalies=anomalies,
-            correlations=correlations,
-            timeline=timeline,
-            recommendations=recommendations,
-            confidence_score=self._calculate_confidence(root_causes),
-            analysis_metadata={
-                "start_time": start_time.isoformat(),
-                "end_time": end_time.isoformat(),
-                "metrics_analyzed": len(metrics),
-                "events_analyzed": len(events),
-                "logs_analyzed": len(logs),
-                "data_completeness": data_completeness,
-                "analysis_report": analysis_report,
-            },
-        )
 
     async def _collect_all_data(
         self,
@@ -871,10 +924,12 @@ class RCAAnalysisEngine:
         metric_anomalies: Dict[str, Any],
         event_patterns: Dict[str, Any],
         log_patterns: Dict[str, Any],
-        start_time: datetime = None,
-        end_time: datetime = None,
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None,
     ) -> Optional[CorrelationResult]:
-        """查找时间相关性"""
+        """
+        查找时间相关性
+        """
         # 简化实现 - 实际应该使用更复杂的时间序列分析
         evidence = []
 
@@ -902,8 +957,10 @@ class RCAAnalysisEngine:
             
             # 添加关键事件到时间线
             for event in event_patterns.get("critical_events", [])[:5]:  # 限制数量
+                event_time = event.get("timestamp", 
+                                     (end_time if end_time else datetime.now(timezone.utc)).isoformat())
                 timeline.append({
-                    "timestamp": event.get("timestamp", datetime.now(timezone.utc).isoformat()),
+                    "timestamp": event_time,
                     "type": "critical_event",
                     "description": f"{event.get('reason', '')}: {event.get('message', '')[:100]}",
                     "severity": event.get("severity", "high")
@@ -927,7 +984,9 @@ class RCAAnalysisEngine:
         event_patterns: Dict[str, Any],
         log_patterns: Dict[str, Any],
     ) -> Optional[CorrelationResult]:
-        """查找组件相关性"""
+        """
+        查找组件相关性
+        """
         # 提取所有涉及的组件
         components = defaultdict(list)
 
@@ -943,6 +1002,12 @@ class RCAAnalysisEngine:
             for error in error_list:
                 if error.get("pod"):
                     components[f"Pod/{error['pod']}"].append("log")
+
+        # 从指标异常中提取（使用参数）
+        for metric in metric_anomalies.get("high_anomaly_metrics", []):
+            labels = metric.get("labels", {})
+            if labels.get("pod"):
+                components[f"Pod/{labels['pod']}"].append("metric")
 
         # 查找多数据源都涉及的组件
         multi_source_components = [
@@ -979,26 +1044,44 @@ class RCAAnalysisEngine:
         event_patterns: Dict[str, Any],
         log_patterns: Dict[str, Any],
     ) -> Optional[CorrelationResult]:
-        """识别因果链"""
+        """
+        识别因果链
+        """
         # 简化的因果链检测
         chain = []
 
         # 检查常见的因果模式
         # 例如：资源不足 -> 调度失败 -> 服务不可用
+
+        # 1. 检查资源不足（从事件和指标中）
+        resource_insufficient = False
+        
+        # 从事件检查资源不足
         if any(
-            "InsufficientMemory" in e.get("reason", "")
+            "InsufficientMemory" in e.get("reason", "") or "InsufficientCPU" in e.get("reason", "")
             for e in event_patterns.get("critical_events", [])
         ):
+            resource_insufficient = True
             chain.append("资源不足")
+        
+        # 从指标检查资源不足
+        elif any(
+            "memory" in metric.get("name", "").lower() and metric.get("score", 0) > 0.8
+            for metric in metric_anomalies.get("high_anomaly_metrics", [])
+        ):
+            resource_insufficient = True
+            chain.append("内存资源紧张")
 
-            if any(
-                "FailedScheduling" in e.get("reason", "")
-                for e in event_patterns.get("critical_events", [])
-            ):
-                chain.append("调度失败")
+        # 2. 检查调度失败
+        if resource_insufficient and any(
+            "FailedScheduling" in e.get("reason", "")
+            for e in event_patterns.get("critical_events", [])
+        ):
+            chain.append("调度失败")
 
-                if log_patterns.get("error_frequency"):
-                    chain.append("服务异常")
+            # 3. 检查服务异常
+            if log_patterns.get("error_frequency"):
+                chain.append("服务异常")
 
         if len(chain) >= 2:
             # 构建因果链时间线
