@@ -308,13 +308,23 @@ class ClusterManager:
         cluster_scores = []
 
         for cluster in self.clusters:
-            if cluster.size >= self.min_cluster_size:
+            # 如果总聚类数量不多，放宽size要求
+            min_size_threshold = (
+                max(1, self.min_cluster_size // 2) 
+                if len(self.clusters) < 5 
+                else self.min_cluster_size
+            )
+            
+            if cluster.size >= min_size_threshold:
                 similarity = self._cosine_similarity(query_embedding, cluster.centroid)
                 combined_score = similarity * 0.7 + cluster.quality_score * 0.3
                 cluster_scores.append((cluster, combined_score))
 
         cluster_scores.sort(key=lambda x: x[1], reverse=True)
-        return [cluster for cluster, _ in cluster_scores[:k]]
+        selected_clusters = [cluster for cluster, _ in cluster_scores[:k]]
+        
+        logger.debug(f"获取聚类结果: 总聚类数={len(self.clusters)}, 符合条件={len(cluster_scores)}, 返回={len(selected_clusters)}")
+        return selected_clusters
 
     def _cosine_similarity(self, vec1: np.ndarray, vec2: np.ndarray) -> float:
         """计算余弦相似度"""

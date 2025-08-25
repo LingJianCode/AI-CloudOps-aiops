@@ -599,25 +599,28 @@ class EnhancedRedisVectorStore:
         start_time = time.time()
 
         try:
+            logger.info(f"开始文档搜索: query='{query[:50]}...', k={k}, threshold={config.similarity_threshold}")
+            logger.debug(f"搜索配置: {config.__dict__}")
+            
             # 检查缓存
             if config.use_cache:
                 cache_key = self._get_search_cache_key(query, k, config)
                 cached = self.query_cache.get(cache_key)
                 if cached:
                     self.stats["cache_hits"] += 1
-                    logger.debug(f"搜索缓存命中: {query[:50]}...")
+                    logger.info(f"搜索缓存命中，返回 {len(cached)} 个结果")
                     return cached
 
             # 智能选择检索策略
             use_hierarchical = self._should_use_hierarchical_retrieval(config)
 
             if use_hierarchical and self.hierarchical_retriever:
-                logger.debug(f"使用层次化检索: {query[:50]}...")
+                logger.info(f"使用层次化检索策略")
                 results = await self._hierarchical_search_with_fallback(
                     query, k, config
                 )
             else:
-                logger.debug(f"使用标准检索: {query[:50]}...")
+                logger.info(f"使用标准检索策略")
                 results = await self._standard_search(query, k, config)
 
             # 缓存结果
@@ -625,9 +628,16 @@ class EnhancedRedisVectorStore:
                 self.query_cache.set(cache_key, results, config.cache_ttl)
 
             elapsed_time = time.time() - start_time
-            logger.debug(
-                f"搜索完成，返回 {len(results)} 个结果，耗时: {elapsed_time:.3f}秒"
+            logger.info(
+                f"搜索完成: 返回 {len(results)} 个结果，耗时 {elapsed_time:.3f}秒"
             )
+            
+            # 输出结果详情（仅在DEBUG级别）
+            if logger.isEnabledFor(logging.DEBUG) and results:
+                for i, (doc, score) in enumerate(results):
+                    content_preview = doc.page_content[:100].replace('\n', ' ')
+                    logger.debug(f"结果 {i+1}: score={score:.4f}, content='{content_preview}...'")
+                    
             return results
 
         except Exception as e:
@@ -639,6 +649,7 @@ class EnhancedRedisVectorStore:
     def _should_use_hierarchical_retrieval(self, config: SearchConfig) -> bool:
         """判断是否应该使用层次化检索"""
         if not config.use_hierarchical_retrieval or not self.hierarchical_retriever:
+            logger.debug("层次化检索未启用或不可用")
             return False
 
         if not config.auto_switch_retrieval:
@@ -647,11 +658,16 @@ class EnhancedRedisVectorStore:
         # 检查文档数量阈值
         try:
             doc_count = self.hierarchical_retriever.stats.get("total_documents", 0)
-            if doc_count >= config.hierarchical_threshold:
+            cluster_count = self.hierarchical_retriever.stats.get("total_clusters", 0)
+            logger.debug(f"层次化检索状态检查: 文档数={doc_count}, 聚类数={cluster_count}, 阈值={config.hierarchical_threshold}")
+            
+            # 需要有足够的文档和至少一个聚类才能使用层次化检索
+            if doc_count >= config.hierarchical_threshold and cluster_count > 0:
                 return True
-        except:
-            pass
-
+        except Exception as e:
+            logger.warning(f"检查层次化检索状态失败: {e}")
+            
+        logger.debug("不满足层次化检索条件，使用标准检索")
         return False
 
     async def _hierarchical_search_with_fallback(
@@ -715,6 +731,8 @@ class EnhancedRedisVectorStore:
         self, query: str, query_vector: np.ndarray, k: int, config: SearchConfig
     ) -> List[Tuple[Document, float]]:
         """混合搜索"""
+        logger.debug(f"开始混合搜索: k={k}, semantic_weight={config.semantic_weight}, lexical_weight={config.lexical_weight}")
+        
         # 并行执行语义和词汇搜索
         semantic_task = asyncio.create_task(self._semantic_search(query_vector, k))
         lexical_task = asyncio.create_task(self._lexical_search(query, k))
@@ -722,15 +740,20 @@ class EnhancedRedisVectorStore:
         semantic_results, lexical_results = await asyncio.gather(
             semantic_task, lexical_task
         )
+        
+        logger.debug(f"搜索阶段结果: 语义搜索={len(semantic_results)}, 词汇搜索={len(lexical_results)}")
 
         # 融合结果
-        return self._fuse_results(
+        fused_results = self._fuse_results(
             semantic_results,
             lexical_results,
             config.semantic_weight,
             config.lexical_weight,
             config.similarity_threshold,
         )
+        
+        logger.debug(f"混合搜索完成: 融合后结果数={len(fused_results)}")
+        return fused_results
 
     async def _semantic_search(
         self, query_vector: np.ndarray, k: int
@@ -817,11 +840,14 @@ class EnhancedRedisVectorStore:
 
         # 排序和过滤
         results = []
+        # 对于低分结果，使用更宽松的阈值避免过度过滤
+        adaptive_threshold = max(threshold * 0.5, 0.1)  # 自适应阈值，最低0.1
         for doc_id, score in doc_scores.items():
-            if score >= threshold:
+            if score >= adaptive_threshold:
                 results.append((doc_map[doc_id], score))
 
         results.sort(key=lambda x: x[1], reverse=True)
+        logger.debug(f"融合搜索结果: 原始阈值={threshold:.3f}, 自适应阈值={adaptive_threshold:.3f}, 结果数={len(results)}")
         return results
 
     def _mmr_rerank(
@@ -964,7 +990,7 @@ class EnhancedRedisVectorStore:
             pattern = f"{self.collection_name}:vec:*"
             cursor = 0
             top_k = []  # (sim, doc_id)
-            threshold = 0.1
+            threshold = 0.05  # 降低阈值以提高召回率
 
             while True:
                 cursor, keys = await asyncio.to_thread(

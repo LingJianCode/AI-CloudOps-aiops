@@ -37,13 +37,13 @@ class QueryType(Enum):
 
 @dataclass
 class RetrievalStrategy:
-    base_similarity: float = 0.5
-    min_similarity: float = 0.3
-    initial_k: int = 20
-    final_k: int = 5
+    base_similarity: float = 0.7
+    min_similarity: float = 0.15  # 降低最小相似度阈值，提高召回率
+    initial_k: int = 30  # 增加初始检索数量
+    final_k: int = 8     # 增加最终返回数量
     enable_cache: bool = True
     cache_ttl: int = 3600
-    diversity_threshold: float = 0.7
+    diversity_threshold: float = 0.6  # 降低多样性阈值，允许更多相关文档
 
 
 @dataclass
@@ -490,22 +490,22 @@ class RAGAssistant:
 
     def _init_strategy(self) -> RetrievalStrategy:
         """从配置初始化检索策略"""
-        min_similarity = getattr(self.config.rag, "min_similarity", 0.3)
+        min_similarity = getattr(self.config.rag, "min_similarity", 0.15)  # 降低默认阈值
         similarity_threshold = getattr(self.config.rag, "similarity_threshold", 0.2)
         if min_similarity > similarity_threshold:
             logger.info(f"调整相似度阈值: {min_similarity} -> 0.1")
             min_similarity = 0.1
 
         return RetrievalStrategy(
-            base_similarity=getattr(self.config.rag, "base_similarity", 0.5),
+            base_similarity=getattr(self.config.rag, "base_similarity", 0.7),  # 提高基础相似度要求
             min_similarity=min_similarity,
-            initial_k=getattr(self.config.rag, "initial_k", 20),
-            final_k=getattr(self.config.rag, "final_k", self.config.rag.top_k),
+            initial_k=getattr(self.config.rag, "initial_k", 30),  # 增加初始检索数量
+            final_k=getattr(self.config.rag, "final_k", min(8, self.config.rag.top_k * 2)),  # 动态调整最终数量
             enable_cache=getattr(self.config.rag, "enable_cache", True),
             cache_ttl=getattr(
                 self.config.rag, "cache_ttl", self.config.rag.cache_expiry
             ),
-            diversity_threshold=getattr(self.config.rag, "diversity_threshold", 0.7),
+            diversity_threshold=getattr(self.config.rag, "diversity_threshold", 0.6),  # 降低多样性阈值
         )
 
     def _build_graph(self) -> StateGraph:

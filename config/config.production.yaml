@@ -197,7 +197,7 @@ rag:
   chunk_size: 1000 # 文档分块大小
   chunk_overlap: 200 # 分块重叠大小
   top_k: 8 # 检索返回文档数量
-  similarity_threshold: 0.3 # 相似度阈值
+  similarity_threshold: 0.15 # 相似度阈值
   openai_embedding_model: Pro/BAAI/bge-m3 # OpenAI嵌入模型名称
   ollama_embedding_model: nomic-embed-text # Ollama嵌入模型名称
   max_context_length: 4000 # 最大上下文长度
