@@ -549,6 +549,14 @@ class RCAAnalysisEngine:
         if causal_chain:
             correlations.append(causal_chain)
 
+        # 如果没有找到任何关联，添加数据不足的关联信息
+        if not correlations:
+            data_insufficient_correlation = self._create_data_insufficient_correlation(
+                metric_anomalies, event_patterns, log_patterns, start_time, end_time
+            )
+            if data_insufficient_correlation:
+                correlations.append(data_insufficient_correlation)
+
         return correlations
 
     def _identify_root_causes(
@@ -1119,6 +1127,62 @@ class RCAAnalysisEngine:
                 recommendations=["基于关联分析，建议进一步调查相关组件"],
             )
 
+        return None
+
+    def _create_data_insufficient_correlation(
+        self,
+        metric_anomalies: Dict[str, Any],
+        event_patterns: Dict[str, Any],
+        log_patterns: Dict[str, Any],
+        start_time: datetime,
+        end_time: datetime,
+    ) -> Optional[CorrelationResult]:
+        """创建数据不足的关联信息"""
+        # 检查数据可用性
+        has_metrics = bool(metric_anomalies.get("high_anomaly_metrics"))
+        has_events = bool(event_patterns.get("critical_events"))
+        has_logs = bool(log_patterns.get("error_types"))
+        
+        # 如果完全没有数据，返回数据不足的关联
+        if not any([has_metrics, has_events, has_logs]):
+            timeline = [{
+                "timestamp": end_time.isoformat(),
+                "type": "data_insufficient",
+                "description": "分析时间窗口内未发现足够的异常数据",
+                "severity": "low"
+            }]
+            
+            return CorrelationResult(
+                confidence=0.1,  # 低置信度，因为数据不足
+                correlation_type="data_insufficient",
+                evidence=["数据不足 - 未发现足够的异常数据进行分析"],
+                timeline=timeline,
+            )
+        
+        # 如果只有单一数据源有数据，返回单一数据源关联
+        data_sources = []
+        if has_metrics:
+            data_sources.append("指标数据")
+        if has_events:
+            data_sources.append("事件数据")
+        if has_logs:
+            data_sources.append("日志数据")
+        
+        if len(data_sources) == 1:
+            timeline = [{
+                "timestamp": end_time.isoformat(),
+                "type": "single_data_source",
+                "description": f"仅发现{data_sources[0]}，建议收集更多数据源进行分析",
+                "severity": "medium"
+            }]
+            
+            return CorrelationResult(
+                confidence=0.3,  # 中等置信度，因为只有单一数据源
+                correlation_type="single_data_source",
+                evidence=[f"单一数据源 - 仅发现{data_sources[0]}"],
+                timeline=timeline,
+            )
+        
         return None
 
     def _calculate_data_completeness(
