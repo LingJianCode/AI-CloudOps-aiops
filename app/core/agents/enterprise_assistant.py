@@ -39,7 +39,7 @@ class QueryType(Enum):
 @dataclass
 class RetrievalStrategy:
     base_similarity: float = 0.7
-    min_similarity: float = 0.1   # 进一步降低最小相似度阈值，提高召回率
+    min_similarity: float = 0.05   # 降低最小相似度阈值，支持短文档检索
     initial_k: int = 50   # 增加初始检索数量
     final_k: int = 10     # 增加最终返回数量
     enable_cache: bool = True
@@ -688,38 +688,94 @@ class RAGAssistant:
     async def clear_cache(self) -> Dict[str, Any]:
         try:
             cleared_items = 0
+            cache_results = {}
+            
+            # 清理检索器缓存
             if hasattr(self.retriever, "_cache"):
-                cleared_items += len(getattr(self.retriever, "_cache", {}))
+                retriever_cache_count = len(getattr(self.retriever, "_cache", {}))
                 self.retriever._cache.clear()
+                cleared_items += retriever_cache_count
+                cache_results["retriever_cache"] = retriever_cache_count
+                logger.info(f"检索器缓存已清理: {retriever_cache_count} 项")
 
+            # 清理重排器缓存
             if hasattr(self.reranker, "_rerank_cache"):
-                cleared_items += len(getattr(self.reranker, "_rerank_cache", {}))
+                rerank_cache_count = len(getattr(self.reranker, "_rerank_cache", {}))
                 self.reranker._rerank_cache.clear()
+                cleared_items += rerank_cache_count
+                cache_results["reranker_cache"] = rerank_cache_count
+                logger.info(f"重排器缓存已清理: {rerank_cache_count} 项")
 
-            if getattr(self, "vector_store", None) and hasattr(self.vector_store, "query_cache"):
+            # 清理缓存管理器
+            if self.cache_manager:
                 try:
-                    prefix = getattr(self.vector_store.query_cache, "prefix", "query_cache:")
-                    cursor, count = 0, 0
-                    while True:
-                        cursor, keys = self.vector_store.client.scan(
-                            cursor, match=prefix + "*", count=100
-                        )
-                        count += len(keys or [])
-                        if cursor == 0:
-                            break
-                    cleared_items += count
-                    await self.vector_store.query_cache.invalidate_pattern("*")
-                except Exception:
-                    pass
+                    cache_manager_result = self.cache_manager.clear_all()
+                    if cache_manager_result.get("success"):
+                        cache_manager_count = cache_manager_result.get("cleared_count", 0)
+                        cleared_items += cache_manager_count
+                        cache_results["cache_manager"] = cache_manager_count
+                        logger.info(f"缓存管理器已清理: {cache_manager_count} 项")
+                    else:
+                        logger.warning(f"缓存管理器清理失败: {cache_manager_result.get('message')}")
+                        cache_results["cache_manager"] = f"失败: {cache_manager_result.get('message')}"
+                except Exception as cache_mgr_error:
+                    logger.error(f"缓存管理器清理异常: {cache_mgr_error}")
+                    cache_results["cache_manager"] = f"异常: {str(cache_mgr_error)}"
 
+            # 清理向量存储查询缓存
+            if getattr(self, "vector_store", None):
+                try:
+                    if hasattr(self.vector_store, "query_cache") and self.vector_store.query_cache:
+                        await self.vector_store.query_cache.clear()
+                        logger.info("向量存储查询缓存已清理")
+                        cache_results["vector_query_cache"] = "已清理"
+                    else:
+                        cache_results["vector_query_cache"] = "不存在"
+                        
+                    # 清理向量存储统计信息
+                    if hasattr(self.vector_store, "stats"):
+                        self.vector_store.stats = {
+                            "search_count": 0,
+                            "cache_hits": 0,
+                            "error_count": 0,
+                            "last_error": None,
+                        }
+                        logger.info("向量存储统计信息已重置")
+                        cache_results["vector_stats"] = "已重置"
+                        
+                except Exception as vector_error:
+                    logger.error(f"向量存储缓存清理失败: {vector_error}")
+                    cache_results["vector_cache"] = f"失败: {str(vector_error)}"
+
+            # 重置助手统计信息
+            self._stats = {
+                "total_queries": 0,
+                "cache_hits": 0,
+                "successful_queries": 0,
+                "failed_queries": 0,
+            }
+            cache_results["assistant_stats"] = "已重置"
+
+            logger.info(f"缓存清理完成，总计清理 {cleared_items} 项")
+            
             return {
                 "success": True,
-                "message": "缓存已清理",
+                "message": f"缓存清理完成，共清理 {cleared_items} 项",
                 "cleared_items": cleared_items,
+                "details": cache_results,
+                "timestamp": datetime.now().isoformat()
             }
+            
         except Exception as e:
             logger.error(f"清理缓存失败: {e}")
-            return {"success": False, "message": str(e), "cleared_items": 0}
+            import traceback
+            traceback.print_exc()
+            return {
+                "success": False, 
+                "message": f"缓存清理失败: {str(e)}", 
+                "cleared_items": 0,
+                "timestamp": datetime.now().isoformat()
+            }
 
     async def refresh_knowledge_base(self) -> Dict[str, Any]:
         """刷新知识库 - 从文件系统重新加载所有文档"""

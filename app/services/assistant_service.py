@@ -783,6 +783,38 @@ class OptimizedAssistantService(BaseService):
 
             logger.info(f"知识库文件已保存: {file_path}")
 
+            # 立即更新向量索引
+            try:
+                # 准备文档元数据
+                metadata = {
+                    "title": os.path.splitext(final_filename)[0],
+                    "source": "user_upload",
+                    "category": "general",
+                    "filename": final_filename,
+                    "file_path": file_path,
+                    "upload_time": datetime.now().isoformat()
+                }
+                
+                # 调用助手服务添加到向量存储
+                if self._assistant:
+                    upload_result = await self._assistant.upload_knowledge({
+                        "content": file_content,
+                        "metadata": metadata,
+                        "title": metadata["title"],
+                        "source": "user_upload"
+                    })
+                    
+                    if upload_result.get("success"):
+                        logger.info(f"文档已添加到向量索引: {final_filename}, 生成块数: {upload_result.get('document_count', 0)}")
+                    else:
+                        logger.warning(f"向量索引更新失败: {upload_result.get('message', '未知错误')}")
+                else:
+                    logger.warning("助手服务未初始化，向量索引未更新")
+                    
+            except Exception as vector_error:
+                # 向量索引更新失败不应该影响文件上传成功
+                logger.error(f"更新向量索引失败: {vector_error}")
+
             return {
                 "uploaded": True,
                 "document_id": document_id,
@@ -876,6 +908,38 @@ class OptimizedAssistantService(BaseService):
             ).hexdigest()
 
             logger.info(f"知识库文档已保存: {file_path}")
+
+            # 立即更新向量索引
+            try:
+                # 准备文档元数据
+                metadata = {
+                    "title": title,
+                    "source": "user_add",
+                    "category": payload.get("category", "general"),
+                    "filename": final_filename,
+                    "file_path": file_path,
+                    "add_time": datetime.now().isoformat()
+                }
+                
+                # 调用助手服务添加到向量存储
+                if self._assistant:
+                    upload_result = await self._assistant.upload_knowledge({
+                        "content": file_content,
+                        "metadata": metadata,
+                        "title": title,
+                        "source": "user_add"
+                    })
+                    
+                    if upload_result.get("success"):
+                        logger.info(f"文档已添加到向量索引: {final_filename}, 生成块数: {upload_result.get('document_count', 0)}")
+                    else:
+                        logger.warning(f"向量索引更新失败: {upload_result.get('message', '未知错误')}")
+                else:
+                    logger.warning("助手服务未初始化，向量索引未更新")
+                    
+            except Exception as vector_error:
+                # 向量索引更新失败不应该影响文档添加成功
+                logger.error(f"更新向量索引失败: {vector_error}")
 
             return {
                 "added": True,
