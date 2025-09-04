@@ -460,12 +460,12 @@ class K8sScalingTool(K8sBaseTool):
                     self._format_v2_current_metrics(hpa.status.current_metrics or [])
                 )
             else:
-                hpa_status["spec"][
-                    "target_cpu_percent"
-                ] = hpa.spec.target_cpu_utilization_percentage
-                hpa_status["status"][
-                    "current_cpu_percent"
-                ] = hpa.status.current_cpu_utilization_percentage
+                hpa_status["spec"]["target_cpu_percent"] = (
+                    hpa.spec.target_cpu_utilization_percentage
+                )
+                hpa_status["status"]["current_cpu_percent"] = (
+                    hpa.status.current_cpu_utilization_percentage
+                )
 
             return {
                 "success": True,

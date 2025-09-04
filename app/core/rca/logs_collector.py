@@ -17,8 +17,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from app.config.settings import CONFIG, config
-from app.models.rca_models import LogData
 from app.core.interfaces.k8s_client import K8sClient, NullK8sClient
+from app.models.rca_models import LogData
 
 from .base_collector import BaseDataCollector
 
@@ -303,7 +303,9 @@ class LogsCollector(BaseDataCollector):
             return logs if logs else ""
         except Exception as e:
             # 只记录debug级别日志，避免正常错误（如容器未启动）产生过多日志
-            self.logger.debug(f"获取Pod {pod_name} 容器 {container_name} 日志失败: {str(e)}")
+            self.logger.debug(
+                f"获取Pod {pod_name} 容器 {container_name} 日志失败: {str(e)}"
+            )
             return ""
 
     def _parse_logs_optimized(
@@ -336,7 +338,9 @@ class LogsCollector(BaseDataCollector):
                     continue
                 else:
                     # 超过最大行数，停止收集
-                    current_entry.stack_trace = "\n".join(stack_trace_lines[:self.max_stack_trace_lines])
+                    current_entry.stack_trace = "\n".join(
+                        stack_trace_lines[: self.max_stack_trace_lines]
+                    )
                     stack_trace_lines = []
                     continue
 
@@ -344,7 +348,9 @@ class LogsCollector(BaseDataCollector):
             if stack_trace_lines and current_entry:
                 # 将堆栈跟踪添加到当前条目
                 if not current_entry.stack_trace:
-                    current_entry.stack_trace = "\n".join(stack_trace_lines[:self.max_stack_trace_lines])
+                    current_entry.stack_trace = "\n".join(
+                        stack_trace_lines[: self.max_stack_trace_lines]
+                    )
                 stack_trace_lines = []
 
             # 解析新的日志条目
@@ -369,7 +375,7 @@ class LogsCollector(BaseDataCollector):
             log_hash = self._get_log_hash(pod_name, container_name, line)
             if log_hash not in self._log_dedup:
                 self._log_dedup.add(log_hash)
-                
+
                 # 定期清理去重缓存，防止内存泄漏
                 self._dedup_cleanup_counter += 1
                 if self._dedup_cleanup_counter >= 1000:
@@ -560,12 +566,25 @@ class LogsCollector(BaseDataCollector):
         # 快速检查常见的堆栈跟踪特征
         if line.startswith(("    at ", "  File ", "Traceback", "goroutine", "\tat")):
             return True
-        
+
         # 检查是否以空格或制表符开头（常见的堆栈跟踪缩进）
-        if line and (line[0] == ' ' or line[0] == '\t') and len(line.strip()) > 10:
+        if line and (line[0] == " " or line[0] == "\t") and len(line.strip()) > 10:
             # 检查是否包含函数调用或文件路径的特征
             # 更严格的判断，避免误判
-            if any(indicator in line for indicator in ['.java:', '.py:', '.go:', '()', '.js:', 'line ', 'Line ', 'at ', 'File ']):
+            if any(
+                indicator in line
+                for indicator in [
+                    ".java:",
+                    ".py:",
+                    ".go:",
+                    "()",
+                    ".js:",
+                    "line ",
+                    "Line ",
+                    "at ",
+                    "File ",
+                ]
+            ):
                 return True
 
         # 使用编译的模式

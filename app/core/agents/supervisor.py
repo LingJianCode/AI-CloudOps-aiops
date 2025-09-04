@@ -16,8 +16,8 @@ from langchain_core.messages import BaseMessage
 from pydantic import BaseModel
 from typing_extensions import Literal
 
-from app.models.data_models import AgentState
 from app.core.interfaces.llm_client import LLMClient, NullLLMClient
+from app.models.data_models import AgentState
 
 logger = logging.getLogger("aiops.supervisor")
 
@@ -108,7 +108,8 @@ class SupervisorAgent:
             # 调用LLM服务进行智能路由决策
             messages = [{"role": "user", "content": full_prompt}]
             response_text = await self.llm_service.generate_response(
-                messages, use_task_model=True  # 简单操作：路由决策，使用task_model
+                messages,
+                use_task_model=True,  # 简单操作：路由决策，使用task_model
             )
 
             if not response_text:
@@ -226,7 +227,8 @@ class SupervisorAgent:
             ]
 
             response = await self.llm_service.generate_response(
-                messages, use_task_model=False  # 复杂操作：问题分析，使用主模型
+                messages,
+                use_task_model=False,  # 复杂操作：问题分析，使用主模型
             )
 
             try:

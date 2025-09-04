@@ -86,7 +86,11 @@ async def validation_exception_handler(
         if path_str.endswith("/assistant/query") and (has_extra or is_missing_or_empty):
             status_code = HttpStatusCodes.BAD_REQUEST
         else:
-            status_code = HttpStatusCodes.BAD_REQUEST if has_extra else HttpStatusCodes.UNPROCESSABLE_ENTITY
+            status_code = (
+                HttpStatusCodes.BAD_REQUEST
+                if has_extra
+                else HttpStatusCodes.UNPROCESSABLE_ENTITY
+            )
 
         details = _extract_validation_details(exc)
 
@@ -137,7 +141,9 @@ async def general_exception_handler(request: Request, exc: Exception) -> JSONRes
         return _create_critical_fallback_response()
 
 
-async def aiops_exception_handler(request: Request, exc: AIOpsException) -> JSONResponse:
+async def aiops_exception_handler(
+    request: Request, exc: AIOpsException
+) -> JSONResponse:
     """AIOps领域异常处理器"""
     try:
         from app.api.decorators import _get_http_status_for_aiops_exception
@@ -149,9 +155,7 @@ async def aiops_exception_handler(request: Request, exc: AIOpsException) -> JSON
         logger.warning(f"请求信息 - URL: {request.url}, Method: {request.method}")
 
         # 构建包含 error_code 与 details 的标准错误数据
-        error_data = _build_error_data(
-            request, status_code, exc.details or exc.message
-        )
+        error_data = _build_error_data(request, status_code, exc.details or exc.message)
         error_data["error_code"] = getattr(exc, "error_code", "AIOPS_ERROR")
         if getattr(exc, "details", None):
             error_data["details"] = exc.details

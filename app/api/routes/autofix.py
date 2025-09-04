@@ -14,31 +14,35 @@ import logging
 from datetime import datetime
 from typing import Any, Dict
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Body
+from fastapi import APIRouter, BackgroundTasks, Body, HTTPException
+
+from app.api.decorators import api_response, log_api_call
+from app.common.constants import (
+    ApiEndpoints,
+    AppConstants,
+    HttpStatusCodes,
+    ServiceConstants,
+)
 from app.common.exceptions import (
     AIOpsException,
-    ValidationError as DomainValidationError,
-    RequestTimeoutError,
     AutoFixError,
+    RequestTimeoutError,
     ResourceNotFoundError,
     ServiceUnavailableError,
 )
-
-from app.api.decorators import api_response, log_api_call
-from app.common.constants import ApiEndpoints, AppConstants, ServiceConstants, HttpStatusCodes
+from app.common.exceptions import (
+    ValidationError as DomainValidationError,
+)
 from app.models import (
-    BaseResponse,
     AutoFixRequest,
-    AutoFixResponse,
+    BaseResponse,
     DiagnoseRequest,
-    DiagnoseResponse,
     ServiceConfigResponse,
-    ServiceHealthResponse,
     ServiceInfoResponse,
 )
 from app.services.autofix_service import AutoFixService
-from app.services.notification import NotificationService
 from app.services.factory import ServiceFactory
+from app.services.notification import NotificationService
 
 logger = logging.getLogger("aiops.api.autofix")
 
@@ -106,26 +110,33 @@ async def autofix_ready() -> Dict[str, Any]:
                                     "path": "/api/v1/autofix/workflow",
                                     "method": "POST",
                                     "detail": "缺少problem_description参数",
-                                    "timestamp": "2025-01-01T00:00:00"
-                                }
-                            }
+                                    "timestamp": "2025-01-01T00:00:00",
+                                },
+                            },
                         }
                     }
                 }
-            }
+            },
         }
     },
 )
 @api_response("执行自动修复工作流")
 async def execute_workflow(
     request: Dict[str, Any] = Body(
-        ..., example={"problem_description": "Pod频繁重启，疑似镜像拉取失败"}
-    )
+        ...,
+        examples={
+            "default": {
+                "value": {"problem_description": "Pod频繁重启，疑似镜像拉取失败"}
+            }
+        },
+    ),
 ) -> Dict[str, Any]:
     description = (request or {}).get("problem_description")
     if not description or not isinstance(description, str):
-        from fastapi import HTTPException
-        raise HTTPException(status_code=HttpStatusCodes.BAD_REQUEST, detail="缺少problem_description参数")
+        raise HTTPException(
+            status_code=HttpStatusCodes.BAD_REQUEST,
+            detail="缺少problem_description参数",
+        )
 
     await (await get_autofix_service()).initialize()
     # 简化返回，强调工作流接受
@@ -157,27 +168,37 @@ async def execute_workflow(
                                     "path": "/api/v1/autofix/notify",
                                     "method": "POST",
                                     "detail": "消息内容不能为空",
-                                    "timestamp": "2025-01-01T00:00:00"
-                                }
-                            }
+                                    "timestamp": "2025-01-01T00:00:00",
+                                },
+                            },
                         }
                     }
                 }
-            }
+            },
         }
     },
 )
 @api_response("发送自动修复通知")
 async def send_notification(
     request: Dict[str, Any] = Body(
-        ..., example={"title": "修复完成", "message": "重启deployment成功", "type": "info"}
-    )
+        ...,
+        examples={
+            "default": {
+                "value": {
+                    "title": "修复完成",
+                    "message": "重启deployment成功",
+                    "type": "info",
+                }
+            }
+        },
+    ),
 ) -> Dict[str, Any]:
     title = (request or {}).get("title")
     message = (request or {}).get("message")
     if not message:
-        from fastapi import HTTPException
-        raise HTTPException(status_code=HttpStatusCodes.BAD_REQUEST, detail="消息内容不能为空")
+        raise HTTPException(
+            status_code=HttpStatusCodes.BAD_REQUEST, detail="消息内容不能为空"
+        )
 
     try:
         # 使用通用通知接口，避免参数不匹配
@@ -211,6 +232,7 @@ async def get_notification_service() -> NotificationService:
             "notification", NotificationService
         )
     return notification_service
+
 
 logger = logging.getLogger("aiops.api.autofix")
 
@@ -265,12 +287,16 @@ async def send_fix_notification(
 async def autofix_k8s(
     request: AutoFixRequest = Body(
         ...,
-        example={
-            "deployment": "payment-service",
-            "namespace": "production",
-            "event": "CrashLoopBackOff",
-            "force": False,
-            "auto_restart": True
+        examples={
+            "default": {
+                "value": {
+                    "deployment": "payment-service",
+                    "namespace": "production",
+                    "event": "CrashLoopBackOff",
+                    "force": False,
+                    "auto_restart": True,
+                }
+            }
         },
     ),
     background_tasks: BackgroundTasks = None,
@@ -280,16 +306,32 @@ async def autofix_k8s(
         # 提前校验deployment格式，避免后续抛出404
         invalid_chars = "!@#$%^&*()+=[]{}|;:'\",<>?"
         if any(ch in invalid_chars for ch in (request.deployment or "")):
-            from fastapi import HTTPException
-            raise HTTPException(status_code=HttpStatusCodes.BAD_REQUEST, detail="deployment名称无效")
+            raise HTTPException(
+                status_code=HttpStatusCodes.BAD_REQUEST, detail="deployment名称无效"
+            )
         await asyncio.wait_for(
             (await get_autofix_service()).initialize(),
             timeout=ServiceConstants.DEFAULT_WARMUP_TIMEOUT,
         )
 
         try:
+            # 透传事件上下文及可选容器/等待配置给服务层，增强规则判断
+            _service = await get_autofix_service()
+            setattr(_service, "_last_event_hint", request.event)
+            # 这些属性仅用于本次请求，不影响后续请求
+            try:
+                if hasattr(_service, "_target_container"):
+                    delattr(_service, "_target_container")
+                if hasattr(_service, "_wait_rollout"):
+                    delattr(_service, "_wait_rollout")
+            except Exception:
+                pass
+            if getattr(request, "container", None):
+                setattr(_service, "_target_container", request.container)
+            setattr(_service, "_wait_rollout", getattr(request, "wait_rollout", True))
+
             fix_result = await asyncio.wait_for(
-                (await get_autofix_service()).fix_kubernetes_deployment(
+                _service.fix_kubernetes_deployment(
                     deployment=request.deployment,
                     namespace=request.namespace,
                     force_fix=request.force,
@@ -298,9 +340,8 @@ async def autofix_k8s(
                 timeout=ServiceConstants.AUTOFIX_WORKFLOW_TIMEOUT,
             )
         except ResourceNotFoundError as rnfe:
-            # 测试允许500，不接受404
-            from fastapi import HTTPException
-            raise HTTPException(status_code=HttpStatusCodes.INTERNAL_SERVER_ERROR, detail=str(rnfe))
+            # 映射资源不存在为 404
+            raise HTTPException(status_code=HttpStatusCodes.NOT_FOUND, detail=str(rnfe))
 
         if request.auto_restart and fix_result.get("success", False):
             try:
@@ -340,6 +381,28 @@ async def autofix_k8s(
 
 
 @router.post(
+    "/bootstrap",
+    summary="创建测试命名空间及故障资源",
+    response_model=BaseResponse,
+)
+@api_response("创建测试命名空间及故障资源")
+@log_api_call(log_request=False)
+async def bootstrap_faulty_resources() -> Dict[str, Any]:
+    """创建 test 命名空间并应用预置的故障清单，用于自愈演示"""
+    try:
+        await (await get_autofix_service()).initialize()
+        result = await (await get_autofix_service()).bootstrap_test_resources()
+        return {
+            "status": "completed" if result.get("success") else "failed",
+            "namespace": result.get("namespace", "test"),
+            "applied": result.get("applied", []),
+            "timestamp": datetime.now().isoformat(),
+        }
+    except Exception as e:
+        raise AutoFixError(f"引导故障资源失败: {str(e)}")
+
+
+@router.post(
     "/",
     summary="AI-CloudOps Kubernetes自动修复(简化路径)",
     response_model=BaseResponse,
@@ -353,24 +416,30 @@ async def autofix_k8s(
 async def autofix_base(
     request: Dict[str, Any] = Body(
         ...,
-        example={
-            "deployment": "payment-service",
-            "namespace": "production",
-            "event": "CrashLoopBackOff",
-            "force": False,
-            "auto_restart": True
+        examples={
+            "default": {
+                "value": {
+                    "deployment": "payment-service",
+                    "namespace": "production",
+                    "event": "CrashLoopBackOff",
+                    "force": False,
+                    "auto_restart": True,
+                }
+            }
         },
-    )
+    ),
 ) -> Dict[str, Any]:
     """兼容 tests 直接POST /autofix 的场景，执行参数校验并返回400"""
     if not request.get("deployment") or not request.get("event"):
-        from fastapi import HTTPException
-        raise HTTPException(status_code=HttpStatusCodes.BAD_REQUEST, detail="缺少必要参数")
+        raise HTTPException(
+            status_code=HttpStatusCodes.BAD_REQUEST, detail="缺少必要参数"
+        )
     # 非法deployment字符校验
     invalid_chars = "!@#$%^&*()+=[]{}|;:'\",<>?"
     if any(ch in invalid_chars for ch in request.get("deployment", "")):
-        from fastapi import HTTPException
-        raise HTTPException(status_code=HttpStatusCodes.BAD_REQUEST, detail="deployment名称无效")
+        raise HTTPException(
+            status_code=HttpStatusCodes.BAD_REQUEST, detail="deployment名称无效"
+        )
     try:
         # 将请求映射到强类型模型（仅用于校验字段合法性）
         _ = AutoFixRequest(
@@ -381,7 +450,6 @@ async def autofix_base(
             auto_restart=bool(request.get("auto_restart", True)),
         )
     except Exception as e:
-        from fastapi import HTTPException
         raise HTTPException(status_code=HttpStatusCodes.BAD_REQUEST, detail=str(e))
 
     # 为基础路径返回简化成功响应，避免底层依赖导致404
@@ -406,23 +474,28 @@ async def autofix_base(
 async def diagnose_k8s(
     request: DiagnoseRequest = Body(
         ...,
-        example={
-            "deployment": "payment-service",
-            "namespace": "production",
-            "include_pods": True,
-            "include_logs": True,
-            "include_events": True
+        examples={
+            "default": {
+                "value": {
+                    "deployment": "payment-service",
+                    "namespace": "production",
+                    "include_pods": True,
+                    "include_logs": True,
+                    "include_events": True,
+                }
+            }
         },
-    )
+    ),
 ) -> Dict[str, Any]:
     """执行Kubernetes问题诊断"""
     try:
         # 先做命名空间校验，校验失败直接返回400
         invalid_chars = "!@#$%^&*()+=[]{}|;:'\",<>?"
         if any(ch in invalid_chars for ch in (request.namespace or "")):
-            from fastapi import HTTPException
-            raise HTTPException(status_code=HttpStatusCodes.BAD_REQUEST, detail="命名空间格式无效")
-        
+            raise HTTPException(
+                status_code=HttpStatusCodes.BAD_REQUEST, detail="命名空间格式无效"
+            )
+
         await asyncio.wait_for(
             (await get_autofix_service()).initialize(),
             timeout=ServiceConstants.DEFAULT_WARMUP_TIMEOUT,
@@ -465,76 +538,10 @@ async def diagnose_k8s(
         raise he
     except (AIOpsException, DomainValidationError) as e:
         # 统一将领域校验错误映射为400
-        from fastapi import HTTPException
         raise HTTPException(status_code=HttpStatusCodes.BAD_REQUEST, detail=str(e))
     except Exception as e:
         logger.error(f"诊断失败 - 部署: {request.deployment}, 错误: {str(e)}")
         raise AutoFixError(f"诊断操作失败: {str(e)}")
-
-
-@router.get(
-    "/health",
-    summary="AI-CloudOps自动修复服务健康检查",
-    response_model=BaseResponse,
-)
-@api_response("AI-CloudOps自动修复服务健康检查")
-async def autofix_health() -> Dict[str, Any]:
-    """健康检查"""
-    try:
-        # 初始化失败也不抛出，让下方返回不健康状态
-        try:
-            await asyncio.wait_for(
-                (await get_autofix_service()).initialize(),
-                timeout=ServiceConstants.DEFAULT_WARMUP_TIMEOUT,
-            )
-        except Exception as init_e:
-            logger.warning(f"自动修复初始化失败: {init_e}")
-
-        health_status = await asyncio.wait_for(
-            (await get_autofix_service()).get_service_health_info(),
-            timeout=ServiceConstants.DEFAULT_REQUEST_TIMEOUT,
-        )
-    except Exception as e:
-        logger.warning(f"获取健康信息异常，返回不健康状态: {e}")
-        health_status = {
-            "service": "autofix",
-            "status": ServiceConstants.STATUS_UNHEALTHY,
-            "components": {
-                "k8s_fixer": ServiceConstants.STATUS_UNHEALTHY,
-                "supervisor": ServiceConstants.STATUS_UNHEALTHY,
-                "k8s_service": ServiceConstants.STATUS_UNHEALTHY,
-            },
-            "uptime": None,
-        }
-
-    # 添加API统计信息
-    health_status["api_stats"] = _api_stats.copy()
-    health_status["api_stats"]["success_rate"] = (
-        _api_stats["successful_requests"] / max(_api_stats["total_requests"], 1) * 100
-    )
-
-    raw_components = (health_status.get("components") or {})
-    dependencies_map = {
-        "kubernetes": True if raw_components.get("k8s_service") in (True, ServiceConstants.STATUS_HEALTHY) else False,
-        "llm": True,  # 简化为可用
-        "notification": True,  # 简化为可用
-        "supervisor": True if raw_components.get("supervisor") in (True, ServiceConstants.STATUS_HEALTHY) else False,
-    }
-
-    response = ServiceHealthResponse(
-        status=health_status.get("status", "healthy"),
-        service="autofix",
-        version=health_status.get("version"),
-        dependencies=dependencies_map,
-        last_check_time=datetime.now().isoformat(),
-        uptime=health_status.get("uptime"),
-    )
-
-    data = response.dict()
-    data["healthy"] = (data.get("status") == ServiceConstants.STATUS_HEALTHY)
-    data["components"] = dependencies_map
-    # 始终返回200，通过正常响应体表达健康与否
-    return data
 
 
 @router.get(
@@ -570,7 +577,6 @@ async def autofix_info() -> Dict[str, Any]:
         "endpoints": {
             "autofix": ApiEndpoints.AUTOFIX,
             "diagnose": ApiEndpoints.AUTOFIX_DIAGNOSE,
-            "health": ApiEndpoints.AUTOFIX_HEALTH,
             "config": ApiEndpoints.AUTOFIX_CONFIG,
             "info": ApiEndpoints.AUTOFIX_INFO,
         },

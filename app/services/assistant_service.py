@@ -14,14 +14,13 @@ import logging
 import os
 import uuid
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from ..common.exceptions import AssistantError, ValidationError
 from ..config.settings import config
 from ..core.agents.enterprise_assistant import get_enterprise_assistant
 from .base import BaseService
 from .factory import ServiceFactory
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .mcp_service import MCPService
@@ -30,7 +29,7 @@ logger = logging.getLogger("aiops.services.assistant")
 
 
 class OptimizedAssistantService(BaseService):
-    """智能助手服务"""
+    """助手服务"""
 
     def __init__(self) -> None:
         super().__init__("assistant")
@@ -39,8 +38,9 @@ class OptimizedAssistantService(BaseService):
 
     async def _do_initialize(self) -> None:
         try:
-            # 将 Service 层的 LLMService 注入 Core 层，避免 Core 直接依赖 Service
+            # 通过服务注入，避免 Core 直接依赖
             from app.services.llm import LLMService
+
             llm_service = LLMService()
             self._assistant = await get_enterprise_assistant(llm_client=llm_service)
             logger.info("智能助手服务初始化完成")
@@ -55,8 +55,11 @@ class OptimizedAssistantService(BaseService):
             if not self._assistant:
                 try:
                     from app.services.llm import LLMService
+
                     llm_service = LLMService()
-                    self._assistant = await get_enterprise_assistant(llm_client=llm_service)
+                    self._assistant = await get_enterprise_assistant(
+                        llm_client=llm_service
+                    )
                 except Exception as e:
                     logger.debug(f"获取助手实例失败: {str(e)}")
                     # 返回部分健康状态，表示服务框架可用但助手未初始化
@@ -79,7 +82,7 @@ class OptimizedAssistantService(BaseService):
         mode: int = 1,
         session_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """获取智能回答"""
+        """获取回答"""
         # 会话管理（若未提供则自动创建）
         if not session_id:
             session_id = str(uuid.uuid4())
@@ -502,7 +505,7 @@ class OptimizedAssistantService(BaseService):
         """确保服务就绪"""
         if not self._assistant:
             try:
-                # 尝试直接获取助手实例，注入 LLMService，避免 Core 直接依赖 Service
+                # 运行时注入依赖，避免 Core 直接依赖
                 from app.services.llm import LLMService
 
                 llm_service = LLMService()
@@ -513,7 +516,7 @@ class OptimizedAssistantService(BaseService):
                 raise AssistantError(f"服务暂未就绪: {str(e)}")
 
     def _calculate_timeout(self, question: str) -> float:
-        """智能计算超时时间"""
+        """计算超时时间"""
         # 使用配置文件中的超时时间作为基础超时
         base_timeout = float(config.rag.timeout)
 
@@ -543,7 +546,7 @@ class OptimizedAssistantService(BaseService):
     def _enhance_result(
         self, result: Dict[str, Any], question: str, session_id: Optional[str]
     ) -> Dict[str, Any]:
-        """增强返回结果"""
+        """补充返回结果"""
         enhanced = result.copy()
 
         # 添加元数据
@@ -552,7 +555,9 @@ class OptimizedAssistantService(BaseService):
                 "question": question,
                 "session_id": session_id,
                 "timestamp": datetime.now().isoformat(),
-                "service_version": config.app.version if hasattr(config, 'app') else "1.0.0",
+                "service_version": config.app.version
+                if hasattr(config, "app")
+                else "1.0.0",
             }
         )
 
@@ -574,17 +579,17 @@ class OptimizedAssistantService(BaseService):
     async def _handle_rag_mode(
         self, question: str, session_id: Optional[str]
     ) -> Dict[str, Any]:
-        """处理RAG模式请求"""
+        """处理检索模式请求"""
         # 确保服务就绪
         await self._ensure_ready()
 
         # 记录性能
         with self._performance_monitor.measure("get_answer_rag"):
             try:
-                # 设置智能超时
+                # 计算超时时间
                 timeout = self._calculate_timeout(question)
 
-                # 调用优化的助手
+                # 调用服务接口
                 result = await asyncio.wait_for(
                     self._assistant.get_answer(
                         question=question, session_id=session_id
@@ -611,14 +616,16 @@ class OptimizedAssistantService(BaseService):
     async def _handle_mcp_mode(
         self, question: str, session_id: Optional[str]
     ) -> Dict[str, Any]:
-        """处理MCP模式请求"""
+        """处理工具协议模式请求"""
         try:
-            # 通过工厂获取MCP服务单例（延迟导入以避免循环依赖）
+            # 通过工厂延迟获取服务实例，避免循环依赖
             from .mcp_service import MCPService
 
-            mcp_service: MCPService = await ServiceFactory.get_service("mcp", MCPService)
+            mcp_service: MCPService = await ServiceFactory.get_service(
+                "mcp", MCPService
+            )
 
-            # 调用MCP服务处理
+            # 调用服务处理
             result = await mcp_service.get_answer(
                 question=question, session_id=session_id
             )
@@ -645,7 +652,7 @@ class OptimizedAssistantService(BaseService):
     async def _use_mcp_fallback_response(
         self, question: str, session_id: Optional[str], error_reason: str
     ) -> Dict[str, Any]:
-        """MCP模式的备用响应"""
+        """工具协议模式的备用响应"""
         logger.warning(f"使用MCP备用实现处理请求，原因: {error_reason}")
 
         # 简单的关键词匹配
@@ -684,10 +691,10 @@ class OptimizedAssistantService(BaseService):
     async def get_service_health_info_with_mode(self) -> Dict[str, Any]:
         """获取包含两种模式的详细健康信息"""
         try:
-            # 获取RAG健康信息
+            # 获取检索模式健康信息
             rag_health = await self.get_service_health_info()
 
-            # 获取MCP健康信息
+            # 获取工具模式健康信息
             mcp_health = {"status": "unavailable"}
             try:
                 mcp_service = await self._get_mcp_service()
@@ -812,25 +819,31 @@ class OptimizedAssistantService(BaseService):
                     "category": "general",
                     "filename": final_filename,
                     "file_path": file_path,
-                    "upload_time": datetime.now().isoformat()
+                    "upload_time": datetime.now().isoformat(),
                 }
-                
+
                 # 调用助手服务添加到向量存储
                 if self._assistant:
-                    upload_result = await self._assistant.upload_knowledge({
-                        "content": file_content,
-                        "metadata": metadata,
-                        "title": metadata["title"],
-                        "source": "user_upload"
-                    })
-                    
+                    upload_result = await self._assistant.upload_knowledge(
+                        {
+                            "content": file_content,
+                            "metadata": metadata,
+                            "title": metadata["title"],
+                            "source": "user_upload",
+                        }
+                    )
+
                     if upload_result.get("success"):
-                        logger.info(f"文档已添加到向量索引: {final_filename}, 生成块数: {upload_result.get('document_count', 0)}")
+                        logger.info(
+                            f"文档已添加到向量索引: {final_filename}, 生成块数: {upload_result.get('document_count', 0)}"
+                        )
                     else:
-                        logger.warning(f"向量索引更新失败: {upload_result.get('message', '未知错误')}")
+                        logger.warning(
+                            f"向量索引更新失败: {upload_result.get('message', '未知错误')}"
+                        )
                 else:
                     logger.warning("助手服务未初始化，向量索引未更新")
-                    
+
             except Exception as vector_error:
                 # 向量索引更新失败不应该影响文件上传成功
                 logger.error(f"更新向量索引失败: {vector_error}")
@@ -938,25 +951,31 @@ class OptimizedAssistantService(BaseService):
                     "category": payload.get("category", "general"),
                     "filename": final_filename,
                     "file_path": file_path,
-                    "add_time": datetime.now().isoformat()
+                    "add_time": datetime.now().isoformat(),
                 }
-                
+
                 # 调用助手服务添加到向量存储
                 if self._assistant:
-                    upload_result = await self._assistant.upload_knowledge({
-                        "content": file_content,
-                        "metadata": metadata,
-                        "title": title,
-                        "source": "user_add"
-                    })
-                    
+                    upload_result = await self._assistant.upload_knowledge(
+                        {
+                            "content": file_content,
+                            "metadata": metadata,
+                            "title": title,
+                            "source": "user_add",
+                        }
+                    )
+
                     if upload_result.get("success"):
-                        logger.info(f"文档已添加到向量索引: {final_filename}, 生成块数: {upload_result.get('document_count', 0)}")
+                        logger.info(
+                            f"文档已添加到向量索引: {final_filename}, 生成块数: {upload_result.get('document_count', 0)}"
+                        )
                     else:
-                        logger.warning(f"向量索引更新失败: {upload_result.get('message', '未知错误')}")
+                        logger.warning(
+                            f"向量索引更新失败: {upload_result.get('message', '未知错误')}"
+                        )
                 else:
                     logger.warning("助手服务未初始化，向量索引未更新")
-                    
+
             except Exception as vector_error:
                 # 向量索引更新失败不应该影响文档添加成功
                 logger.error(f"更新向量索引失败: {vector_error}")
@@ -991,7 +1010,6 @@ class PerformanceMonitor:
         self._lock = asyncio.Lock()
 
     class Timer:
-
         def __init__(self, monitor, operation):
             self.monitor = monitor
             self.operation = operation

@@ -414,7 +414,7 @@ class PredictionPromptBuilder:
                         values.append(p["predicted_value"])
 
                 if values:
-                    predictions_summary = f"预测点数: {len(predictions)}, 值范围: {min(values):.2f}-{max(values):.2f}, 平均值: {sum(values)/len(values):.2f}"
+                    predictions_summary = f"预测点数: {len(predictions)}, 值范围: {min(values):.2f}-{max(values):.2f}, 平均值: {sum(values) / len(values):.2f}"
                 else:
                     predictions_summary = f"预测点数: {len(predictions)}, 数据格式异常"
             else:
@@ -433,7 +433,7 @@ class PredictionPromptBuilder:
                         confidences.append(p.get("confidence_level", 0))
 
                 if confidences:
-                    confidence_stats = f"平均置信度: {sum(confidences)/len(confidences):.2f}, 范围: {min(confidences):.2f}-{max(confidences):.2f}"
+                    confidence_stats = f"平均置信度: {sum(confidences) / len(confidences):.2f}, 范围: {min(confidences):.2f}-{max(confidences):.2f}"
 
         # 异常信息
         anomaly_info = "未检测到异常"  # 默认值

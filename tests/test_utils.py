@@ -17,7 +17,6 @@ from typing import Any, Dict, Optional
 
 import requests
 
-
 # 测试配置常量
 from app.config.settings import config
 
@@ -83,13 +82,17 @@ def make_request(
 
     for attempt in range(max_retries):
         try:
-            logger.info(f"请求 {method.upper()} {url} (尝试 {attempt+1}/{max_retries})")
+            logger.info(
+                f"请求 {method.upper()} {url} (尝试 {attempt + 1}/{max_retries})"
+            )
 
             if method.lower() == "get":
                 response = requests.get(url, timeout=timeout)
             elif method.lower() == "post":
                 if json_data:
-                    logger.info(f"发送数据: {json.dumps(json_data, ensure_ascii=False)}")
+                    logger.info(
+                        f"发送数据: {json.dumps(json_data, ensure_ascii=False)}"
+                    )
                 response = requests.post(url, json=json_data, timeout=timeout)
             else:
                 logger.error(f"不支持的HTTP方法: {method}")
@@ -99,7 +102,7 @@ def make_request(
             return response
 
         except requests.exceptions.RequestException as e:
-            logger.warning(f"请求失败 (尝试 {attempt+1}/{max_retries}): {str(e)}")
+            logger.warning(f"请求失败 (尝试 {attempt + 1}/{max_retries}): {str(e)}")
             if attempt < max_retries - 1:
                 logger.info(f"等待 {DEFAULT_RETRY_DELAY} 秒后重试...")
                 time.sleep(DEFAULT_RETRY_DELAY)
@@ -129,14 +132,15 @@ def check_service_health(
     if logger is None:
         logger = logging.getLogger(__name__)
 
-    health_url = f"{api_base_url}/health"
+    # 使用预测服务就绪状态作为可用性检查
+    health_url = f"{api_base_url}/predict/ready"
     response = make_request("get", health_url, max_retries=max_retries, logger=logger)
 
     if response and response.status_code == 200:
-        logger.info("服务健康检查通过")
+        logger.info("服务就绪检查通过")
         return True
     else:
-        logger.warning("服务健康检查失败，但继续测试")
+        logger.warning("服务就绪检查失败，但继续测试")
         return False
 
 
@@ -160,7 +164,7 @@ def setup_test_environment(
 
     try:
         # 检查服务是否运行
-        service_healthy = check_service_health(api_base_url, logger=logger)
+        check_service_health(api_base_url, logger=logger)
         return True  # 即使服务不健康也继续测试
     except Exception as e:
         logger.error(f"设置测试环境失败: {str(e)}")
@@ -214,7 +218,9 @@ def validate_response_structure(
     return result
 
 
-def save_test_results(results: Dict[str, Any], filename: str, logger: Optional[logging.Logger] = None) -> None:
+def save_test_results(
+    results: Dict[str, Any], filename: str, logger: Optional[logging.Logger] = None
+) -> None:
     """
     保存测试结果到JSON文件
 
@@ -248,7 +254,9 @@ def calculate_test_summary(results: Dict[str, Any]) -> Dict[str, Any]:
         return {"total_tests": 0, "passed_tests": 0, "success_rate": 0}
 
     total_tests = len(results["results"])
-    passed_tests = sum(1 for test_result in results["results"].values() if test_result.get("success"))
+    passed_tests = sum(
+        1 for test_result in results["results"].values() if test_result.get("success")
+    )
     success_rate = (passed_tests / total_tests) * 100 if total_tests > 0 else 0
 
     return {
@@ -286,6 +294,7 @@ def print_test_summary(results: Dict[str, Any], duration: float = 0) -> None:
 
 class TestResult:
     """测试结果封装类"""
+
     __test__ = False
 
     def __init__(self, test_name: str):

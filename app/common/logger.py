@@ -13,7 +13,6 @@ import contextvars
 import logging
 from typing import Optional
 
-
 # 全局请求ID上下文变量
 request_id_ctx: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
     "request_id", default=None
@@ -38,5 +37,3 @@ def get_logger(name: str) -> logging.Logger:
     if not has_filter:
         logger.addFilter(ContextRequestIdFilter())
     return logger
-
-

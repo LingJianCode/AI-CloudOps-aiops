@@ -11,7 +11,7 @@ Description: 日志配置模块
 
 import logging
 import sys
-from typing import Optional, Any
+from typing import Any, Optional
 
 from app.config.settings import config
 

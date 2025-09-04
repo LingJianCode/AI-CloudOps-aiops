@@ -138,7 +138,9 @@ class ResourceNotFoundError(AIOpsException):
 class RequestTimeoutError(AIOpsException):
     """请求超时异常"""
 
-    def __init__(self, message: str = "请求超时", details: Optional[Dict[str, Any]] = None) -> None:
+    def __init__(
+        self, message: str = "请求超时", details: Optional[Dict[str, Any]] = None
+    ) -> None:
         super().__init__(
             message=message,
             error_code="REQUEST_TIMEOUT",

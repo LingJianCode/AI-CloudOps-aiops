@@ -22,6 +22,8 @@ class AutoFixRequest(BaseModel):
     event: str = Field(..., min_length=1)
     force: bool = Field(default=False)
     auto_restart: bool = Field(default=True)
+    container: Optional[str] = Field(default=None, description="目标容器名(可选)")
+    wait_rollout: bool = Field(default=True, description="是否等待rollout完成")
 
 
 class AutoFixResponse(BaseModel):

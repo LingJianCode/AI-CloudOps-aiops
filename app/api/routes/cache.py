@@ -14,16 +14,17 @@ from datetime import datetime
 from typing import Any, Dict
 
 from fastapi import APIRouter, HTTPException, Query
-from app.common.exceptions import (
-    AIOpsException,
-    ValidationError as DomainValidationError,
-    ConfigurationError,
-)
 
 from app.api.decorators import api_response, log_api_call
-from app.common.constants import ErrorMessages, HttpStatusCodes
-from app.services.cache_service import CacheService
+from app.common.exceptions import (
+    AIOpsException,
+    ConfigurationError,
+)
+from app.common.exceptions import (
+    ValidationError as DomainValidationError,
+)
 from app.models import BaseResponse
+from app.services.cache_service import CacheService
 from app.services.factory import ServiceFactory
 
 logger = logging.getLogger("aiops.api.cache")
@@ -58,28 +59,6 @@ async def get_cache_stats() -> Dict[str, Any]:
         raise ConfigurationError(f"获取缓存统计失败: {str(e)}")
 
 
-@router.get(
-    "/health",
-    summary="缓存系统健康检查",
-    response_model=BaseResponse,
-)
-@api_response("缓存系统健康检查")
-@log_api_call(log_request=False)
-async def cache_health_check() -> Dict[str, Any]:
-    """检查缓存系统健康状态"""
-    try:
-        await (await get_cache_service()).initialize()
-        return await (await get_cache_service()).cache_health_check()
-    except (AIOpsException, DomainValidationError) as e:
-        raise e
-    except Exception as e:
-        logger.error(f"缓存健康检查失败: {str(e)}")
-        raise HTTPException(
-            status_code=HttpStatusCodes.INTERNAL_SERVER_ERROR,
-            detail=f"缓存健康检查失败: {str(e)}",
-        )
-
-
 @router.post(
     "/clear",
     summary="清空缓存",
@@ -89,7 +68,7 @@ async def cache_health_check() -> Dict[str, Any]:
 @log_api_call(log_request=True)
 async def clear_cache(
     service: str = Query(..., description="服务名称: prediction, rca, 或 all"),
-    pattern: str = Query(None, description="可选的模式匹配，用于部分清空")
+    pattern: str = Query(None, description="可选的模式匹配，用于部分清空"),
 ) -> Dict[str, Any]:
     """清空指定服务的缓存"""
     try:

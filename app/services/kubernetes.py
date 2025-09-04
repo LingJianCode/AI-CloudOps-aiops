@@ -9,6 +9,7 @@ License: Apache 2.0
 Description: Kubernetes集群管理服务
 """
 
+import asyncio
 import json
 import logging
 import os
@@ -18,6 +19,7 @@ from typing import Any, Dict, List, Optional
 
 from kubernetes import client
 from kubernetes import config as k8s_config
+from kubernetes import utils as k8s_utils
 from kubernetes.client.rest import ApiException
 
 from app.config.settings import config
@@ -52,7 +54,7 @@ class KubernetesService:
 
                 # 尝试列出命名空间，再次确认连接
                 self.core_v1.list_namespace(limit=1)
-                logger.info(f"成功获取命名空间列表，确认连接正常")
+                logger.info("成功获取命名空间列表，确认连接正常")
 
                 self.initialized = True
                 logger.info("Kubernetes服务初始化完成")
@@ -143,6 +145,69 @@ class KubernetesService:
         except ApiException as e:
             logger.error(f"获取Deployment失败: {str(e)}")
             return None
+
+    async def ensure_namespace(self, namespace: str) -> bool:
+        """确保命名空间存在，不存在则创建"""
+        if not self._ensure_initialized():
+            raise RuntimeError("Kubernetes未初始化，无法确保命名空间")
+
+        try:
+            self.core_v1.read_namespace(name=namespace)
+            logger.info(f"命名空间已存在: {namespace}")
+            return True
+        except ApiException as e:
+            if getattr(e, "status", None) == 404:
+                try:
+                    body = client.V1Namespace(
+                        metadata=client.V1ObjectMeta(name=namespace)
+                    )
+                    self.core_v1.create_namespace(body=body)
+                    logger.info(f"已创建命名空间: {namespace}")
+                    return True
+                except Exception as ce:
+                    logger.error(f"创建命名空间失败: {str(ce)}")
+                    return False
+            logger.error(f"检查命名空间失败: {str(e)}")
+            return False
+        except Exception as e:
+            logger.error(f"确保命名空间异常: {str(e)}")
+            return False
+
+    async def apply_yaml_file(
+        self, yaml_path: str, namespace: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """应用YAML清单，创建或更新资源。
+
+        Args:
+            yaml_path: YAML文件路径
+            namespace: 覆盖命名空间（可选）
+
+        Returns:
+            执行结果字典
+        """
+        if not self._ensure_initialized():
+            raise RuntimeError("Kubernetes未初始化，无法应用YAML")
+
+        try:
+            # 使用kubernetes.utils提供的便捷方法加载并创建/更新资源
+            k8s_client = self.apps_v1.api_client if self.apps_v1 else client.ApiClient()
+            k8s_utils.create_from_yaml(
+                k8s_client,
+                yaml_path,
+                namespace=namespace,
+                verbose=False,
+            )
+            logger.info(
+                f"已应用YAML: {yaml_path} (namespace={namespace or 'as-defined'})"
+            )
+            return {"success": True, "path": yaml_path}
+        except Exception as e:
+            msg = str(e)
+            if "AlreadyExists" in msg or "already exists" in msg:
+                logger.info(f"YAML资源已存在，视为成功: {yaml_path}")
+                return {"success": True, "path": yaml_path, "note": "already exists"}
+            logger.error(f"应用YAML失败 {yaml_path}: {msg}")
+            return {"success": False, "path": yaml_path, "error": msg}
         except Exception as e:
             logger.error(f"获取Deployment异常: {str(e)}")
             return None
@@ -271,6 +336,129 @@ class KubernetesService:
         except Exception as e:
             logger.error(f"重启Deployment失败: {str(e)}")
             return False
+
+    async def wait_for_deployment_rollout(
+        self,
+        name: str,
+        namespace: str = None,
+        timeout_seconds: int = 120,
+        poll_interval_seconds: float = 2.0,
+    ) -> Dict[str, Any]:
+        """等待Deployment滚动升级完成并返回状态。
+
+        返回字段：
+        - ready: 是否就绪
+        - replicas, updated_replicas, ready_replicas, available_replicas
+        - observed_generation, generation
+        - conditions: 原始conditions列表（已脱敏）
+        - elapsed_seconds: 实际等待时间
+        - error: 若失败/异常，包含错误信息
+        """
+        if not self._ensure_initialized():
+            raise RuntimeError("Kubernetes未初始化，无法等待Deployment滚动升级")
+
+        start_ts = time.time()
+        namespace = namespace or config.k8s.namespace
+
+        try:
+            while True:
+                dep = self.apps_v1.read_namespaced_deployment(
+                    name=name, namespace=namespace
+                )
+                dep_dict = dep.to_dict()
+
+                spec = dep_dict.get("spec", {})
+                status = dep_dict.get("status", {})
+                metadata = dep_dict.get("metadata", {})
+
+                replicas = int(spec.get("replicas", 0) or 0)
+                updated_replicas = int(status.get("updated_replicas", 0) or 0)
+                ready_replicas = int(status.get("ready_replicas", 0) or 0)
+                available_replicas = int(status.get("available_replicas", 0) or 0)
+
+                generation = int(metadata.get("generation", 0) or 0)
+                observed_generation = int(status.get("observed_generation", 0) or 0)
+
+                # 判定就绪条件：
+                # 1) controller已观察到最新generation
+                # 2) updated/available/ready副本均达到期望replicas
+                observed_latest = observed_generation >= generation and generation > 0
+                replicas_ok = replicas == 0 or (
+                    updated_replicas >= replicas
+                    and available_replicas >= replicas
+                    and ready_replicas >= max(1, min(replicas, available_replicas))
+                )
+
+                if observed_latest and replicas_ok:
+                    elapsed = time.time() - start_ts
+                    return {
+                        "ready": True,
+                        "replicas": replicas,
+                        "updated_replicas": updated_replicas,
+                        "ready_replicas": ready_replicas,
+                        "available_replicas": available_replicas,
+                        "generation": generation,
+                        "observed_generation": observed_generation,
+                        "conditions": status.get("conditions", []),
+                        "elapsed_seconds": round(elapsed, 3),
+                    }
+
+                if time.time() - start_ts >= timeout_seconds:
+                    elapsed = time.time() - start_ts
+                    return {
+                        "ready": False,
+                        "replicas": replicas,
+                        "updated_replicas": updated_replicas,
+                        "ready_replicas": ready_replicas,
+                        "available_replicas": available_replicas,
+                        "generation": generation,
+                        "observed_generation": observed_generation,
+                        "conditions": status.get("conditions", []),
+                        "elapsed_seconds": round(elapsed, 3),
+                        "error": f"rollout wait timed out after {timeout_seconds}s",
+                    }
+
+                await asyncio.sleep(poll_interval_seconds)
+
+        except ApiException as e:
+            logger.error(f"等待Deployment滚动升级失败: {str(e)}")
+            return {
+                "ready": False,
+                "error": str(e),
+                "elapsed_seconds": round(time.time() - start_ts, 3),
+            }
+        except Exception as e:
+            logger.error(f"等待Deployment滚动升级异常: {str(e)}")
+            return {
+                "ready": False,
+                "error": str(e),
+                "elapsed_seconds": round(time.time() - start_ts, 3),
+            }
+
+    async def list_resource_quotas(self, namespace: str) -> List[Dict[str, Any]]:
+        """列出命名空间的ResourceQuota"""
+        if not self._ensure_initialized():
+            raise RuntimeError("Kubernetes未初始化，无法获取ResourceQuota")
+
+        try:
+            rq_list = self.core_v1.list_namespaced_resource_quota(namespace=namespace)
+            results: List[Dict[str, Any]] = []
+            for item in rq_list.items:
+                d = item.to_dict()
+                # 清理不必要字段
+                if "metadata" in d:
+                    metadata = d["metadata"]
+                    for key in ["managed_fields", "resource_version", "uid"]:
+                        metadata.pop(key, None)
+                results.append(d)
+            logger.info(f"获取到 {len(results)} 个ResourceQuota (ns={namespace})")
+            return results
+        except ApiException as e:
+            logger.error(f"获取ResourceQuota失败: {str(e)}")
+            return []
+        except Exception as e:
+            logger.error(f"获取ResourceQuota异常: {str(e)}")
+            return []
 
     async def scale_deployment(
         self, name: str, replicas: int, namespace: str = None
@@ -417,11 +605,11 @@ class KubernetesService:
         try:
             # 先获取Pod状态，检查容器是否就绪
             pod = self.core_v1.read_namespaced_pod(name=pod_name, namespace=namespace)
-            
+
             # 确定要查询的容器名称
             if not container_name and pod.spec.containers:
                 container_name = pod.spec.containers[0].name
-            
+
             # 检查容器状态
             if pod.status.container_statuses:
                 for container_status in pod.status.container_statuses:
@@ -430,15 +618,25 @@ class KubernetesService:
                         if container_status.state.waiting:
                             reason = container_status.state.waiting.reason
                             message = container_status.state.waiting.message or ""
-                            logger.info(f"容器 {container_name} 处于waiting状态: {reason} - {message}")
+                            logger.info(
+                                f"容器 {container_name} 处于waiting状态: {reason} - {message}"
+                            )
                             # 返回状态信息而不是None，以便调用者知道发生了什么
                             return f"[容器等待中] {reason}: {message}"
                         # 如果容器从未运行过（没有lastState.terminated），跳过
-                        elif not container_status.ready and not container_status.state.running:
-                            if not (container_status.last_state and container_status.last_state.terminated):
-                                logger.info(f"容器 {container_name} 尚未运行，无法获取日志")
+                        elif (
+                            not container_status.ready
+                            and not container_status.state.running
+                        ):
+                            if not (
+                                container_status.last_state
+                                and container_status.last_state.terminated
+                            ):
+                                logger.info(
+                                    f"容器 {container_name} 尚未运行，无法获取日志"
+                                )
                                 return "[容器未运行]"
-            
+
             # 构建日志查询参数
             kwargs = {
                 "name": pod_name,

@@ -721,9 +721,7 @@ class MDMetadataEnhancer:
                         concept.concept
                         for concept in technical_concepts[:5]  # 限制证据数量
                         if concept.domain == domain
-                    ][
-                        :2
-                    ],  # 最多2个证据
+                    ][:2],  # 最多2个证据
                 )
             )
 

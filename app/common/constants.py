@@ -168,7 +168,6 @@ class ApiEndpoints:
     # 预测端点
     PREDICT = f"{AppConstants.API_VERSION_V1}/predict"
     PREDICT_TREND = f"{PREDICT}/trend"
-    PREDICT_HEALTH = f"{PREDICT}/health"
     PREDICT_READY = f"{PREDICT}/ready"
     PREDICT_INFO = f"{PREDICT}/info"
     PREDICT_MODELS = f"{PREDICT}/models"
@@ -177,14 +176,12 @@ class ApiEndpoints:
     RCA = f"{AppConstants.API_VERSION_V1}/rca"
     RCA_METRICS = f"{RCA}/metrics"
     RCA_CONFIG = f"{RCA}/config"
-    RCA_HEALTH = f"{RCA}/health"
     RCA_READY = f"{RCA}/ready"
     RCA_INFO = f"{RCA}/info"
 
     # 自动修复端点
     AUTOFIX = f"{AppConstants.API_VERSION_V1}/autofix"
     AUTOFIX_DIAGNOSE = f"{AUTOFIX}/diagnose"
-    AUTOFIX_HEALTH = f"{AUTOFIX}/health"
     AUTOFIX_CONFIG = f"{AUTOFIX}/config"
     AUTOFIX_READY = f"{AUTOFIX}/ready"
     AUTOFIX_INFO = f"{AUTOFIX}/info"
@@ -195,7 +192,6 @@ class ApiEndpoints:
     ASSISTANT_SESSION = f"{ASSISTANT}/session"
     ASSISTANT_REFRESH = f"{ASSISTANT}/refresh"
     ASSISTANT_CONFIG = f"{ASSISTANT}/config"
-    ASSISTANT_HEALTH = f"{ASSISTANT}/health"
     ASSISTANT_READY = f"{ASSISTANT}/ready"
     ASSISTANT_INFO = f"{ASSISTANT}/info"
 
@@ -211,7 +207,6 @@ def get_api_info() -> Dict[str, Any]:
             "prediction": {
                 "predict": ApiEndpoints.PREDICT,
                 "trend": ApiEndpoints.PREDICT_TREND,
-                "health": ApiEndpoints.PREDICT_HEALTH,
                 "ready": ApiEndpoints.PREDICT_READY,
                 "info": ApiEndpoints.PREDICT_INFO,
                 "models": ApiEndpoints.PREDICT_MODELS,
@@ -220,14 +215,12 @@ def get_api_info() -> Dict[str, Any]:
                 "analyze": ApiEndpoints.RCA,
                 "metrics": ApiEndpoints.RCA_METRICS,
                 "config": ApiEndpoints.RCA_CONFIG,
-                "health": ApiEndpoints.RCA_HEALTH,
                 "ready": ApiEndpoints.RCA_READY,
                 "info": ApiEndpoints.RCA_INFO,
             },
             "autofix": {
                 "fix": ApiEndpoints.AUTOFIX,
                 "diagnose": ApiEndpoints.AUTOFIX_DIAGNOSE,
-                "health": ApiEndpoints.AUTOFIX_HEALTH,
                 "ready": ApiEndpoints.AUTOFIX_READY,
                 "info": ApiEndpoints.AUTOFIX_INFO,
             },
@@ -235,7 +228,6 @@ def get_api_info() -> Dict[str, Any]:
                 "query": ApiEndpoints.ASSISTANT_QUERY,
                 "session": ApiEndpoints.ASSISTANT_SESSION,
                 "refresh": ApiEndpoints.ASSISTANT_REFRESH,
-                "health": ApiEndpoints.ASSISTANT_HEALTH,
                 "ready": ApiEndpoints.ASSISTANT_READY,
                 "info": ApiEndpoints.ASSISTANT_INFO,
             },

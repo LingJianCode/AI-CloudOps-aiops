@@ -15,8 +15,8 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Set
 
 from app.config.settings import CONFIG, config
-from app.models.rca_models import EventData, SeverityLevel
 from app.core.interfaces.k8s_client import K8sClient, NullK8sClient
+from app.models.rca_models import EventData, SeverityLevel
 
 from .base_collector import BaseDataCollector
 
@@ -230,7 +230,9 @@ class EventsCollector(BaseDataCollector):
 
             return self._convert_to_event_data(event)
         except Exception as e:
-            self.logger.debug(f"处理单个事件时出错: {e}, 事件: {event.get('reason', 'Unknown')}")
+            self.logger.debug(
+                f"处理单个事件时出错: {e}, 事件: {event.get('reason', 'Unknown')}"
+            )
             return None
 
     def _parse_event_time(self, event: Dict[str, Any]) -> datetime:
@@ -294,7 +296,7 @@ class EventsCollector(BaseDataCollector):
 
         # 注意：Kubernetes API返回的是involvedObject（驼峰命名）
         involved_object = event.get("involvedObject", {})
-        
+
         # 确保所有字段都有值，避免空字段
         object_info = {
             "kind": involved_object.get("kind", "Unknown"),

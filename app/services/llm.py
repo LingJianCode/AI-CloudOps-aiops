@@ -34,7 +34,7 @@ logger = logging.getLogger("aiops.llm")
 
 
 class LLMService:
-    """AI-CloudOps LLM智能服务"""
+    """模型服务"""
 
     def __init__(self):
         # 初始化错误处理器和基本配置
@@ -71,7 +71,7 @@ class LLMService:
             else config.llm.model
         )
 
-        # 根据配置的主要提供商类型进行不同的初始化流程
+        # 根据配置的主要提供方类型进行初始化
         if self.provider.lower() == "openai":
             self._init_openai_provider()
         elif self.provider.lower() == "ollama":
@@ -80,7 +80,7 @@ class LLMService:
             raise ValidationError(f"不支持的LLM提供商: {self.provider}")
 
     def _init_openai_provider(self) -> None:
-        # OpenAI提供商初始化流程
+        # OpenAI初始化
         self.client = OpenAI(
             api_key=config.llm.effective_api_key, base_url=config.llm.effective_base_url
         )
@@ -90,7 +90,7 @@ class LLMService:
         self._init_backup_ollama()
 
     def _init_ollama_provider(self) -> None:
-        # Ollama提供商初始化流程
+        # Ollama初始化
         self.client = None  # Ollama使用独立的API调用，不需要客户端实例
 
         # 使用环境变量设置Ollama主机地址
@@ -179,13 +179,12 @@ class LLMService:
         max_tokens: Optional[int] = None,
         use_task_model: bool = False,
     ) -> Union[str, Dict[str, Any]]:
-        """生成LLM响应
+        """生成响应
 
         Args:
-            use_task_model: True使用task_model(简单操作), False使用model(复杂操作)
+            use_task_model: True使用task_model(简单任务), False使用model(复杂任务)
         """
         try:
-
             if system_prompt:
                 messages = [{"role": "system", "content": system_prompt}] + messages
 
@@ -204,10 +203,8 @@ class LLMService:
 
             return response
         except ValidationError as e:
-
             raise e
         except Exception as e:
-
             error_msg, details = self.error_handler.log_and_return_error(
                 e, "LLM响应生成失败"
             )
@@ -228,7 +225,7 @@ class LLMService:
         use_task_model: bool = False,
     ) -> Union[str, Dict[str, Any]]:
         """
-        执行生成并提供故障转移机制 - 内部方法
+        执行生成并提供故障转移机制
         """
         # 使用主要提供商
         try:
@@ -262,7 +259,7 @@ class LLMService:
         except Exception as e:
             # 主要提供商失败，尝试备用提供商
             logger.warning(
-                f"主要提供商({self.provider})失败: {str(e)}，切换到备用提供商({self.backup_provider})"
+                f"主要提供方({self.provider})失败: {str(e)}，切换到备用({self.backup_provider})"
             )
 
             # 如果所有提供商都已尝试过，使用最终备用方案
@@ -304,7 +301,7 @@ class LLMService:
                 try:
                     return await self._use_fallback_chat_model(messages)
                 except Exception as fallback_e:
-                    # 所有方案都失败，抛出组合异常
+                    # 所有方案都失败
                     raise ExternalServiceError(
                         f"所有LLM服务都失败: 主要({str(e)}) | 备用({str(backup_e)}) | 降级({str(fallback_e)})",
                         f"{self.provider}_all_failed",
@@ -319,7 +316,7 @@ class LLMService:
 
             from app.core.agents.fallback_models import FallbackChatModel
 
-            # 转换消息格式为LangChain格式
+            # 转换消息格式
             langchain_messages = []
             for msg in messages:
                 role = msg.get("role", "user")
@@ -332,7 +329,7 @@ class LLMService:
                 else:  # user或其他角色默认为human
                     langchain_messages.append(HumanMessage(content=content))
 
-            # 创建并使用备用聊天模型
+            # 使用备用聊天模型
             fallback_model = FallbackChatModel()
             result = fallback_model._generate(langchain_messages)
 
@@ -414,7 +411,7 @@ class LLMService:
     ) -> Optional[str]:
         """调用Ollama API生成响应"""
         try:
-            # 确保设置正确的Ollama host
+            # 设置Ollama host
             os.environ["OLLAMA_HOST"] = config.llm.ollama_base_url.replace("/v1", "")
             logger.debug(f"使用Ollama host: {os.environ.get('OLLAMA_HOST')}")
 
@@ -505,7 +502,7 @@ class LLMService:
 
             messages = [{"role": "user", "content": context}]
 
-            # 调用LLM API
+            # 调用生成接口
             response_format = {"type": "json_object"}
             response = await self.generate_response(
                 messages=messages,
@@ -523,7 +520,7 @@ class LLMService:
                     )
                 except Exception as json_error:
                     logger.error(f"解析K8s分析JSON失败: {str(json_error)}")
-                    # 尝试再次调用，但不指定JSON响应格式
+                    # 尝试再次调用，但不指定JSON格式
                     alternative_response = await self.generate_response(
                         messages=messages,
                         system_prompt=system_prompt,
@@ -539,7 +536,7 @@ class LLMService:
                         logger.error("获取替代响应失败")
                         return self._create_default_analysis()
             else:
-                logger.error("从LLM获取响应失败")
+                logger.error("获取响应失败")
                 return self._create_default_analysis()
 
         except Exception as e:
@@ -559,7 +556,7 @@ class LLMService:
     async def _extract_json_from_k8s_analysis(
         self, response: str, messages: List[Dict[str, str]]
     ) -> Dict[str, Any]:
-        """从LLM响应中提取JSON对象"""
+        """从响应中提取JSON对象"""
         # 尝试直接解析
         try:
             return json.loads(response)
@@ -576,7 +573,7 @@ class LLMService:
         except (json.JSONDecodeError, AttributeError):
             logger.warning("从响应中提取JSON失败，尝试进行修复")
 
-        # 尝试请求LLM修复JSON
+        # 尝试请求修复JSON
         try:
             fix_prompt = """
 上一条消息中的JSON格式有问题，请修复它。
@@ -613,7 +610,7 @@ class LLMService:
             # 创建最基本的返回数据
             analysis = self._create_default_analysis()
 
-            # 尝试从原始响应中提取有用信息
+            # 尝试从原始响应中提取信息
             if "问题概述" in response or "problem_summary" in response:
                 analysis["problem_summary"] = "可能存在部署配置问题"
 
@@ -658,7 +655,7 @@ class LLMService:
 """
             messages = [{"role": "user", "content": content}]
 
-            # 生成根因分析总结
+            # 生成总结
             response = await self.generate_response(
                 messages=messages,
                 system_prompt=system_prompt,
@@ -695,7 +692,7 @@ class LLMService:
 """
             messages = [{"role": "user", "content": content}]
 
-            # 生成修复说明
+            # 生成说明
             response = await self.generate_response(
                 messages=messages,
                 system_prompt=system_prompt,
@@ -710,20 +707,20 @@ class LLMService:
             return None
 
     async def is_healthy(self) -> bool:
-        """检查LLM服务是否健康""" ""
+        """检查服务健康""" ""
         try:
             logger.info("检查LLM服务健康状态")
 
-            # 检查主要提供商健康状态
+            # 检查主要提供方
             provider_health = await self._check_provider_health(self.provider)
 
             if provider_health:
                 logger.info(f"LLM服务({self.provider})健康状态: 正常")
                 return True
 
-            # 如果主要提供商不健康，检查备用提供商
+            # 如果主要提供方不健康，检查备用
             logger.warning(
-                f"LLM服务({self.provider})不可用，检查备用提供商({self.backup_provider})"
+                f"服务({self.provider})不可用，检查备用({self.backup_provider})"
             )
             backup_health = await self._check_provider_health(self.backup_provider)
 
@@ -731,8 +728,8 @@ class LLMService:
                 logger.info(f"备用LLM服务({self.backup_provider})健康状态: 正常")
                 return True
 
-            # 所有提供商都不可用
-            logger.error("所有LLM服务均不可用")
+            # 所有提供方都不可用
+            logger.error("所有服务均不可用")
             return False
 
         except Exception as e:
@@ -741,7 +738,7 @@ class LLMService:
 
     async def _check_provider_health(self, provider: str) -> bool:
         """
-        检查特定提供商的健康状态
+        检查特定提供方的健康状态
         """
         try:
             if provider.lower() == "openai":
@@ -757,13 +754,13 @@ class LLMService:
 
     async def _check_openai_health(self) -> bool:
         """
-        检查OpenAI服务健康状态 - OpenAI提供商健康检查方法
+        检查OpenAI健康状态
 
         通过发送简单的测试请求来验证OpenAI API的连接性和可用性。
         该方法会创建或使用现有的客户端连接，发送最小化的测试请求来确认服务状态。
 
         Returns:
-            bool: True表示OpenAI服务健康，False表示服务不可用
+            bool: True表示健康，False表示不可用
 
         检查流程：
         1. 获取或创建OpenAI客户端实例
@@ -820,13 +817,13 @@ class LLMService:
 
     async def _check_ollama_health(self) -> bool:
         """
-        检查Ollama服务健康状态 - Ollama提供商健康检查方法
+        检查Ollama健康状态
 
         通过检查模型列表和发送测试请求来验证Ollama服务的可用性。
         该方法会设置正确的主机环境变量，检查需要的模型是否可用，并验证服务响应。
 
         Returns:
-            bool: True表示Ollama服务健康，False表示服务不可用
+            bool: True表示健康，False表示不可用
 
         检查流程：
         1. 设置正确的Ollama主机环境变量

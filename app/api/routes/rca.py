@@ -12,18 +12,20 @@ Description: AI-CloudOps智能根因分析API接口
 import logging
 import uuid
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Body
-from app.common.exceptions import (
-    AIOpsException,
-    ValidationError as DomainValidationError,
-    ServiceUnavailableError,
-    RCAError,
-)
+from fastapi import APIRouter, BackgroundTasks, Body, HTTPException
 
 from app.api.decorators import api_response, log_api_call
 from app.common.constants import AppConstants, ErrorMessages, HttpStatusCodes
+from app.common.exceptions import (
+    AIOpsException,
+    RCAError,
+    ServiceUnavailableError,
+)
+from app.common.exceptions import (
+    ValidationError as DomainValidationError,
+)
 from app.models import (
     BaseResponse,
     ErrorSummaryResponse,
@@ -36,21 +38,20 @@ from app.models import (
 from app.models.rca_models import (
     RCAAnalysisResponse,
     RCAAnalyzeRequest,
-    RCAHealthResponse,
-    RCAMetricsDataRequest,
-    RCAEventsDataRequest, 
-    RCALogsDataRequest,
-    RCADataResponse,
     RCACacheStatsResponse,
     RCAClearCacheResponse,
     RCAClearNamespaceCacheRequest,
     RCAClearOperationCacheRequest,
-    RCAQuickDiagnosisRequest,
-    RCAEventPatternsRequest,
+    RCADataResponse,
     RCAErrorSummaryRequest,
+    RCAEventPatternsRequest,
+    RCAEventsDataRequest,
+    RCALogsDataRequest,
+    RCAMetricsDataRequest,
+    RCAQuickDiagnosisRequest,
 )
-from app.services.rca_service import RCAService
 from app.services.factory import ServiceFactory
+from app.services.rca_service import RCAService
 
 logger = logging.getLogger("aiops.api.rca")
 
@@ -88,13 +89,13 @@ async def get_rca_service() -> RCAService:
                                     "path": "/api/v1/rca",
                                     "method": "POST",
                                     "detail": "时间范围超过最大限制",
-                                    "timestamp": "2025-01-01T00:00:00"
-                                }
-                            }
+                                    "timestamp": "2025-01-01T00:00:00",
+                                },
+                            },
                         }
                     }
                 }
-            }
+            },
         }
     },
 )
@@ -103,14 +104,18 @@ async def get_rca_service() -> RCAService:
 async def analyze_root_cause(
     request: RCAAnalyzeRequest = Body(
         ...,
-        example={
-            "namespace": "production",
-            "time_window_hours": 2.0,
-            "metrics": [
-                "container_cpu_usage_seconds_total",
-                "container_memory_working_set_bytes",
-                "kube_pod_container_status_restarts_total"
-            ]
+        examples={
+            "default": {
+                "value": {
+                    "namespace": "production",
+                    "time_window_hours": 2.0,
+                    "metrics": [
+                        "container_cpu_usage_seconds_total",
+                        "container_memory_working_set_bytes",
+                        "kube_pod_container_status_restarts_total",
+                    ],
+                }
+            }
         },
     ),
     background_tasks: BackgroundTasks = None,
@@ -124,18 +129,20 @@ async def analyze_root_cause(
         metrics=request.metrics,
     )
 
-    background_tasks.add_task((await get_rca_service()).cache_analysis_result, analysis_result)
-    
+    background_tasks.add_task(
+        (await get_rca_service()).cache_analysis_result, analysis_result
+    )
+
     # 动态生成分析ID和时间戳
     analysis_id = str(uuid.uuid4())
     current_timestamp = datetime.now().isoformat()
-    
+
     # 构建Response，使用实际分析结果的数据
     # 确保timestamp是字符串格式
     result_timestamp = analysis_result.get("timestamp", current_timestamp)
     if isinstance(result_timestamp, datetime):
         result_timestamp = result_timestamp.isoformat()
-    
+
     response = RCAAnalysisResponse(
         namespace=request.namespace,
         analysis_id=analysis_id,
@@ -186,30 +193,6 @@ async def get_all_prometheus_metrics() -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"获取Prometheus指标失败: {str(e)}")
         raise RCAError(ErrorMessages.RCA_SERVICE_ERROR)
-
-
-@router.get(
-    "/health",
-    summary="AI-CloudOps健康检查",
-    response_model=BaseResponse,
-)
-@api_response("AI-CloudOps健康检查")
-async def health_check() -> Dict[str, Any]:
-    """检查RCA服务及其依赖的健康状态"""
-    await (await get_rca_service()).initialize()
-
-    health_status = await (await get_rca_service()).get_health_status()
-
-    response = RCAHealthResponse(
-        status=health_status.get("status", "healthy"),
-        prometheus_connected=health_status.get("prometheus_connected", False),
-        kubernetes_connected=health_status.get("kubernetes_connected", False),
-        redis_connected=health_status.get("redis_connected", False),
-        last_check_time=health_status.get("timestamp", datetime.now()).isoformat() if isinstance(health_status.get("timestamp"), datetime) else datetime.now().isoformat(),
-        version=health_status.get("version"),
-    )
-
-    return response.model_dump()
 
 
 @router.get(
@@ -288,28 +271,34 @@ async def get_rca_config() -> Dict[str, Any]:
 @api_response("AI-CloudOps快速诊断")
 async def quick_diagnosis(
     request: RCAQuickDiagnosisRequest = Body(
-        ..., example={"namespace": "default"}
-    )
+        ..., examples={"default": {"value": {"namespace": "default"}}}
+    ),
 ) -> Dict[str, Any]:
     """快速问题诊断"""
     await (await get_rca_service()).initialize()
 
-    diagnosis_result = await (await get_rca_service()).quick_diagnosis(namespace=request.namespace)
+    diagnosis_result = await (await get_rca_service()).quick_diagnosis(
+        namespace=request.namespace
+    )
 
     # 计算分析时长（如果服务未提供）
     analysis_duration = diagnosis_result.get("analysis_duration", 0.0)
     if analysis_duration == 0.0 and "diagnosis_time" in diagnosis_result:
         # 使用当前时间与诊断时间的差值估算
         try:
-            diagnosis_dt = datetime.fromisoformat(diagnosis_result["diagnosis_time"].replace('Z', '+00:00'))
+            diagnosis_dt = datetime.fromisoformat(
+                diagnosis_result["diagnosis_time"].replace("Z", "+00:00")
+            )
             current_dt = datetime.now(diagnosis_dt.tzinfo)
             analysis_duration = (current_dt - diagnosis_dt).total_seconds()
         except:
             analysis_duration = 0.0
-    
+
     # 优化：使用实际的诊断时间戳，而不是硬编码
-    diagnosis_timestamp = diagnosis_result.get("diagnosis_time", datetime.now().isoformat())
-    
+    diagnosis_timestamp = diagnosis_result.get(
+        "diagnosis_time", datetime.now().isoformat()
+    )
+
     response = QuickDiagnosisResponse(
         namespace=request.namespace,
         status=diagnosis_result.get("status", "completed"),
@@ -331,8 +320,8 @@ async def quick_diagnosis(
 @api_response("AI-CloudOps事件模式分析")
 async def get_event_patterns(
     request: RCAEventPatternsRequest = Body(
-        ..., example={"namespace": "default", "hours": 1.0}
-    )
+        ..., examples={"default": {"value": {"namespace": "default", "hours": 1.0}}}
+    ),
 ) -> Dict[str, Any]:
     """分析事件模式"""
     await (await get_rca_service()).initialize()
@@ -361,8 +350,8 @@ async def get_event_patterns(
 @api_response("AI-CloudOps错误摘要")
 async def get_error_summary(
     request: RCAErrorSummaryRequest = Body(
-        ..., example={"namespace": "default", "hours": 1.0}
-    )
+        ..., examples={"default": {"value": {"namespace": "default", "hours": 1.0}}}
+    ),
 ) -> Dict[str, Any]:
     """汇总错误信息"""
     await (await get_rca_service()).initialize()
@@ -405,13 +394,13 @@ async def get_error_summary(
                                     "path": "/api/v1/rca/data/metrics",
                                     "method": "POST",
                                     "detail": "时间格式无效",
-                                    "timestamp": "2025-01-01T00:00:00"
-                                }
-                            }
+                                    "timestamp": "2025-01-01T00:00:00",
+                                },
+                            },
                         }
                     }
                 }
-            }
+            },
         }
     },
 )
@@ -420,21 +409,29 @@ async def get_error_summary(
 async def query_metrics_data(
     request: RCAMetricsDataRequest = Body(
         ...,
-        example={
-            "namespace": "production",
-            "start_time": "2024-01-01T00:00:00Z",
-            "end_time": "2024-01-01T01:00:00Z",
-            "metrics": "container_cpu_usage_seconds_total"
+        examples={
+            "default": {
+                "value": {
+                    "namespace": "production",
+                    "start_time": "2024-01-01T00:00:00Z",
+                    "end_time": "2024-01-01T01:00:00Z",
+                    "metrics": "container_cpu_usage_seconds_total",
+                }
+            }
         },
-    )
+    ),
 ) -> Dict[str, Any]:
     """直接查询指标数据"""
     await (await get_rca_service()).initialize()
 
     # 使用service层的时间解析方法
     try:
-        parsed_start_time = (await get_rca_service()).parse_iso_timestamp(request.start_time, "开始时间")
-        parsed_end_time = (await get_rca_service()).parse_iso_timestamp(request.end_time, "结束时间")
+        parsed_start_time = (await get_rca_service()).parse_iso_timestamp(
+            request.start_time, "开始时间"
+        )
+        parsed_end_time = (await get_rca_service()).parse_iso_timestamp(
+            request.end_time, "结束时间"
+        )
     except (AIOpsException, DomainValidationError):
         raise
 
@@ -473,21 +470,29 @@ async def query_metrics_data(
 async def query_events_data(
     request: RCAEventsDataRequest = Body(
         ...,
-        example={
-            "namespace": "production",
-            "start_time": "2024-01-01T00:00:00Z",
-            "end_time": "2024-01-01T01:00:00Z",
-            "severity": "critical"
+        examples={
+            "default": {
+                "value": {
+                    "namespace": "production",
+                    "start_time": "2024-01-01T00:00:00Z",
+                    "end_time": "2024-01-01T01:00:00Z",
+                    "severity": "critical",
+                }
+            }
         },
-    )
+    ),
 ) -> Dict[str, Any]:
     """直接查询事件数据"""
     await (await get_rca_service()).initialize()
 
     # 使用service层的时间解析方法
     try:
-        parsed_start_time = (await get_rca_service()).parse_iso_timestamp(request.start_time, "开始时间")
-        parsed_end_time = (await get_rca_service()).parse_iso_timestamp(request.end_time, "结束时间")
+        parsed_start_time = (await get_rca_service()).parse_iso_timestamp(
+            request.start_time, "开始时间"
+        )
+        parsed_end_time = (await get_rca_service()).parse_iso_timestamp(
+            request.end_time, "结束时间"
+        )
     except (AIOpsException, DomainValidationError):
         raise
 
@@ -526,23 +531,31 @@ async def query_events_data(
 async def query_logs_data(
     request: RCALogsDataRequest = Body(
         ...,
-        example={
-            "namespace": "production",
-            "start_time": "2024-01-01T00:00:00Z",
-            "end_time": "2024-01-01T01:00:00Z",
-            "pod_name": "app-pod-1",
-            "error_only": True,
-            "max_lines": 100
+        examples={
+            "default": {
+                "value": {
+                    "namespace": "production",
+                    "start_time": "2024-01-01T00:00:00Z",
+                    "end_time": "2024-01-01T01:00:00Z",
+                    "pod_name": "app-pod-1",
+                    "error_only": True,
+                    "max_lines": 100,
+                }
+            }
         },
-    )
+    ),
 ) -> Dict[str, Any]:
     """直接查询日志数据"""
     await (await get_rca_service()).initialize()
 
     # 使用service层的时间解析方法
     try:
-        parsed_start_time = (await get_rca_service()).parse_iso_timestamp(request.start_time, "开始时间")
-        parsed_end_time = (await get_rca_service()).parse_iso_timestamp(request.end_time, "结束时间")
+        parsed_start_time = (await get_rca_service()).parse_iso_timestamp(
+            request.start_time, "开始时间"
+        )
+        parsed_end_time = (await get_rca_service()).parse_iso_timestamp(
+            request.end_time, "结束时间"
+        )
     except (AIOpsException, DomainValidationError):
         raise
 
@@ -589,7 +602,7 @@ async def get_cache_stats() -> Dict[str, Any]:
     try:
         await (await get_rca_service()).initialize()
         cache_stats = await (await get_rca_service()).get_cache_stats()
-        
+
         response = RCACacheStatsResponse(
             available=cache_stats.get("available", False),
             healthy=cache_stats.get("healthy"),
@@ -601,7 +614,7 @@ async def get_cache_stats() -> Dict[str, Any]:
             timestamp=cache_stats.get("timestamp", datetime.now().isoformat()),
             message=cache_stats.get("message"),
         )
-        
+
         return response.model_dump()
     except (AIOpsException, DomainValidationError) as e:
         raise e
@@ -621,14 +634,14 @@ async def clear_all_cache() -> Dict[str, Any]:
     try:
         await (await get_rca_service()).initialize()
         result = await (await get_rca_service()).clear_all_cache()
-        
+
         response = RCAClearCacheResponse(
             success=result.get("success", False),
             message=result.get("message", ""),
             cleared_count=result.get("cleared_count", 0),
             timestamp=result.get("timestamp", datetime.now().isoformat()),
         )
-        
+
         return response.model_dump()
     except (AIOpsException, DomainValidationError) as e:
         raise e
@@ -645,14 +658,16 @@ async def clear_all_cache() -> Dict[str, Any]:
 @api_response("AI-CloudOps清理指定命名空间缓存")
 async def clear_namespace_cache(
     request: RCAClearNamespaceCacheRequest = Body(
-        ..., example={"namespace": "default"}
-    )
+        ..., examples={"default": {"value": {"namespace": "default"}}}
+    ),
 ) -> Dict[str, Any]:
     """清理指定命名空间的缓存"""
     try:
         await (await get_rca_service()).initialize()
-        result = await (await get_rca_service()).clear_namespace_cache(request.namespace)
-        
+        result = await (await get_rca_service()).clear_namespace_cache(
+            request.namespace
+        )
+
         response = RCAClearCacheResponse(
             success=result.get("success", False),
             message=result.get("message", ""),
@@ -660,7 +675,7 @@ async def clear_namespace_cache(
             namespace=result.get("namespace"),
             timestamp=result.get("timestamp", datetime.now().isoformat()),
         )
-        
+
         return response.model_dump()
     except (AIOpsException, DomainValidationError) as e:
         raise e
@@ -677,14 +692,16 @@ async def clear_namespace_cache(
 @api_response("AI-CloudOps清理指定操作缓存")
 async def clear_operation_cache(
     request: RCAClearOperationCacheRequest = Body(
-        ..., example={"operation": "analyze:production"}
-    )
+        ..., examples={"default": {"value": {"operation": "analyze:production"}}}
+    ),
 ) -> Dict[str, Any]:
     """清理指定操作类型的缓存"""
     try:
         await (await get_rca_service()).initialize()
-        result = await (await get_rca_service()).clear_operation_cache(request.operation)
-        
+        result = await (await get_rca_service()).clear_operation_cache(
+            request.operation
+        )
+
         response = RCAClearCacheResponse(
             success=result.get("success", False),
             message=result.get("message", ""),
@@ -692,7 +709,7 @@ async def clear_operation_cache(
             operation=result.get("operation"),
             timestamp=result.get("timestamp", datetime.now().isoformat()),
         )
-        
+
         return response.model_dump()
     except (AIOpsException, DomainValidationError) as e:
         raise e
@@ -724,8 +741,7 @@ async def rca_info() -> Dict[str, Any]:
         ],
         "endpoints": {
             "analyze": "/rca/analyze",
-            "metrics": "/rca/metrics", 
-            "health": "/rca/health",
+            "metrics": "/rca/metrics",
             "quick_diagnosis": "/rca/quick-diagnosis",
             "event_patterns": "/rca/event-patterns",
             "error_summary": "/rca/error-summary",
@@ -791,25 +807,28 @@ async def rca_info() -> Dict[str, Any]:
                                     "path": "/api/v1/rca/incident",
                                     "method": "POST",
                                     "detail": "缺少affected_services参数",
-                                    "timestamp": "2025-01-01T00:00:00"
-                                }
-                            }
+                                    "timestamp": "2025-01-01T00:00:00",
+                                },
+                            },
                         }
                     }
                 }
-            }
+            },
         }
     },
 )
 @api_response("AI-CloudOps RCA事件分析")
 async def rca_incident(
     request: Dict[str, Any] = Body(
-        ..., example={"affected_services": ["payment", "order"]}
-    )
+        ...,
+        examples={"default": {"value": {"affected_services": ["payment", "order"]}}},
+    ),
 ) -> Dict[str, Any]:
     affected = (request or {}).get("affected_services")
     if not affected:
-        raise HTTPException(status_code=HttpStatusCodes.BAD_REQUEST, detail="缺少affected_services参数")
+        raise HTTPException(
+            status_code=HttpStatusCodes.BAD_REQUEST, detail="缺少affected_services参数"
+        )
     return {
         "status": "completed",
         "affected_services": affected,
@@ -840,9 +859,9 @@ __all__ = ["router"]
                                     "path": "/api/v1/rca",
                                     "method": "POST",
                                     "detail": "时间范围超过最大限制",
-                                    "timestamp": "2025-01-01T00:00:00"
-                                }
-                            }
+                                    "timestamp": "2025-01-01T00:00:00",
+                                },
+                            },
                         },
                         "invalid_time_format": {
                             "summary": "时间格式无效",
@@ -854,13 +873,13 @@ __all__ = ["router"]
                                     "path": "/api/v1/rca",
                                     "method": "POST",
                                     "detail": "时间格式无效",
-                                    "timestamp": "2025-01-01T00:00:00"
-                                }
-                            }
-                        }
+                                    "timestamp": "2025-01-01T00:00:00",
+                                },
+                            },
+                        },
                     }
                 }
-            }
+            },
         }
     },
 )
@@ -868,12 +887,16 @@ __all__ = ["router"]
 async def analyze_root_cause_base(
     request: Dict[str, Any] = Body(
         ...,
-        example={
-            "namespace": "default",
-            "start_time": "2024-01-01T00:00:00Z",
-            "end_time": "2024-01-01T01:00:00Z"
+        examples={
+            "default": {
+                "value": {
+                    "namespace": "default",
+                    "start_time": "2024-01-01T00:00:00Z",
+                    "end_time": "2024-01-01T01:00:00Z",
+                }
+            }
         },
-    )
+    ),
 ) -> Dict[str, Any]:
     """兼容 tests 直接POST /rca 的场景"""
     await (await get_rca_service()).initialize()
@@ -882,14 +905,20 @@ async def analyze_root_cause_base(
     end = request.get("end_time")
     if start and end:
         from fastapi import HTTPException
+
         try:
-            s = datetime.fromisoformat(str(start).replace('Z', '+00:00'))
-            e = datetime.fromisoformat(str(end).replace('Z', '+00:00'))
+            s = datetime.fromisoformat(str(start).replace("Z", "+00:00"))
+            e = datetime.fromisoformat(str(end).replace("Z", "+00:00"))
             hours = max((e - s).total_seconds() / 3600.0, 0)
             if hours > 24:
-                raise HTTPException(status_code=HttpStatusCodes.BAD_REQUEST, detail="时间范围超过最大限制")
+                raise HTTPException(
+                    status_code=HttpStatusCodes.BAD_REQUEST,
+                    detail="时间范围超过最大限制",
+                )
         except ValueError:
-            raise HTTPException(status_code=HttpStatusCodes.BAD_REQUEST, detail="时间格式无效")
+            raise HTTPException(
+                status_code=HttpStatusCodes.BAD_REQUEST, detail="时间格式无效"
+            )
 
     namespace = request.get("namespace") or "default"
     try:

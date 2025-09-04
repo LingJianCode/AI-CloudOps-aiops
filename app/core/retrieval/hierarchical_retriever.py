@@ -228,7 +228,6 @@ class DocumentQualityScorer:
             "kubernetes",
             "docker",
             "prometheus",
-
             "nginx",
             "deployment",
             "service",
@@ -310,11 +309,11 @@ class ClusterManager:
         for cluster in self.clusters:
             # 如果总聚类数量不多，放宽size要求
             min_size_threshold = (
-                max(1, self.min_cluster_size // 2) 
-                if len(self.clusters) < 5 
+                max(1, self.min_cluster_size // 2)
+                if len(self.clusters) < 5
                 else self.min_cluster_size
             )
-            
+
             if cluster.size >= min_size_threshold:
                 similarity = self._cosine_similarity(query_embedding, cluster.centroid)
                 combined_score = similarity * 0.7 + cluster.quality_score * 0.3
@@ -322,8 +321,10 @@ class ClusterManager:
 
         cluster_scores.sort(key=lambda x: x[1], reverse=True)
         selected_clusters = [cluster for cluster, _ in cluster_scores[:k]]
-        
-        logger.debug(f"获取聚类结果: 总聚类数={len(self.clusters)}, 符合条件={len(cluster_scores)}, 返回={len(selected_clusters)}")
+
+        logger.debug(
+            f"获取聚类结果: 总聚类数={len(self.clusters)}, 符合条件={len(cluster_scores)}, 返回={len(selected_clusters)}"
+        )
         return selected_clusters
 
     def _cosine_similarity(self, vec1: np.ndarray, vec2: np.ndarray) -> float:

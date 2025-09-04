@@ -13,7 +13,6 @@ import argparse
 import asyncio
 import json
 import logging
-import os
 import signal
 import sys
 import time
@@ -134,23 +133,6 @@ try:
     logger.info("MCP 应用已注册统一错误处理器")
 except Exception as e:
     logger.warning(f"MCP 错误处理器注册失败: {e}")
-
-
-@app.get("/health")
-async def health_check() -> Dict[str, Any]:
-    """健康检查接口"""
-    return {
-        "status": "healthy",
-        "timestamp": time.time(),
-        "tools_count": len(mcp_server.tools) if mcp_server else 0,
-        "active_connections": len(active_sse_connections),
-        "server_info": {
-            "version": "1.0.0",
-            "python_version": sys.version,
-            "pid": os.getpid(),
-            "startup_command": "python -m app.mcp.main",
-        },
-    }
 
 
 @app.get("/sse")
@@ -370,7 +352,7 @@ def main():
         reload_enabled = args.reload or config.debug
 
         logger.info(f"服务器将在 {server_host}:{server_port} 启动")
-        logger.info(f"启动命令: python -m app.mcp.main")
+        logger.info("启动命令: python -m app.mcp.main")
 
         uvicorn.run(
             "app.mcp.main:app",

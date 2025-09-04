@@ -283,14 +283,13 @@ class RCALogsDataRequest(BaseModel):
         json_schema_extra = {
             "example": {
                 "namespace": "production",
-                "start_time": "2024-01-01T00:00:00Z", 
+                "start_time": "2024-01-01T00:00:00Z",
                 "end_time": "2024-01-01T01:00:00Z",
                 "pod_name": "app-pod-1",
                 "error_only": True,
                 "max_lines": 100,
             }
         }
-
 
 
 class RCAQuickDiagnosisRequest(BaseModel):
@@ -355,8 +354,13 @@ class RCADataResponse(BaseModel):
     class Config:
         json_schema_extra = {
             "example": {
-                "namespace": "production", 
-                "items": [{"name": "cpu_usage", "values": [{"timestamp": "2024-01-01T00:00:00Z", "value": 0.5}]}],
+                "namespace": "production",
+                "items": [
+                    {
+                        "name": "cpu_usage",
+                        "values": [{"timestamp": "2024-01-01T00:00:00Z", "value": 0.5}],
+                    }
+                ],
                 "total": 1,
                 "start_time": "2024-01-01T00:00:00Z",
                 "end_time": "2024-01-01T01:00:00Z",

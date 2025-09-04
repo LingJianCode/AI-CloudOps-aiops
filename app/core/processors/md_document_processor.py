@@ -545,7 +545,6 @@ class MDDocumentProcessor:
                 current_size + element_size > self.max_chunk_size
                 and current_chunk_elements
             ):
-
                 # 尝试在合适的位置分割
                 split_point = self._find_optimal_split_point(
                     current_chunk_elements, element
@@ -727,8 +726,9 @@ class MDDocumentProcessor:
 
         # 标准化结构权重
         if structural_weights:
-            min_structural, max_structural = min(structural_weights), max(
-                structural_weights
+            min_structural, max_structural = (
+                min(structural_weights),
+                max(structural_weights),
             )
             range_structural = max_structural - min_structural
 

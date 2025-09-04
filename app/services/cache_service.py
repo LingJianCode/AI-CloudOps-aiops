@@ -18,7 +18,6 @@ from app.services.base import BaseService
 from app.services.prediction_service import PredictionService
 from app.services.rca_service import RCAService
 
-
 logger = logging.getLogger("aiops.services.cache")
 
 
@@ -56,7 +55,10 @@ class CacheService(BaseService):
             stats: Dict[str, Any] = {}
 
             # 预测服务缓存统计
-            if hasattr(self._prediction_service, "_cache_manager") and self._prediction_service._cache_manager:  # noqa: SLF001
+            if (
+                hasattr(self._prediction_service, "_cache_manager")
+                and self._prediction_service._cache_manager
+            ):  # noqa: SLF001
                 pred_stats = self._prediction_service._cache_manager.get_stats()  # noqa: SLF001
                 stats["prediction_service"] = {
                     "status": "active",
@@ -72,7 +74,10 @@ class CacheService(BaseService):
                 }
 
             # RCA服务缓存统计
-            if hasattr(self._rca_service, "_cache_manager") and self._rca_service._cache_manager:  # noqa: SLF001
+            if (
+                hasattr(self._rca_service, "_cache_manager")
+                and self._rca_service._cache_manager
+            ):  # noqa: SLF001
                 rca_stats = self._rca_service._cache_manager.get_stats()  # noqa: SLF001
                 stats["rca_service"] = {
                     "status": "active",
@@ -119,10 +124,17 @@ class CacheService(BaseService):
             # 预测服务
             try:
                 await self._prediction_service.initialize()
-                if hasattr(self._prediction_service, "_cache_manager") and self._prediction_service._cache_manager:  # noqa: SLF001
+                if (
+                    hasattr(self._prediction_service, "_cache_manager")
+                    and self._prediction_service._cache_manager
+                ):  # noqa: SLF001
                     pred_health = self._prediction_service._cache_manager.health_check()  # noqa: SLF001
                     health_info["services"]["prediction"] = pred_health
-                    if (pred_health.get("status") == "healthy") if isinstance(pred_health, dict) else bool(pred_health):
+                    if (
+                        (pred_health.get("status") == "healthy")
+                        if isinstance(pred_health, dict)
+                        else bool(pred_health)
+                    ):
                         services_healthy += 1
                 else:
                     health_info["services"]["prediction"] = {
@@ -142,10 +154,17 @@ class CacheService(BaseService):
             # RCA服务
             try:
                 await self._rca_service.initialize()
-                if hasattr(self._rca_service, "_cache_manager") and self._rca_service._cache_manager:  # noqa: SLF001
+                if (
+                    hasattr(self._rca_service, "_cache_manager")
+                    and self._rca_service._cache_manager
+                ):  # noqa: SLF001
                     rca_health = self._rca_service._cache_manager.health_check()  # noqa: SLF001
                     health_info["services"]["rca"] = rca_health
-                    if (rca_health.get("status") == "healthy") if isinstance(rca_health, dict) else bool(rca_health):
+                    if (
+                        (rca_health.get("status") == "healthy")
+                        if isinstance(rca_health, dict)
+                        else bool(rca_health)
+                    ):
                         services_healthy += 1
                 else:
                     health_info["services"]["rca"] = {
@@ -173,9 +192,7 @@ class CacheService(BaseService):
             health_info["summary"] = {
                 "healthy_services": services_healthy,
                 "total_services": total_services,
-                "health_percentage": round(
-                    services_healthy / total_services * 100, 1
-                )
+                "health_percentage": round(services_healthy / total_services * 100, 1)
                 if total_services > 0
                 else 0,
             }
@@ -191,9 +208,14 @@ class CacheService(BaseService):
 
         if service in ["prediction", "all"]:
             await self._prediction_service.initialize()
-            if hasattr(self._prediction_service, "_cache_manager") and self._prediction_service._cache_manager:  # noqa: SLF001
+            if (
+                hasattr(self._prediction_service, "_cache_manager")
+                and self._prediction_service._cache_manager
+            ):  # noqa: SLF001
                 if pattern:
-                    result = self._prediction_service._cache_manager.clear_pattern(pattern)  # noqa: SLF001
+                    result = self._prediction_service._cache_manager.clear_pattern(
+                        pattern
+                    )  # noqa: SLF001
                 else:
                     result = self._prediction_service._cache_manager.clear_all()  # noqa: SLF001
                 results["prediction"] = result
@@ -205,7 +227,10 @@ class CacheService(BaseService):
 
         if service in ["rca", "all"]:
             await self._rca_service.initialize()
-            if hasattr(self._rca_service, "_cache_manager") and self._rca_service._cache_manager:  # noqa: SLF001
+            if (
+                hasattr(self._rca_service, "_cache_manager")
+                and self._rca_service._cache_manager
+            ):  # noqa: SLF001
                 if pattern:
                     result = self._rca_service._cache_manager.clear_pattern(pattern)  # noqa: SLF001
                 else:
@@ -224,9 +249,13 @@ class CacheService(BaseService):
         performance_insights = cache_monitor.get_performance_insights()
         cache_stats = cache_monitor.get_cache_stats()
 
-        total_requests = sum(stats.get("total_requests", 0) for stats in cache_stats.values())
+        total_requests = sum(
+            stats.get("total_requests", 0) for stats in cache_stats.values()
+        )
         total_hits = sum(stats.get("cache_hits", 0) for stats in cache_stats.values())
-        overall_hit_rate = (total_hits / total_requests * 100) if total_requests > 0 else 0
+        overall_hit_rate = (
+            (total_hits / total_requests * 100) if total_requests > 0 else 0
+        )
 
         if overall_hit_rate >= 80:
             performance_grade = "A"
@@ -293,7 +322,9 @@ class CacheService(BaseService):
                 for cache_type in CacheType
             },
             "compression_thresholds": {
-                cache_type.value: CacheStrategy.get_cache_compression_threshold(cache_type)
+                cache_type.value: CacheStrategy.get_cache_compression_threshold(
+                    cache_type
+                )
                 for cache_type in CacheType
             },
         }
@@ -302,7 +333,10 @@ class CacheService(BaseService):
 
         try:
             await self._prediction_service.initialize()
-            if hasattr(self._prediction_service, "_cache_manager") and self._prediction_service._cache_manager:  # noqa: SLF001
+            if (
+                hasattr(self._prediction_service, "_cache_manager")
+                and self._prediction_service._cache_manager
+            ):  # noqa: SLF001
                 service_configs["prediction"] = {
                     "cache_prefix": self._prediction_service._cache_manager.cache_prefix,  # noqa: SLF001
                     "default_ttl": self._prediction_service._cache_manager.default_ttl,  # noqa: SLF001
@@ -314,7 +348,10 @@ class CacheService(BaseService):
 
         try:
             await self._rca_service.initialize()
-            if hasattr(self._rca_service, "_cache_manager") and self._rca_service._cache_manager:  # noqa: SLF001
+            if (
+                hasattr(self._rca_service, "_cache_manager")
+                and self._rca_service._cache_manager
+            ):  # noqa: SLF001
                 service_configs["rca"] = {
                     "cache_prefix": self._rca_service._cache_manager.cache_prefix,  # noqa: SLF001
                     "default_ttl": self._rca_service._cache_manager.default_ttl,  # noqa: SLF001
@@ -326,5 +363,3 @@ class CacheService(BaseService):
 
         config_info["service_configs"] = service_configs
         return config_info
-
-

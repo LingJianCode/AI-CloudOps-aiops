@@ -28,7 +28,6 @@ logger = logging.getLogger("aiops.rag_assistant")
 
 
 class QueryType(Enum):
-
     FACTUAL = "factual"
     TROUBLESHOOTING = "troubleshooting"
     TUTORIAL = "tutorial"
@@ -39,9 +38,9 @@ class QueryType(Enum):
 @dataclass
 class RetrievalStrategy:
     base_similarity: float = 0.7
-    min_similarity: float = 0.05   # 降低最小相似度阈值，支持短文档检索
-    initial_k: int = 50   # 增加初始检索数量
-    final_k: int = 10     # 增加最终返回数量
+    min_similarity: float = 0.05  # 降低最小相似度阈值，支持短文档检索
+    initial_k: int = 50  # 增加初始检索数量
+    final_k: int = 10  # 增加最终返回数量
     enable_cache: bool = True
     cache_ttl: int = 3600
     diversity_threshold: float = 0.5  # 进一步降低多样性阈值，允许更多相关文档
@@ -49,7 +48,6 @@ class RetrievalStrategy:
 
 @dataclass
 class EnhancedRAGState:
-
     question: str = ""
     session_id: Optional[str] = None
 
@@ -91,7 +89,6 @@ class EnhancedRAGState:
 
 
 class QueryProcessor:
-
     def __init__(self, config=None):
         from app.config.settings import config as app_config
 
@@ -131,15 +128,24 @@ class QueryProcessor:
             },
             QueryType.CONCEPTUAL: {
                 "keywords": {
-                    "什么是", "概念", "原理",
-                    "what is", "concept", "principle",
+                    "什么是",
+                    "概念",
+                    "原理",
+                    "what is",
+                    "concept",
+                    "principle",
                 },
                 "weight": 0.9,
             },
             QueryType.FACTUAL: {
                 "keywords": {
-                    "多少", "几个", "数量", "统计",
-                    "count", "number", "statistics",
+                    "多少",
+                    "几个",
+                    "数量",
+                    "统计",
+                    "count",
+                    "number",
+                    "statistics",
                 },
                 "weight": 0.8,
             },
@@ -160,6 +166,7 @@ class QueryProcessor:
 
     def _preprocess_query(self, query: str) -> str:
         import re
+
         query = re.sub(r"[^\w\s\u4e00-\u9fff]", " ", query)
         return " ".join(query.split()).strip()
 
@@ -171,7 +178,11 @@ class QueryProcessor:
 
         confidence_factor = 1.0 + (confidence - 0.5) * 0.4
         context_factor = 1.0
-        if context and context.get("recent_failures") and query_type == QueryType.TROUBLESHOOTING:
+        if (
+            context
+            and context.get("recent_failures")
+            and query_type == QueryType.TROUBLESHOOTING
+        ):
             context_factor = 1.2
 
         return base_weight * confidence_factor * context_factor
@@ -181,9 +192,17 @@ class QueryProcessor:
     ) -> List[str]:
         """生成查询扩展"""
         expansions = [query]
-        
+
         # 检测平台介绍相关的查询
-        platform_intro_keywords = ["介绍", "平台", "概述", "什么是", "简介", "功能", "特性"]
+        platform_intro_keywords = [
+            "介绍",
+            "平台",
+            "概述",
+            "什么是",
+            "简介",
+            "功能",
+            "特性",
+        ]
         is_platform_intro = any(keyword in query for keyword in platform_intro_keywords)
 
         # 基于查询类型的扩展
@@ -198,13 +217,15 @@ class QueryProcessor:
         elif query_type == QueryType.CONCEPTUAL or is_platform_intro:
             if is_platform_intro:
                 # 对于平台介绍查询，优化扩展策略
-                expansions.extend([
-                    "AI-CloudOps平台简介",
-                    "AI-CloudOps核心功能", 
-                    "AI-CloudOps平台总览",
-                    "智能运维平台介绍",
-                    "AI-CloudOps主要特性"
-                ])
+                expansions.extend(
+                    [
+                        "AI-CloudOps平台简介",
+                        "AI-CloudOps核心功能",
+                        "AI-CloudOps平台总览",
+                        "智能运维平台介绍",
+                        "AI-CloudOps主要特性",
+                    ]
+                )
             else:
                 expansions.extend([f"{query} 概念解释", f"{query} 工作原理"])
 
@@ -213,7 +234,9 @@ class QueryProcessor:
             domain = context["domain"]
             expansions.append(f"{domain} {query}")
 
-        max_expansions = getattr(self.config, "max_query_expansions", 7 if is_platform_intro else 5)
+        max_expansions = getattr(
+            self.config, "max_query_expansions", 7 if is_platform_intro else 5
+        )
         return expansions[:max_expansions]
 
     def _record_query_for_learning(
@@ -231,7 +254,6 @@ class QueryProcessor:
 
 
 class IntentClassifier:
-
     def __init__(self):
         self.intent_patterns = {
             QueryType.TROUBLESHOOTING: [
@@ -306,7 +328,6 @@ class IntentClassifier:
 
 
 class DocumentRetriever:
-
     def __init__(self, vector_store, strategy: RetrievalStrategy, config=None):
         from app.config.settings import config as app_config
 
@@ -332,7 +353,7 @@ class DocumentRetriever:
             if cache_key in self._cache:
                 cached_time, cached_docs = self._cache[cache_key]
                 if time.time() - cached_time < self.strategy.cache_ttl:
-                    logger.debug(f"缓存命中")
+                    logger.debug("缓存命中")
                     self._cache_stats["hits"] += 1
                     return cached_docs
 
@@ -431,7 +452,9 @@ class DocumentRetriever:
 
             query_preview_length = 50
             logger.info(f"向量检索: {query[:query_preview_length]}, 权重: {weight}")
-            logger.info(f"配置: k={self.strategy.initial_k}, sim={self.strategy.min_similarity}")
+            logger.info(
+                f"配置: k={self.strategy.initial_k}, sim={self.strategy.min_similarity}"
+            )
 
             from app.core.vector.redis_vector_store import SearchConfig
 
@@ -471,7 +494,6 @@ class DocumentRetriever:
 
 
 class RAGAssistant:
-
     def __init__(self, vector_store, llm_service, cache_manager=None, config=None):
         from app.config.settings import config as app_config
 
@@ -505,22 +527,30 @@ class RAGAssistant:
 
     def _init_strategy(self) -> RetrievalStrategy:
         """从配置初始化检索策略"""
-        min_similarity = getattr(self.config.rag, "min_similarity", 0.15)  # 降低默认阈值
+        min_similarity = getattr(
+            self.config.rag, "min_similarity", 0.15
+        )  # 降低默认阈值
         similarity_threshold = getattr(self.config.rag, "similarity_threshold", 0.2)
         if min_similarity > similarity_threshold:
             logger.info(f"调整相似度阈值: {min_similarity} -> 0.1")
             min_similarity = 0.1
 
         return RetrievalStrategy(
-            base_similarity=getattr(self.config.rag, "base_similarity", 0.7),  # 提高基础相似度要求
+            base_similarity=getattr(
+                self.config.rag, "base_similarity", 0.7
+            ),  # 提高基础相似度要求
             min_similarity=min_similarity,
             initial_k=getattr(self.config.rag, "initial_k", 30),  # 增加初始检索数量
-            final_k=getattr(self.config.rag, "final_k", min(8, self.config.rag.top_k * 2)),  # 动态调整最终数量
+            final_k=getattr(
+                self.config.rag, "final_k", min(8, self.config.rag.top_k * 2)
+            ),  # 动态调整最终数量
             enable_cache=getattr(self.config.rag, "enable_cache", True),
             cache_ttl=getattr(
                 self.config.rag, "cache_ttl", self.config.rag.cache_expiry
             ),
-            diversity_threshold=getattr(self.config.rag, "diversity_threshold", 0.6),  # 降低多样性阈值
+            diversity_threshold=getattr(
+                self.config.rag, "diversity_threshold", 0.6
+            ),  # 降低多样性阈值
         )
 
     def _build_graph(self) -> StateGraph:
@@ -572,7 +602,9 @@ class RAGAssistant:
         return state
 
     async def _generate(self, state: EnhancedRAGState) -> EnhancedRAGState:
-        logger.info(f"生成阶段 - 文档: {len(state.documents) if state.documents else 0}")
+        logger.info(
+            f"生成阶段 - 文档: {len(state.documents) if state.documents else 0}"
+        )
 
         context = self.context_manager.get_context(state.session_id)
         result = await self.generator.generate(
@@ -584,16 +616,20 @@ class RAGAssistant:
 
         state.answer = result["answer"]
         state.confidence = result["confidence"]
-        logger.info(f"结果 - 长度: {len(result['answer'])}, 置信度: {result['confidence']}")
+        logger.info(
+            f"结果 - 长度: {len(result['answer'])}, 置信度: {result['confidence']}"
+        )
 
         sources = []
         max_source_docs = getattr(self.config, "max_source_docs", 3)
         max_source_content = getattr(self.config, "max_source_content", 200)
         for doc in (state.documents or [])[:max_source_docs]:
-            sources.append({
-                "content": doc.page_content[:max_source_content] + "...",
-                "score": doc.metadata.get("score", 0),
-            })
+            sources.append(
+                {
+                    "content": doc.page_content[:max_source_content] + "...",
+                    "score": doc.metadata.get("score", 0),
+                }
+            )
         state.sources = sources
         return state
 
@@ -689,7 +725,7 @@ class RAGAssistant:
         try:
             cleared_items = 0
             cache_results = {}
-            
+
             # 清理检索器缓存
             if hasattr(self.retriever, "_cache"):
                 retriever_cache_count = len(getattr(self.retriever, "_cache", {}))
@@ -711,13 +747,19 @@ class RAGAssistant:
                 try:
                     cache_manager_result = self.cache_manager.clear_all()
                     if cache_manager_result.get("success"):
-                        cache_manager_count = cache_manager_result.get("cleared_count", 0)
+                        cache_manager_count = cache_manager_result.get(
+                            "cleared_count", 0
+                        )
                         cleared_items += cache_manager_count
                         cache_results["cache_manager"] = cache_manager_count
                         logger.info(f"缓存管理器已清理: {cache_manager_count} 项")
                     else:
-                        logger.warning(f"缓存管理器清理失败: {cache_manager_result.get('message')}")
-                        cache_results["cache_manager"] = f"失败: {cache_manager_result.get('message')}"
+                        logger.warning(
+                            f"缓存管理器清理失败: {cache_manager_result.get('message')}"
+                        )
+                        cache_results["cache_manager"] = (
+                            f"失败: {cache_manager_result.get('message')}"
+                        )
                 except Exception as cache_mgr_error:
                     logger.error(f"缓存管理器清理异常: {cache_mgr_error}")
                     cache_results["cache_manager"] = f"异常: {str(cache_mgr_error)}"
@@ -725,13 +767,16 @@ class RAGAssistant:
             # 清理向量存储查询缓存
             if getattr(self, "vector_store", None):
                 try:
-                    if hasattr(self.vector_store, "query_cache") and self.vector_store.query_cache:
+                    if (
+                        hasattr(self.vector_store, "query_cache")
+                        and self.vector_store.query_cache
+                    ):
                         await self.vector_store.query_cache.clear()
                         logger.info("向量存储查询缓存已清理")
                         cache_results["vector_query_cache"] = "已清理"
                     else:
                         cache_results["vector_query_cache"] = "不存在"
-                        
+
                     # 清理向量存储统计信息
                     if hasattr(self.vector_store, "stats"):
                         self.vector_store.stats = {
@@ -742,7 +787,7 @@ class RAGAssistant:
                         }
                         logger.info("向量存储统计信息已重置")
                         cache_results["vector_stats"] = "已重置"
-                        
+
                 except Exception as vector_error:
                     logger.error(f"向量存储缓存清理失败: {vector_error}")
                     cache_results["vector_cache"] = f"失败: {str(vector_error)}"
@@ -757,93 +802,101 @@ class RAGAssistant:
             cache_results["assistant_stats"] = "已重置"
 
             logger.info(f"缓存清理完成，总计清理 {cleared_items} 项")
-            
+
             return {
                 "success": True,
                 "message": f"缓存清理完成，共清理 {cleared_items} 项",
                 "cleared_items": cleared_items,
                 "details": cache_results,
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now().isoformat(),
             }
-            
+
         except Exception as e:
             logger.error(f"清理缓存失败: {e}")
             import traceback
+
             traceback.print_exc()
             return {
-                "success": False, 
-                "message": f"缓存清理失败: {str(e)}", 
+                "success": False,
+                "message": f"缓存清理失败: {str(e)}",
                 "cleared_items": 0,
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now().isoformat(),
             }
 
     async def refresh_knowledge_base(self) -> Dict[str, Any]:
         """刷新知识库 - 从文件系统重新加载所有文档"""
         try:
             logger.info("开始刷新知识库...")
-            
+
             # 1. 清理缓存和向量存储
             try:
                 logger.info("清理缓存...")
                 cache_result = await self.clear_cache()
                 logger.info(f"缓存清理结果: {cache_result}")
-                
+
                 logger.info("清理向量存储...")
                 clear_result = await self.vector_store.clear()
                 logger.info(f"向量存储清理结果: {clear_result}")
             except Exception as clear_error:
                 logger.error(f"清理阶段失败: {clear_error}")
                 # 继续执行，不让清理失败阻止整个流程
-            
+
             # 2. 从文件系统加载知识库
             knowledge_base_path = self.config.rag.knowledge_base_path
             logger.info(f"知识库路径: {knowledge_base_path}")
-            
+
             if not os.path.exists(knowledge_base_path):
-                return {"success": False, "message": f"知识库路径不存在: {knowledge_base_path}"}
-            
+                return {
+                    "success": False,
+                    "message": f"知识库路径不存在: {knowledge_base_path}",
+                }
+
             # 3. 扫描知识库文件
             loaded_files = []
             failed_files = []
             total_docs = 0
-            
+
             # 列出所有文件
-            all_files = [f for f in os.listdir(knowledge_base_path) if f.endswith(('.md', '.txt'))]
+            all_files = [
+                f
+                for f in os.listdir(knowledge_base_path)
+                if f.endswith((".md", ".txt"))
+            ]
             logger.info(f"发现 {len(all_files)} 个知识库文件: {all_files}")
-            
+
             for filename in all_files:
                 file_path = os.path.join(knowledge_base_path, filename)
                 try:
                     logger.info(f"开始加载文件: {filename}")
-                    
+
                     # 读取文件内容
-                    with open(file_path, 'r', encoding='utf-8') as f:
+                    with open(file_path, "r", encoding="utf-8") as f:
                         content = f.read()
-                    
+
                     if not content.strip():
                         logger.warning(f"文件为空，跳过: {filename}")
                         continue
-                    
+
                     logger.info(f"文件内容长度: {len(content)} 字符")
-                    
+
                     # 创建文档数据
                     document_data = {
                         "content": content,
-                        "title": filename.split('.')[0],  # 添加标题
+                        "title": filename.split(".")[0],  # 添加标题
                         "source": filename,
                         "metadata": {
                             "source": filename,
                             "file_path": file_path,
-                            "file_type": filename.split('.')[-1],
-                            "loaded_at": datetime.now().isoformat()
-                        }
+                            "file_type": filename.split(".")[-1],
+                            "loaded_at": datetime.now().isoformat(),
+                        },
                     }
-                    
+
                     # 上传到向量存储
                     logger.info(f"上传文档到向量存储: {filename}")
                     upload_result = await self.upload_knowledge(document_data)
                     logger.info(f"上传结果: {upload_result}")
-                    
+
                     if upload_result.get("success"):
                         loaded_files.append(filename)
                         doc_count = upload_result.get("document_count", 1)
@@ -851,40 +904,46 @@ class RAGAssistant:
                         logger.info(f"✅ 成功加载 {filename}: {doc_count} 个文档片段")
                     else:
                         failed_files.append(filename)
-                        logger.error(f"❌ 加载失败 {filename}: {upload_result.get('message', '未知错误')}")
-                        
+                        logger.error(
+                            f"❌ 加载失败 {filename}: {upload_result.get('message', '未知错误')}"
+                        )
+
                 except Exception as e:
                     failed_files.append(filename)
                     logger.error(f"❌ 加载文件 {filename} 时出错: {e}")
                     # 打印详细的错误堆栈
                     import traceback
+
                     logger.error(f"错误堆栈: {traceback.format_exc()}")
-            
+
             # 4. 验证向量存储状态
             try:
                 doc_count = await self.vector_store.get_document_count()
                 logger.info(f"向量存储中现有文档数量: {doc_count}")
             except Exception as count_error:
                 logger.warning(f"无法获取文档数量: {count_error}")
-            
+
             # 5. 返回结果
             success = len(loaded_files) > 0
             message = f"知识库刷新{'成功' if success else '失败'}。加载了 {len(loaded_files)} 个文件，共 {total_docs} 个文档片段"
             if failed_files:
-                message += f"，{len(failed_files)} 个文件加载失败: {', '.join(failed_files)}"
-            
+                message += (
+                    f"，{len(failed_files)} 个文件加载失败: {', '.join(failed_files)}"
+                )
+
             logger.info(message)
             return {
                 "success": success,
                 "message": message,
                 "loaded_files": loaded_files,
                 "failed_files": failed_files,
-                "total_documents": total_docs
+                "total_documents": total_docs,
             }
-            
+
         except Exception as e:
             logger.error(f"刷新知识库失败: {e}")
             import traceback
+
             logger.error(f"错误堆栈: {traceback.format_exc()}")
             return {"success": False, "message": f"刷新知识库失败: {str(e)}"}
 
@@ -897,7 +956,7 @@ class RAGAssistant:
     async def get_session_info(self, session_id: str) -> Dict[str, Any]:
         context = self.context_manager.get_context(session_id)
         session_details = self.context_manager.get_session_details(session_id)
-        
+
         return {
             "success": True,
             "session_id": session_id,
@@ -907,7 +966,7 @@ class RAGAssistant:
             "mode": session_details.get("mode", 1),
             "status": session_details.get("status", "active"),
             "conversation_history": session_details.get("conversation_history", []),
-            "context": context
+            "context": context,
         }
 
     async def upload_knowledge(self, document_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -929,17 +988,20 @@ class RAGAssistant:
                 logger.info("检测到MD文档，使用专门处理流程")
                 try:
                     # 检查向量存储是否支持MD文档处理
-                    if hasattr(self.vector_store, 'add_md_documents'):
-                        ids = await self.vector_store.add_md_documents([content], [metadata])
+                    if hasattr(self.vector_store, "add_md_documents"):
+                        ids = await self.vector_store.add_md_documents(
+                            [content], [metadata]
+                        )
                         document_count = len(ids)
                     else:
                         logger.warning("向量存储不支持MD文档专门处理，使用普通文档处理")
                         # 如果不支持MD处理，使用普通文档处理
                         from langchain_core.documents import Document
+
                         docs = [Document(page_content=content, metadata=metadata)]
                         ids = await self.vector_store.add_documents(docs)
                         document_count = len(ids)
-                    
+
                     return {
                         "success": True,
                         "document_ids": ids if isinstance(ids, list) else [ids],
@@ -951,6 +1013,7 @@ class RAGAssistant:
                     logger.warning(f"MD文档专门处理失败，使用普通文档处理: {md_error}")
                     # 回退到普通文档处理
                     from langchain_core.documents import Document
+
                     docs = [Document(page_content=content, metadata=metadata)]
                     ids = await self.vector_store.add_documents(docs)
                     return {
@@ -1011,7 +1074,6 @@ class RAGAssistant:
 
 
 class ContextManager:
-
     def __init__(self, config=None):
         from app.config.settings import config as app_config
 
@@ -1033,7 +1095,7 @@ class ContextManager:
     def update_context(self, session_id: Optional[str], updates: Dict[str, Any]):
         if not session_id:
             return
-            
+
         if session_id not in self.session_contexts:
             current_time = datetime.now()
             self.session_contexts[session_id] = {
@@ -1056,28 +1118,33 @@ class ContextManager:
                 self.session_contexts[session_id]["recent_queries"].append(query)
                 self.session_contexts[session_id]["query_count"] += 1
                 self.session_contexts[session_id]["message_count"] += 1
-                
+
                 conversation_entry = {
                     "type": "user",
                     "content": query,
-                    "timestamp": datetime.now().isoformat()
+                    "timestamp": datetime.now().isoformat(),
                 }
-                self.session_contexts[session_id]["conversation_history"].append(conversation_entry)
-                
+                self.session_contexts[session_id]["conversation_history"].append(
+                    conversation_entry
+                )
+
                 if len(self.session_contexts[session_id]["conversation_history"]) > 50:
-                    self.session_contexts[session_id]["conversation_history"] = \
+                    self.session_contexts[session_id]["conversation_history"] = (
                         self.session_contexts[session_id]["conversation_history"][-50:]
-            
+                    )
+
             updates.pop("recent_queries")
-        
+
         if "assistant_response" in updates:
             response = updates["assistant_response"]
             conversation_entry = {
-                "type": "assistant", 
+                "type": "assistant",
                 "content": response,
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now().isoformat(),
             }
-            self.session_contexts[session_id]["conversation_history"].append(conversation_entry)
+            self.session_contexts[session_id]["conversation_history"].append(
+                conversation_entry
+            )
             self.session_contexts[session_id]["message_count"] += 1
             updates.pop("assistant_response")
 
@@ -1093,9 +1160,9 @@ class ContextManager:
                 "message_count": 0,
                 "mode": 1,
                 "status": "unknown",
-                "conversation_history": []
+                "conversation_history": [],
             }
-        
+
         session = self.session_contexts[session_id]
         return {
             "created_time": session.get("created_at", datetime.now()).isoformat(),
@@ -1103,12 +1170,11 @@ class ContextManager:
             "message_count": session.get("message_count", 0),
             "mode": session.get("mode", 1),
             "status": session.get("status", "active"),
-            "conversation_history": session.get("conversation_history", [])
+            "conversation_history": session.get("conversation_history", []),
         }
 
 
 class DocumentReranker:
-
     def __init__(self, llm_service=None, config=None):
         from app.config.settings import config as app_config
 
@@ -1211,7 +1277,6 @@ class DocumentReranker:
 
 
 class AnswerGenerator:
-
     def __init__(self, llm_service, config=None):
         from app.config.settings import config as app_config
 
@@ -1282,17 +1347,19 @@ class AnswerGenerator:
             }
 
         is_md_content = self._has_markdown_documents(docs)
-        
+
         # 确保context包含当前查询信息，用于智能文档排序
         if context is None:
             context = {}
         context["recent_query"] = question
-        
+
         enhanced_context = self._prepare_enhanced_context(docs, context, is_md_content)
         generation_params = self._get_generation_params(query_type, context)
 
         try:
-            prompt_template = self._load_md_prompt_template() if is_md_content else self.base_prompt
+            prompt_template = (
+                self._load_md_prompt_template() if is_md_content else self.base_prompt
+            )
 
             prompt = prompt_template.format(context=enhanced_context, question=question)
 
@@ -1394,7 +1461,7 @@ class AnswerGenerator:
 
             # 为MD文档添加更详细的元信息
             if is_md_content:
-                doc_info = f"[文档{i+1}"
+                doc_info = f"[文档{i + 1}"
                 if doc.metadata.get("title_hierarchy"):
                     hierarchy = " > ".join(doc.metadata["title_hierarchy"])
                     doc_info += f" - 章节: {hierarchy}"
@@ -1403,15 +1470,15 @@ class AnswerGenerator:
                     if languages:
                         doc_info += f" - 代码: {', '.join(languages)}"
                     else:
-                        doc_info += f" - 包含代码"
+                        doc_info += " - 包含代码"
                 if doc.metadata.get("has_table"):
-                    doc_info += f" - 包含表格"
+                    doc_info += " - 包含表格"
                 if doc.metadata.get("source"):
                     doc_info += f" - 来源: {doc.metadata['source']}"
                 doc_info += "]"
             else:
                 # 普通文档信息
-                doc_info = f"[文档{i+1}"
+                doc_info = f"[文档{i + 1}"
                 if doc.metadata.get("source"):
                     doc_info += f" - 来源: {doc.metadata['source']}"
                 if doc.metadata.get("score"):
@@ -1443,49 +1510,73 @@ class AnswerGenerator:
 
         return "\n\n".join(context_parts)
 
-    def _smart_sort_documents(self, docs: List[Document], context: Optional[Dict]) -> List[Document]:
+    def _smart_sort_documents(
+        self, docs: List[Document], context: Optional[Dict]
+    ) -> List[Document]:
         """智能排序文档：根据查询意图和内容类型优化排序"""
         if not docs:
             return docs
-        
+
         # 获取查询上下文信息
         recent_query = context.get("recent_query", "") if context else ""
-        
+
         # 检测是否为平台介绍查询
-        platform_intro_keywords = ["介绍", "平台", "概述", "什么是", "简介", "功能", "特性", "总览"]
-        is_platform_intro = any(keyword in recent_query for keyword in platform_intro_keywords)
-        
+        platform_intro_keywords = [
+            "介绍",
+            "平台",
+            "概述",
+            "什么是",
+            "简介",
+            "功能",
+            "特性",
+            "总览",
+        ]
+        is_platform_intro = any(
+            keyword in recent_query for keyword in platform_intro_keywords
+        )
+
         def get_doc_priority(doc: Document) -> tuple:
             """计算文档优先级"""
             score = doc.metadata.get("score", 0)
             source = doc.metadata.get("source", "").lower()
             content = doc.page_content.lower()
-            
+
             # 基础优先级
             priority = 0
-            
+
             if is_platform_intro:
                 # 对于平台介绍查询，更激进地调整优先级
-                if any(keyword in source for keyword in ["总览", "平台", "介绍", "核心"]):
+                if any(
+                    keyword in source for keyword in ["总览", "平台", "介绍", "核心"]
+                ):
                     priority += 200  # 大幅提升平台相关文档优先级
-                elif any(keyword in content[:500] for keyword in ["ai-cloudops", "平台简介", "核心功能", "平台概述", "平台是"]):
+                elif any(
+                    keyword in content[:500]
+                    for keyword in [
+                        "ai-cloudops",
+                        "平台简介",
+                        "核心功能",
+                        "平台概述",
+                        "平台是",
+                    ]
+                ):
                     priority += 150
                 elif "故障诊断" in source or "故障" in content[:200]:
                     priority -= 100  # 大幅降低故障诊断文档的优先级
                 elif "部署" in source or "配置" in source:
-                    priority -= 30   # 降低部署相关文档的优先级
+                    priority -= 30  # 降低部署相关文档的优先级
             else:
                 # 对于其他查询，保持原有逻辑
                 if "故障" in recent_query and ("故障" in source or "诊断" in source):
                     priority += 50
                 elif "部署" in recent_query and "部署" in source:
                     priority += 50
-            
+
             # 考虑原始相关性分数
             priority += score * 10
-            
+
             return (-priority, -score)  # 负值用于降序排序
-        
+
         return sorted(docs, key=get_doc_priority)
 
     def _smart_truncate_md_content(self, content: str, max_length: int) -> str:
@@ -1610,7 +1701,9 @@ _lock = asyncio.Lock()
 from app.core.interfaces.llm_client import LLMClient, NullLLMClient
 
 
-async def get_enterprise_assistant(llm_client: Optional[LLMClient] = None) -> RAGAssistant:
+async def get_enterprise_assistant(
+    llm_client: Optional[LLMClient] = None,
+) -> RAGAssistant:
     """获取全局助手实例（支持注入 LLM 客户端以避免Core层依赖Service层）"""
     global _assistant_instance
 
@@ -1627,7 +1720,9 @@ async def get_enterprise_assistant(llm_client: Optional[LLMClient] = None) -> RA
                     logger.info("初始化优化的RAG助手...")
 
                     # 使用注入的 LLM 客户端，若未提供则使用空实现
-                    llm_service = llm_client if llm_client is not None else NullLLMClient()
+                    llm_service = (
+                        llm_client if llm_client is not None else NullLLMClient()
+                    )
 
                     # 缓存配置
                     cache_config = {
@@ -1670,19 +1765,27 @@ async def get_enterprise_assistant(llm_client: Optional[LLMClient] = None) -> RA
                     )
 
                     logger.info("优化的RAG助手初始化完成")
-                    
+
                     # 检查向量存储是否为空，如果为空则自动加载知识库
                     try:
-                        doc_count = await _assistant_instance.vector_store.get_document_count()
+                        doc_count = (
+                            await _assistant_instance.vector_store.get_document_count()
+                        )
                         logger.info(f"当前向量存储文档数量: {doc_count}")
-                        
+
                         if doc_count == 0:
                             logger.info("向量存储为空，开始自动加载知识库...")
-                            refresh_result = await _assistant_instance.refresh_knowledge_base()
+                            refresh_result = (
+                                await _assistant_instance.refresh_knowledge_base()
+                            )
                             if refresh_result.get("success"):
-                                logger.info(f"自动加载知识库成功: {refresh_result.get('message')}")
+                                logger.info(
+                                    f"自动加载知识库成功: {refresh_result.get('message')}"
+                                )
                             else:
-                                logger.warning(f"自动加载知识库失败: {refresh_result.get('message')}")
+                                logger.warning(
+                                    f"自动加载知识库失败: {refresh_result.get('message')}"
+                                )
                         else:
                             logger.info("向量存储中已有数据，跳过自动加载")
                     except Exception as e:

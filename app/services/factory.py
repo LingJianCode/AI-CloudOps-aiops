@@ -13,7 +13,6 @@ from typing import Any, Dict, Optional, Type, TypeVar, cast
 
 from app.services.base import BaseService
 
-
 logger = logging.getLogger("aiops.services.factory")
 
 TService = TypeVar("TService", bound=BaseService)
@@ -63,7 +62,7 @@ class ServiceFactory:
             try:
                 asyncio.create_task(instance.initialize())
             except Exception as e:
-                logger.warning(f"服务 %s 初始化任务创建失败: %s", name, e)
+                logger.warning("服务 %s 初始化任务创建失败: %s", name, e)
 
             return instance
 
@@ -162,5 +161,3 @@ class ServiceFactory:
         cls._locks.clear()
 
         return results
-
-

@@ -9,15 +9,16 @@ License: Apache 2.0
 Description: 配置管理模块
 """
 
+import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import logging
 from dotenv import load_dotenv
 from pydantic import Field
 from pydantic_settings import SettingsConfigDict
+
 from app.config.base import BaseAppSettings
 
 ROOT_DIR = Path(
@@ -602,7 +603,9 @@ class SecurityConfig:
     )
     cors_origins: str = field(
         default_factory=lambda: get_env_or_config(
-            "CORS_ORIGINS", "security.cors_origins", "http://localhost:3000,http://localhost:8080"
+            "CORS_ORIGINS",
+            "security.cors_origins",
+            "http://localhost:3000,http://localhost:8080",
         )
     )
 

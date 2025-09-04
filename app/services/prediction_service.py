@@ -54,7 +54,7 @@ class PredictionService(BaseService, HealthCheckMixin):
         self._cost_analyzer: Optional[CostAnalyzer] = None
         self._model_manager: Optional[ModelManager] = None
 
-        # AI预测组件
+        # 增强组件
         self._intelligent_predictor: Optional[IntelligentPredictor] = None
         self._prediction_analyzer: Optional[PredictionAnalyzer] = None
         self._report_generator: Optional[IntelligentReportGenerator] = None
@@ -67,9 +67,9 @@ class PredictionService(BaseService, HealthCheckMixin):
     async def _do_initialize(self) -> None:
         """初始化预测服务组件"""
         try:
-            from app.core.prediction import ModelManager
-            from app.core.cache.redis_cache_manager import RedisCacheManager
             from app.config.settings import config
+            from app.core.cache.redis_cache_manager import RedisCacheManager
+            from app.core.prediction import ModelManager
 
             # 初始化Redis缓存管理器
             try:
@@ -77,7 +77,9 @@ class PredictionService(BaseService, HealthCheckMixin):
                     "host": config.redis.host,
                     "port": config.redis.port,
                     "db": config.redis.db + 2,  # 使用单独的db用于预测缓存
-                    "password": config.redis.password if hasattr(config.redis, 'password') else "",
+                    "password": config.redis.password
+                    if hasattr(config.redis, "password")
+                    else "",
                 }
                 self._cache_manager = RedisCacheManager(
                     redis_config=redis_config,
@@ -88,7 +90,9 @@ class PredictionService(BaseService, HealthCheckMixin):
                 )
                 self.logger.info("预测服务Redis缓存管理器初始化成功")
             except Exception as cache_e:
-                self.logger.warning(f"Redis缓存管理器初始化失败: {str(cache_e)}，将在无缓存模式下运行")
+                self.logger.warning(
+                    f"Redis缓存管理器初始化失败: {str(cache_e)}，将在无缓存模式下运行"
+                )
                 self._cache_manager = None
 
             self._model_manager = ModelManager()
@@ -113,10 +117,11 @@ class PredictionService(BaseService, HealthCheckMixin):
             # 初始化成本分析器
             self._cost_analyzer = CostAnalyzer()
 
-            # 初始化AI增强组件
+            # 初始化增强组件
             try:
-                # 智能预测引擎
+                # 预测引擎（带外部分析）
                 from app.services.llm import LLMService
+
                 llm_service = LLMService()
                 self._intelligent_predictor = IntelligentPredictor(
                     model_manager=self._model_manager,
@@ -131,11 +136,11 @@ class PredictionService(BaseService, HealthCheckMixin):
                 # 报告生成器
                 self._report_generator = IntelligentReportGenerator(llm_service)
 
-                self.logger.info("AI增强组件初始化完成")
+                self.logger.info("增强组件初始化完成")
 
             except Exception as ai_e:
                 self.logger.warning(
-                    f"AI增强组件初始化失败: {str(ai_e)}，将使用基础预测模式"
+                    f"增强组件初始化失败: {str(ai_e)}，将使用基础预测模式"
                 )
                 self._intelligent_predictor = None
                 self._prediction_analyzer = None
@@ -212,7 +217,7 @@ class PredictionService(BaseService, HealthCheckMixin):
             # 尝试从缓存获取结果
             cached_result = await self._get_from_cache(cache_key)
             if cached_result:
-                self.logger.info(f"QPS预测缓存命中，直接返回结果")
+                self.logger.info("QPS预测缓存命中，直接返回结果")
                 return cached_result
 
             # 获取历史数据
@@ -323,7 +328,7 @@ class PredictionService(BaseService, HealthCheckMixin):
             # 尝试从缓存获取结果
             cached_result = await self._get_from_cache(cache_key)
             if cached_result:
-                self.logger.info(f"CPU预测缓存命中，直接返回结果")
+                self.logger.info("CPU预测缓存命中，直接返回结果")
                 return cached_result
 
             # 获取历史数据
@@ -433,7 +438,7 @@ class PredictionService(BaseService, HealthCheckMixin):
             # 尝试从缓存获取结果
             cached_result = await self._get_from_cache(cache_key)
             if cached_result:
-                self.logger.info(f"内存预测缓存命中，直接返回结果")
+                self.logger.info("内存预测缓存命中，直接返回结果")
                 return cached_result
 
             # 获取历史数据
@@ -543,7 +548,7 @@ class PredictionService(BaseService, HealthCheckMixin):
             # 尝试从缓存获取结果
             cached_result = await self._get_from_cache(cache_key)
             if cached_result:
-                self.logger.info(f"磁盘预测缓存命中，直接返回结果")
+                self.logger.info("磁盘预测缓存命中，直接返回结果")
                 return cached_result
 
             # 获取历史数据
@@ -615,7 +620,7 @@ class PredictionService(BaseService, HealthCheckMixin):
             self.logger.error(f"磁盘预测失败: {str(e)}")
             raise PredictionError(f"磁盘预测失败: {str(e)}")
 
-    # AI增强预测方法
+    # 增强预测方法
 
     async def predict_with_ai_analysis(
         self,
@@ -630,7 +635,7 @@ class PredictionService(BaseService, HealthCheckMixin):
         target_utilization: float = 0.7,
         sensitivity: float = 0.8,
     ) -> Dict[str, Any]:
-        """AI增强预测分析 - 结合大模型的全流程预测"""
+        """增强预测分析"""
         try:
             self._ensure_initialized()
 
@@ -641,7 +646,7 @@ class PredictionService(BaseService, HealthCheckMixin):
             else:
                 self._validate_utilization_params(current_value, prediction_hours)
 
-            # 生成缓存键 - AI增强预测使用更高的缓存过期时间
+            # 生成缓存键（增强预测使用更长缓存过期时间）
             cache_key = self._generate_prediction_cache_key(
                 prediction_type=prediction_type,
                 current_value=current_value,
@@ -659,12 +664,12 @@ class PredictionService(BaseService, HealthCheckMixin):
             # 尝试从缓存获取结果
             cached_result = await self._get_from_cache(cache_key)
             if cached_result:
-                self.logger.info(f"AI增强预测缓存命中，直接返回结果")
+                self.logger.info("AI增强预测缓存命中，直接返回结果")
                 return cached_result
 
-            # 检查AI增强组件是否可用
+            # 检查增强组件是否可用
             if not self._intelligent_predictor:
-                self.logger.warning("AI增强组件不可用，降级到基础预测")
+                self.logger.warning("增强组件不可用，降级到基础预测")
                 return await self._fallback_to_basic_prediction(
                     pred_type,
                     current_value,
@@ -681,7 +686,7 @@ class PredictionService(BaseService, HealthCheckMixin):
                 pred_type, metric_query, hours=48
             )
 
-            # 执行AI增强预测
+            # 执行增强预测
             ai_prediction_result = (
                 await self._intelligent_predictor.predict_with_ai_analysis(
                     prediction_type=pred_type,
@@ -700,7 +705,7 @@ class PredictionService(BaseService, HealthCheckMixin):
                 ai_prediction_result, resource_constraints, target_utilization
             )
 
-            # 保存到缓存（AI增强预测缓存2小时，因为计算更加耗时）
+            # 保存到缓存（增强预测缓存2小时）
             await self._save_to_cache(cache_key, enhanced_result, ttl=7200)
 
             return enhanced_result
@@ -708,7 +713,7 @@ class PredictionService(BaseService, HealthCheckMixin):
         except ValidationError:
             raise
         except Exception as e:
-            self.logger.error(f"AI增强预测失败: {str(e)}")
+            self.logger.error(f"增强预测失败: {str(e)}")
             # 降级到基础预测
             return await self._fallback_to_basic_prediction(
                 PredictionType(prediction_type),
@@ -1346,7 +1351,7 @@ class PredictionService(BaseService, HealthCheckMixin):
         granularity: str = "hour",
         resource_constraints: Optional[Dict] = None,
         ai_enhanced: bool = False,
-        **kwargs
+        **kwargs,
     ) -> str:
         """生成预测缓存键"""
         try:
@@ -1359,36 +1364,40 @@ class PredictionService(BaseService, HealthCheckMixin):
                 "granularity": granularity,
                 "ai": ai_enhanced,
             }
-            
+
             # 添加资源约束（如果有）
             if resource_constraints:
                 # 对约束参数进行排序确保一致性
                 sorted_constraints = dict(sorted(resource_constraints.items()))
                 cache_params["constraints"] = str(sorted_constraints)
-            
+
             # 添加其他重要参数
             for key, value in kwargs.items():
                 if key in ["target_utilization", "sensitivity", "report_style"]:
                     cache_params[key] = value
-            
+
             # 生成缓存键字符串
-            cache_input = "|".join([f"{k}:{v}" for k, v in sorted(cache_params.items())])
-            
+            cache_input = "|".join(
+                [f"{k}:{v}" for k, v in sorted(cache_params.items())]
+            )
+
             # 生成哈希
-            cache_hash = hashlib.sha256(cache_input.encode('utf-8')).hexdigest()[:16]
-            
+            cache_hash = hashlib.sha256(cache_input.encode("utf-8")).hexdigest()[:16]
+
             return f"prediction:{prediction_type}:{cache_hash}"
-            
+
         except Exception as e:
             self.logger.error(f"生成缓存键失败: {str(e)}")
             # 降级到简单键
-            return f"prediction:{prediction_type}:{int(current_value)}:{prediction_hours}"
+            return (
+                f"prediction:{prediction_type}:{int(current_value)}:{prediction_hours}"
+            )
 
     async def _get_from_cache(self, cache_key: str) -> Optional[Dict[str, Any]]:
         """从缓存获取预测结果"""
         if not self._cache_manager:
             return None
-        
+
         try:
             cached_result = self._cache_manager.get(cache_key)
             if cached_result:
@@ -1399,28 +1408,28 @@ class PredictionService(BaseService, HealthCheckMixin):
                 return cached_result
         except Exception as e:
             self.logger.warning(f"从缓存获取数据失败: {str(e)}")
-        
+
         return None
 
-    async def _save_to_cache(self, cache_key: str, result: Dict[str, Any], ttl: int = 3600) -> None:
+    async def _save_to_cache(
+        self, cache_key: str, result: Dict[str, Any], ttl: int = 3600
+    ) -> None:
         """保存预测结果到缓存"""
         if not self._cache_manager:
             return
-        
+
         try:
             # 移除不需要缓存的临时数据
             cache_result = result.copy()
             cache_result.pop("from_cache", None)
             cache_result.pop("cache_timestamp", None)
-            
+
             # 添加缓存元数据
             cache_result["cached_at"] = datetime.now().isoformat()
             cache_result["cache_ttl"] = ttl
-            
+
             self._cache_manager.set(
-                question=cache_key,
-                response_data=cache_result,
-                ttl=ttl
+                question=cache_key, response_data=cache_result, ttl=ttl
             )
             self.logger.debug(f"结果已缓存: {cache_key}")
         except Exception as e:
@@ -1434,7 +1443,7 @@ class PredictionService(BaseService, HealthCheckMixin):
         """清理资源"""
         try:
             self._initialized = False
-            
+
             # 清理缓存管理器
             if self._cache_manager:
                 try:
@@ -1442,7 +1451,7 @@ class PredictionService(BaseService, HealthCheckMixin):
                 except Exception as e:
                     self.logger.warning(f"关闭缓存管理器失败: {str(e)}")
                 self._cache_manager = None
-            
+
             self._predictor = None
             self._feature_extractor = None
             self._anomaly_detector = None

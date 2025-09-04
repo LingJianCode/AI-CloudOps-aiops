@@ -15,9 +15,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
+from app.core.interfaces.llm_client import LLMClient, NullLLMClient
 from app.core.prediction.prompt_templates import prompt_builder
 from app.models import PredictionType
-from app.core.interfaces.llm_client import LLMClient, NullLLMClient
 
 logger = logging.getLogger("aiops.core.prediction.report_generator")
 
@@ -37,7 +37,7 @@ class ReportContext:
 
 
 class IntelligentReportGenerator:
-    """智能报告生成器 - 结合大模型生成多样化的分析报告"""
+    """报告生成器 - 结合外部分析生成多样化报告"""
 
     def __init__(self, llm_client: Optional[LLMClient] = None):
         # 默认使用空实现，服务层可注入真实实现
@@ -71,7 +71,7 @@ class IntelligentReportGenerator:
             # 根据风格选择模板和参数
             template_params = self._get_template_params(report_style)
 
-            # 构建报告生成提示词
+            # 构建报告生成提示
             prompt = await self._build_comprehensive_prompt(
                 report_data, template_params, include_charts_desc
             )
@@ -182,8 +182,8 @@ class IntelligentReportGenerator:
 扩缩容建议：
 {self._format_scaling_recommendations(report_context)}
 
-请生成{config['steps']}步的行动计划，每步包含：
-- 行动项目（{config['detail_level']}）
+请生成{config["steps"]}步的行动计划，每步包含：
+- 行动项目（{config["detail_level"]}）
 - 执行时间
 - 负责团队建议
 - 预期结果
@@ -413,7 +413,7 @@ class IntelligentReportGenerator:
         template_params: Dict[str, Any],
         include_charts_desc: bool,
     ) -> str:
-        """构建综合报告提示词"""
+        """构建综合报告提示"""
         base_prompt = prompt_builder.build_comprehensive_report_prompt(
             prediction_type=PredictionType(report_data["prediction_type"]),
             analysis_context=report_data["analysis_summary"],
@@ -579,13 +579,13 @@ class IntelligentReportGenerator:
                 return "暂无预测数据"
 
             overview = f"""预测类型: {context.prediction_type.value}
-当前值: {self._safe_get_value(prediction_results, 'current_value', 'N/A')}
-预测时长: {self._safe_get_value(prediction_results, 'prediction_hours', 'N/A')}小时
+当前值: {self._safe_get_value(prediction_results, "current_value", "N/A")}
+预测时长: {self._safe_get_value(prediction_results, "prediction_hours", "N/A")}小时
 预测点数: {len(predicted_data)}个
-最大值: {self._safe_get_value(prediction_summary, 'max_value', 'N/A')}
-最小值: {self._safe_get_value(prediction_summary, 'min_value', 'N/A')}
-平均值: {self._safe_get_value(prediction_summary, 'avg_value', 'N/A')}
-趋势: {self._safe_get_value(prediction_summary, 'trend', 'unknown')}"""
+最大值: {self._safe_get_value(prediction_summary, "max_value", "N/A")}
+最小值: {self._safe_get_value(prediction_summary, "min_value", "N/A")}
+平均值: {self._safe_get_value(prediction_summary, "avg_value", "N/A")}
+趋势: {self._safe_get_value(prediction_summary, "trend", "unknown")}"""
 
             return overview
 
@@ -808,11 +808,11 @@ class IntelligentReportGenerator:
 
 ## 预测概览
 - 预测类型: {context.prediction_type.value}
-- 生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M')}
+- 生成时间: {datetime.now().strftime("%Y-%m-%d %H:%M")}
 - 分析状态: 基础模式
 
 ## 关键发现
-{chr(10).join([f'- {insight}' for insight in context.insights[:5]])}
+{chr(10).join([f"- {insight}" for insight in context.insights[:5]])}
 
 ## 建议行动
 - 监控预测趋势变化

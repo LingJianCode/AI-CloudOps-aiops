@@ -19,7 +19,6 @@ from contextlib import asynccontextmanager
 from typing import Any, Dict
 
 from fastapi import FastAPI
-from fastapi.openapi.utils import get_openapi
 
 # 添加项目根目录到系统路径
 current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -31,8 +30,8 @@ from app.api.routes import register_routes
 from app.common.constants import AppConstants, ServiceConstants
 from app.config.logging import setup_logging
 from app.config.settings import config
-from app.services.startup import StartupService
 from app.services.factory import ServiceFactory
+from app.services.startup import StartupService
 
 # 全局启动服务实例
 startup_service = StartupService()
@@ -86,16 +85,16 @@ async def lifespan(app: FastAPI):
     logger.info(f"服务地址: http://{config.host}:{config.port}")
     logger.info("主要API端点:")
     logger.info(
-        f"  - GET  {AppConstants.API_VERSION_V1}/predict/health - 预测服务健康检查"
+        f"  - GET  {AppConstants.API_VERSION_V1}/predict/ready - 预测服务就绪检查"
     )
     logger.info(
-        f"  - GET  {AppConstants.API_VERSION_V1}/rca/health     - RCA服务健康检查"
+        f"  - GET  {AppConstants.API_VERSION_V1}/rca/ready     - RCA服务就绪检查"
     )
     logger.info(
-        f"  - GET  {AppConstants.API_VERSION_V1}/autofix/health - 自动修复服务健康检查"
+        f"  - GET  {AppConstants.API_VERSION_V1}/autofix/ready - 自动修复服务就绪检查"
     )
     logger.info(
-        f"  - GET  {AppConstants.API_VERSION_V1}/assistant/health - 智能助手健康检查"
+        f"  - GET  {AppConstants.API_VERSION_V1}/assistant/ready - 智能助手就绪检查"
     )
     logger.info(f"  - POST {AppConstants.API_VERSION_V1}/predict       - 负载预测")
     logger.info(f"  - POST {AppConstants.API_VERSION_V1}/rca           - 根因分析")
@@ -349,12 +348,14 @@ def create_app() -> FastAPI:
 
     # 自定义OpenAPI元数据（分类标签）
     app.openapi_tags = [
-        {"name": "prediction", "description": "预测服务API，包括QPS、CPU、内存、磁盘预测"},
+        {
+            "name": "prediction",
+            "description": "预测服务API，包括QPS、CPU、内存、磁盘预测",
+        },
         {"name": "assistant", "description": "智能助手API，包括问答、会话、知识库管理"},
         {"name": "rca", "description": "根因分析API"},
         {"name": "autofix", "description": "自动修复API"},
-        {"name": "cache", "description": "缓存管理API，包括统计、健康、清理、配置与性能"},
-        {"name": "health", "description": "系统健康与探针API，包括健康、就绪、存活、组件与指标"},
+        {"name": "cache", "description": "缓存管理API，包括统计、清理、配置与性能"},
     ]
 
     return app

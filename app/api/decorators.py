@@ -16,9 +16,10 @@ from typing import Any, Callable, Dict, Optional
 
 from fastapi import HTTPException, Request
 
+from app.models import BaseResponse
+
 from ..common.constants import HttpStatusCodes
 from ..common.exceptions import AIOpsException
-from app.models import BaseResponse
 
 try:
     from app.common.logger import get_logger
@@ -30,6 +31,7 @@ except Exception:
 
 def api_response(operation_name: str = "操作") -> Callable:
     """将路由处理结果统一封装为 BaseResponse 结构。"""
+
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         async def wrapper(*args, **kwargs) -> Dict[str, Any]:
@@ -39,7 +41,9 @@ def api_response(operation_name: str = "操作") -> Callable:
                 # Always wrap raw results in new BaseResponse format
                 if isinstance(result, BaseResponse):
                     return result.dict()
-                return BaseResponse(code=0, message=f"{operation_name}成功", data=result).dict()
+                return BaseResponse(
+                    code=0, message=f"{operation_name}成功", data=result
+                ).dict()
 
             except HTTPException:
                 raise
@@ -63,6 +67,7 @@ def api_response(operation_name: str = "操作") -> Callable:
 
 def validate_request(validator_func: Optional[Callable[..., bool]] = None) -> Callable:
     """在执行路由处理器前进行参数校验。"""
+
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         async def wrapper(*args, **kwargs) -> Dict[str, Any]:
@@ -83,6 +88,7 @@ def validate_request(validator_func: Optional[Callable[..., bool]] = None) -> Ca
 
 def log_api_call(log_request: bool = True, log_response: bool = False) -> Callable:
     """记录请求与（可选）响应信息。"""
+
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         async def wrapper(*args, **kwargs) -> Dict[str, Any]:
@@ -106,7 +112,11 @@ def log_api_call(log_request: bool = True, log_response: bool = False) -> Callab
                 if isinstance(result, dict):
                     status = result.get("code", "unknown")
                     message = result.get("message", "")
-                    extra = {"request_id": getattr(request.state, "request_id", "")} if request else {}
+                    extra = (
+                        {"request_id": getattr(request.state, "request_id", "")}
+                        if request
+                        else {}
+                    )
                     logger.info(
                         f"API响应: {func.__name__} - 状态: {status}, 消息: {message}",
                         extra=extra,
@@ -122,16 +132,16 @@ def log_api_call(log_request: bool = True, log_response: bool = False) -> Callab
 def _get_http_status_for_aiops_exception(exc: AIOpsException) -> int:
     """将领域异常映射为对应的 HTTP 状态码。"""
     from ..common.exceptions import (
+        AssistantError,
+        AutoFixError,
         ConfigurationError,
         ExternalServiceError,
-        ServiceUnavailableError,
-        ValidationError,
         PredictionError,
         RCAError,
-        AutoFixError,
-        AssistantError,
-        ResourceNotFoundError,
         RequestTimeoutError,
+        ResourceNotFoundError,
+        ServiceUnavailableError,
+        ValidationError,
     )
 
     if isinstance(exc, ServiceUnavailableError):

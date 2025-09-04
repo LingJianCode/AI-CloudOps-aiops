@@ -17,7 +17,6 @@ import yaml
 from dotenv import load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-
 # 预加载 .env 到进程环境，确保自定义读取函数也能获取
 load_dotenv()
 
@@ -99,5 +98,3 @@ class BaseAppSettings(BaseSettings):
             init_settings,
             file_secret_settings,
         )
-
-

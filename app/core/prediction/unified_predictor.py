@@ -67,7 +67,6 @@ class UnifiedPredictor:
             scaler = self.model_manager.get_scaler(prediction_type)
 
             if model is None:
-
                 return await self._rule_based_prediction(
                     prediction_type, current_value, prediction_hours, granularity
                 )

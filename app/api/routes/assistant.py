@@ -13,37 +13,37 @@ import logging
 import uuid
 from datetime import datetime
 from typing import Any, Dict
-from fastapi import APIRouter, File, HTTPException, UploadFile, Body
-from app.common.exceptions import (
-    AIOpsException,
-    ValidationError as DomainValidationError,
-    ServiceUnavailableError,
-    AssistantError,
-)
+
+from fastapi import APIRouter, Body, File, HTTPException, UploadFile
+
 from app.api.decorators import api_response, log_api_call
 from app.common.constants import (
     ApiEndpoints,
     AppConstants,
-    ErrorMessages,
     HttpStatusCodes,
     ServiceConstants,
 )
+from app.common.exceptions import (
+    AIOpsException,
+    ServiceUnavailableError,
+)
+from app.common.exceptions import (
+    ValidationError as DomainValidationError,
+)
 from app.config.settings import config
+from app.models import BaseResponse
 from app.models.assistant_models import (
-    AddDocumentRequest,
     AddDocumentResponse,
     AssistantRequest,
     AssistantResponse,
     ClearCacheResponse,
     RefreshKnowledgeResponse,
     ServiceConfigResponse,
-    ServiceHealthResponse,
     ServiceInfoResponse,
     ServiceReadyResponse,
     SessionInfoResponse,
     UploadKnowledgeResponse,
 )
-from app.models import BaseResponse
 from app.services.assistant_service import OptimizedAssistantService
 from app.services.factory import ServiceFactory
 
@@ -76,15 +76,17 @@ async def get_assistant_service() -> OptimizedAssistantService:
 async def create_session() -> Dict[str, Any]:
     await (await get_assistant_service()).initialize()
     # 复用服务层的创建逻辑（不需要请求体）
-    result = await (await get_assistant_service()).create_session(request=AssistantRequest(question="placeholder"))
+    result = await (await get_assistant_service()).create_session(
+        request=AssistantRequest(question="placeholder")
+    )
     # 只暴露必要字段
     return {
         "session_id": result.get("session_id"),
         "timestamp": result.get("timestamp"),
     }
 
+
 @router.post(
-    
     "/query",
     summary="智能助手查询",
     response_model=BaseResponse,
@@ -104,9 +106,9 @@ async def create_session() -> Dict[str, Any]:
                                     "path": "/api/v1/assistant/query",
                                     "method": "POST",
                                     "detail": "question不能为空",
-                                    "timestamp": "2025-01-01T00:00:00"
-                                }
-                            }
+                                    "timestamp": "2025-01-01T00:00:00",
+                                },
+                            },
                         },
                         "empty_question": {
                             "summary": "question为空字符串",
@@ -118,13 +120,13 @@ async def create_session() -> Dict[str, Any]:
                                     "path": "/api/v1/assistant/query",
                                     "method": "POST",
                                     "detail": "question不能为空",
-                                    "timestamp": "2025-01-01T00:00:00"
-                                }
-                            }
-                        }
+                                    "timestamp": "2025-01-01T00:00:00",
+                                },
+                            },
+                        },
                     }
                 }
-            }
+            },
         }
     },
 )
@@ -133,17 +135,23 @@ async def create_session() -> Dict[str, Any]:
 async def assistant_query(
     request: Dict[str, Any] = Body(
         ...,
-        example={
-            "question": "如何排查Pod频繁重启的问题？",
-            "mode": 1,
-            "use_web_search": False
+        examples={
+            "default": {
+                "value": {
+                    "question": "如何排查Pod频繁重启的问题？",
+                    "mode": 1,
+                    "use_web_search": False,
+                }
+            }
         },
-    )
+    ),
 ) -> Dict[str, Any]:
     # 手动校验缺失或空question，按测试期望返回400
     question = (request or {}).get("question")
     if question is None or (isinstance(question, str) and question.strip() == ""):
-        raise HTTPException(status_code=HttpStatusCodes.BAD_REQUEST, detail="question不能为空")
+        raise HTTPException(
+            status_code=HttpStatusCodes.BAD_REQUEST, detail="question不能为空"
+        )
 
     await (await get_assistant_service()).initialize()
 
@@ -214,52 +222,6 @@ async def refresh_knowledge_base() -> Dict[str, Any]:
 
 
 @router.get(
-    "/health",
-    summary="智能助手健康检查",
-    response_model=BaseResponse,
-)
-@api_response("智能助手健康检查")
-async def assistant_health() -> Dict[str, Any]:
-    await (await get_assistant_service()).initialize()
-
-    # 优先获取详细组件健康信息
-    try:
-        base_health = await (await get_assistant_service()).get_service_health_info()
-    except Exception:
-        base_health = {}
-
-    # 兼容模式化健康信息
-    try:
-        mode_health = await (await get_assistant_service()).get_service_health_info_with_mode()
-    except Exception:
-        mode_health = {}
-
-    merged_status = base_health.get("status") or mode_health.get("status") or "healthy"
-    components = base_health.get("components") or {}
-    # Map to expected keys for tests
-    normalized_components = {
-        "agent": True,
-        "vector_store": True,
-        "llm": True,
-        "knowledge_base": True,
-    }
-
-    response = ServiceHealthResponse(
-        status=merged_status,
-        service="assistant",
-        version=base_health.get("version") or mode_health.get("version"),
-        dependencies=normalized_components,
-        last_check_time=datetime.now().isoformat(),
-        uptime=base_health.get("uptime"),
-    )
-
-    data = response.dict()
-    data["healthy"] = (data.get("status") == "healthy")
-    data["components"] = normalized_components
-    return data
-
-
-@router.get(
     "/ready",
     summary="智能助手就绪检查",
     response_model=BaseResponse,
@@ -268,11 +230,16 @@ async def assistant_health() -> Dict[str, Any]:
 async def assistant_ready() -> Dict[str, Any]:
     try:
         await (await get_assistant_service()).initialize()
-        health_status = await (await get_assistant_service()).get_service_health_info_with_mode()
+        health_status = await (
+            await get_assistant_service()
+        ).get_service_health_info_with_mode()
 
         rag_status = health_status.get("modes", {}).get("rag", {}).get("status")
         mcp_status = health_status.get("modes", {}).get("mcp", {}).get("status")
-        is_ready = rag_status == ServiceConstants.STATUS_HEALTHY or mcp_status == ServiceConstants.STATUS_HEALTHY
+        is_ready = (
+            rag_status == ServiceConstants.STATUS_HEALTHY
+            or mcp_status == ServiceConstants.STATUS_HEALTHY
+        )
 
         if not is_ready:
             raise ServiceUnavailableError("assistant")
@@ -328,7 +295,9 @@ async def upload_knowledge_file(
 ) -> Dict[str, Any]:
     await (await get_assistant_service()).initialize()
 
-    upload_result = await (await get_assistant_service()).upload_knowledge_file(file=file)
+    upload_result = await (await get_assistant_service()).upload_knowledge_file(
+        file=file
+    )
 
     response = UploadKnowledgeResponse(
         uploaded=upload_result.get("uploaded", True),
@@ -437,7 +406,6 @@ async def assistant_info() -> Dict[str, Any]:
             "session": ApiEndpoints.ASSISTANT_SESSION,
             "refresh": ApiEndpoints.ASSISTANT_REFRESH,
             "config": ApiEndpoints.ASSISTANT_CONFIG,
-            "health": ApiEndpoints.ASSISTANT_HEALTH,
             "ready": ApiEndpoints.ASSISTANT_READY,
             "info": ApiEndpoints.ASSISTANT_INFO,
         },
@@ -475,7 +443,7 @@ async def assistant_info() -> Dict[str, Any]:
         },
         "performance": {
             "caching_enabled": bool(config.rag.cache_expiry > 0),
-            "parallel_processing": True
+            "parallel_processing": True,
         },
         "status": "available",
         "initialized": True,

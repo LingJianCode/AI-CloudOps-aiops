@@ -10,11 +10,9 @@ Description: 请求上下文中间件 - 注入 request_id 并记录请求开始/
 """
 
 import logging
-from typing import Any, Dict
 from uuid import uuid4
 
 from fastapi import FastAPI, Request
-
 
 logger = logging.getLogger("aiops.api.middleware.request_context")
 
@@ -66,5 +64,3 @@ def setup_request_context(app: FastAPI) -> None:
             return response
         finally:
             await _after_request(request, request_id)
-
-

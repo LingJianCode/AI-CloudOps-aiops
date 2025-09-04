@@ -9,10 +9,11 @@ License: Apache 2.0
 Description: 模块初始化文件
 """
 
+from fastapi import FastAPI
+
 from .cors import setup_cors
 from .error_handler import setup_error_handlers
 from .request_context import setup_request_context
-from fastapi import FastAPI
 
 
 def register_middleware(app: FastAPI) -> None:

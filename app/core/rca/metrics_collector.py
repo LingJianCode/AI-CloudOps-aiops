@@ -18,11 +18,11 @@ import pandas as pd
 from scipy import stats
 
 from app.config.settings import CONFIG, config
-from app.models.rca_models import MetricData
 from app.core.interfaces.prometheus_client import (
-    PrometheusClient,
     NullPrometheusClient,
+    PrometheusClient,
 )
+from app.models.rca_models import MetricData
 
 from .base_collector import BaseDataCollector
 
@@ -36,9 +36,7 @@ class MetricsCollector(BaseDataCollector):
         prometheus_client: Optional[PrometheusClient] = None,
     ):
         super().__init__("metrics", config_dict)
-        self.prometheus: PrometheusClient = (
-            prometheus_client or NullPrometheusClient()
-        )
+        self.prometheus: PrometheusClient = prometheus_client or NullPrometheusClient()
 
         # 从配置文件读取RCA指标配置
         self.rca_config = config.rca
@@ -279,7 +277,7 @@ class MetricsCollector(BaseDataCollector):
 
         # 组合查询
         if filters:
-            query = f'{base_query}{{{",".join(filters)}}}'
+            query = f"{base_query}{{{','.join(filters)}}}"
         else:
             query = base_query
 
@@ -307,7 +305,7 @@ class MetricsCollector(BaseDataCollector):
             # 安全检查
             if data is None:
                 return []
-            if hasattr(data, 'empty') and data.empty:
+            if hasattr(data, "empty") and data.empty:
                 return []
 
             # 智能分组
@@ -419,7 +417,7 @@ class MetricsCollector(BaseDataCollector):
                 if len(diff) > 0:
                     change_rate = np.std(diff) / (np.mean(np.abs(values)) + 1e-10)
                     scores.append(min(change_rate * 1.5, 1.0))  # 增加敏感度
-            
+
             # 4. 添加移动平均异常检测
             if len(values) > 10:
                 ma = values.rolling(window=5, min_periods=1).mean()

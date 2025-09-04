@@ -674,7 +674,7 @@ class K8sDeploymentTool(K8sBaseTool):
 
             deployment.spec.template.metadata.annotations[
                 "kubectl.kubernetes.io/restartedAt"
-            ] = (datetime.utcnow().isoformat() + "Z")
+            ] = datetime.utcnow().isoformat() + "Z"
 
             # 更新Deployment
             updated_deployment = await loop.run_in_executor(

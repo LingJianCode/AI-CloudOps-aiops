@@ -9,7 +9,7 @@ License: Apache 2.0
 Description: 基础响应模型
 """
 
-from typing import Any, Dict, Generic, List, Optional, TypeVar
+from typing import Any, Generic, List, Optional, TypeVar
 
 from pydantic import BaseModel, Field
 
@@ -38,5 +38,3 @@ class ErrorResponse(BaseModel):
     code: int
     message: str
     detail: Optional[str] = None
-
-

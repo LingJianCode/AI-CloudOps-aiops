@@ -133,6 +133,6 @@ class TimeUtils:
         if seconds < 60:
             return f"{seconds:.1f}秒"
         elif seconds < 3600:
-            return f"{seconds/60:.1f}分钟"
+            return f"{seconds / 60:.1f}分钟"
         else:
-            return f"{seconds/3600:.1f}小时"
+            return f"{seconds / 3600:.1f}小时"

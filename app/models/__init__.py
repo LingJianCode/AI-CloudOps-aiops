@@ -9,7 +9,30 @@ License: Apache 2.0
 Description: 模块初始化文件
 """
 
+from .assistant_models import (
+    AddDocumentRequest,
+    AddDocumentResponse,
+    AssistantRequest,
+    AssistantResponse,
+    ClearCacheResponse,
+    RefreshKnowledgeResponse,
+    ServiceConfigResponse,
+    ServiceHealthResponse,
+    ServiceInfoResponse,
+    ServiceReadyResponse,
+    SessionInfoResponse,
+    UploadKnowledgeResponse,
+)
+from .autofix_models import (
+    AutoFixRequest,
+    AutoFixResponse,
+)
+from .base import BaseResponse, ErrorResponse, ListResponse
 from .data_models import AgentState, AnomalyResult, CorrelationResult, MetricData
+from .diagnose_models import (
+    DiagnoseRequest,
+    DiagnoseResponse,
+)
 from .predict_models import (  # 枚举类型; 基础数据模型; 请求模型; 基础响应模型; AI增强响应模型
     AIAnalysisContext,
     AICapabilitiesResponse,
@@ -36,29 +59,6 @@ from .predict_models import (  # 枚举类型; 基础数据模型; 请求模型;
     ResourceUtilization,
     ScalingAction,
     ScalingRecommendation,
-)
-from .assistant_models import (
-    AddDocumentRequest,
-    AddDocumentResponse,
-    AssistantRequest,
-    AssistantResponse,
-    ClearCacheResponse,
-    RefreshKnowledgeResponse,
-    ServiceConfigResponse,
-    ServiceHealthResponse,
-    ServiceInfoResponse,
-    ServiceReadyResponse,
-    SessionInfoResponse,
-    UploadKnowledgeResponse,
-)
-from .base import BaseResponse, ErrorResponse, ListResponse
-from .autofix_models import (
-    AutoFixRequest,
-    AutoFixResponse,
-)
-from .diagnose_models import (
-    DiagnoseRequest,
-    DiagnoseResponse,
 )
 from .rca_models import (
     ErrorSummaryResponse,

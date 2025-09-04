@@ -102,7 +102,7 @@ class NotifierAgent:
             services_list = "\n".join([f"- {service}" for service in affected_services])
 
             message = f"""
-{config_info['emoji']} **系统事件告警**
+{config_info["emoji"]} **系统事件告警**
 
 **严重程度:** {severity.upper()}
 
@@ -196,8 +196,8 @@ class NotifierAgent:
 {status_emoji} **系统健康状态报告**
 
 **整体状态:** {overall_status}
-**检查时间:** {health_data.get('timestamp', 'N/A')}
-**系统版本:** {health_data.get('version', 'N/A')}
+**检查时间:** {health_data.get("timestamp", "N/A")}
+**系统版本:** {health_data.get("version", "N/A")}
 """
 
             if unhealthy_components:

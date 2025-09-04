@@ -24,8 +24,7 @@ class LLMClient(Protocol):
         stream: bool = False,
         max_tokens: Optional[int] = None,
         use_task_model: bool = False,
-    ) -> Union[str, Dict[str, Any]]:
-        ...
+    ) -> Union[str, Dict[str, Any]]: ...
 
     # 扩展能力：部分Core模块会直接调用这些高阶方法
     async def analyze_k8s_problem(
@@ -33,16 +32,13 @@ class LLMClient(Protocol):
         deployment_yaml: str,
         error_event: str,
         additional_context: Optional[str] = None,
-    ) -> Optional[Dict[str, Any]]:
-        ...
+    ) -> Optional[Dict[str, Any]]: ...
 
     async def generate_fix_explanation(
         self, deployment: str, actions_taken: List[str], success: bool
-    ) -> Optional[str]:
-        ...
+    ) -> Optional[str]: ...
 
-    async def is_healthy(self) -> bool:
-        ...
+    async def is_healthy(self) -> bool: ...
 
     # 属性：用于日志输出
     provider: str
@@ -82,5 +78,3 @@ class NullLLMClient:
 
     provider: str = "null"
     model: str = "null"
-
-

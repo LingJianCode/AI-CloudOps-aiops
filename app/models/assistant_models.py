@@ -18,7 +18,9 @@ from pydantic import BaseModel, Field
 class AssistantRequest(BaseModel):
     question: str = Field(..., min_length=1, description="用户提问")
     mode: int = Field(default=1, description="助手模式:1=RAG,2=MCP", ge=1, le=2)
-    chat_history: Optional[List[Dict[str, str]]] = Field(default=None, description="对话历史")
+    chat_history: Optional[List[Dict[str, str]]] = Field(
+        default=None, description="对话历史"
+    )
     use_web_search: bool = Field(default=False, description="是否使用网络搜索")
     session_id: Optional[str] = Field(default=None, description="会话ID")
 

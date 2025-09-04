@@ -21,4 +21,3 @@ async def test_predict_qps_basic_shape():
     assert isinstance(result, dict)
     assert "prediction_type" in result
     assert "predicted_data" in result
-
