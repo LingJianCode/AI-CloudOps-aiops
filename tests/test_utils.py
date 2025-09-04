@@ -286,6 +286,7 @@ def print_test_summary(results: Dict[str, Any], duration: float = 0) -> None:
 
 class TestResult:
     """测试结果封装类"""
+    __test__ = False
 
     def __init__(self, test_name: str):
         self.test_name = test_name

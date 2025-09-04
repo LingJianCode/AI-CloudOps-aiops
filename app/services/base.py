@@ -24,7 +24,12 @@ class BaseService(ABC):
 
     def __init__(self, service_name: str) -> None:
         self.service_name = service_name
-        self.logger = logging.getLogger(f"aiops.services.{service_name}")
+        try:
+            from app.common.logger import get_logger
+
+            self.logger = get_logger(f"aiops.services.{service_name}")
+        except Exception:
+            self.logger = logging.getLogger(f"aiops.services.{service_name}")
         self._initialized = False
         self._last_health_check = None
         self._health_status = False
@@ -88,16 +93,27 @@ class BaseService(ABC):
     ) -> Any:
         """执行带超时保护的操作"""
         try:
+            # 直接传入协程对象的情况
             if asyncio.iscoroutine(operation):
-                result = await asyncio.wait_for(operation, timeout=timeout)
-            elif callable(operation):
+                return await asyncio.wait_for(operation, timeout=timeout)
+
+            # 传入的是协程函数（未调用）
+            if asyncio.iscoroutinefunction(operation):
+                return await asyncio.wait_for(operation(), timeout=timeout)
+
+            # 其他可调用对象（可能是同步函数，或返回协程的函数）
+            if callable(operation):
                 result = await asyncio.wait_for(
                     asyncio.to_thread(operation), timeout=timeout
                 )
-            else:
-                raise ValueError("operation must be a coroutine or callable")
+                # 如果返回的是协程，则继续等待其完成
+                if asyncio.iscoroutine(result):
+                    return await asyncio.wait_for(result, timeout=timeout)
+                return result
 
-            return result
+            raise ValueError(
+                "operation must be a coroutine, coroutine function, or callable"
+            )
 
         except asyncio.TimeoutError:
             self.logger.error(f"服务 {self.service_name} 执行 {operation_name} 超时")

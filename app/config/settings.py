@@ -14,8 +14,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import yaml
+import logging
 from dotenv import load_dotenv
+from pydantic import Field
+from pydantic_settings import SettingsConfigDict
+from app.config.base import BaseAppSettings
 
 ROOT_DIR = Path(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -25,26 +28,13 @@ ENV = os.getenv("ENV", "development")
 
 
 def load_config() -> Dict[str, Any]:
-    """加载配置文件"""
-    config_file = (
-        ROOT_DIR / "config" / f"config{'.' + ENV if ENV != 'development' else ''}.yaml"
-    )
-    default_config_file = ROOT_DIR / "config" / "config.yaml"
-
+    """加载配置文件（通过 BaseAppSettings 提供的统一加载器）"""
     try:
-        if config_file.exists():
-            with open(config_file, "r", encoding="utf-8") as f:
-                return yaml.safe_load(f)
-        elif default_config_file.exists():
-            with open(default_config_file, "r", encoding="utf-8") as f:
-                return yaml.safe_load(f)
-        else:
-            print(
-                f"警告: 未找到配置文件 {config_file} 或 {default_config_file}，将使用环境变量默认值"
-            )
-            return {}
+        data = BaseAppSettings.load_yaml_config()
+        return data or {}
     except Exception as e:
-        print(f"加载配置文件出错: {e}")
+        logger = logging.getLogger("aiops.config.settings")
+        logger.exception("加载配置文件出错: %s", e)
         return {}
 
 
@@ -670,3 +660,26 @@ class AppConfig:
 
 
 config = AppConfig()
+
+
+class Settings(BaseAppSettings):
+    """Pydantic Settings（顶层示例字段），用于提供标准的 ENV 管理入口。
+    实际业务仍通过 `config` （dataclass 聚合）访问，以保证向后兼容。
+    """
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
+
+    env: str = Field(default="development", alias="ENV")
+    debug: bool = Field(default=False, alias="DEBUG")
+    host: str = Field(default="0.0.0.0", alias="HOST")
+    port: int = Field(default=8080, alias="PORT")
+    log_level: str = Field(default="INFO", alias="LOG_LEVEL")
+
+
+# 保留一个标准 Settings 实例（可供后续迁移逐步使用）
+settings = Settings()

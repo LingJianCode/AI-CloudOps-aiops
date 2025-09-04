@@ -20,6 +20,11 @@ from ..common.exceptions import AssistantError, ValidationError
 from ..config.settings import config
 from ..core.agents.enterprise_assistant import get_enterprise_assistant
 from .base import BaseService
+from .factory import ServiceFactory
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .mcp_service import MCPService
 
 logger = logging.getLogger("aiops.services.assistant")
 
@@ -34,7 +39,10 @@ class OptimizedAssistantService(BaseService):
 
     async def _do_initialize(self) -> None:
         try:
-            self._assistant = await get_enterprise_assistant()
+            # 将 Service 层的 LLMService 注入 Core 层，避免 Core 直接依赖 Service
+            from app.services.llm import LLMService
+            llm_service = LLMService()
+            self._assistant = await get_enterprise_assistant(llm_client=llm_service)
             logger.info("智能助手服务初始化完成")
         except Exception as e:
             logger.warning(f"服务初始化失败: {str(e)}，将在首次使用时重试")
@@ -46,7 +54,9 @@ class OptimizedAssistantService(BaseService):
             # 如果assistant为None，尝试获取但不强制失败
             if not self._assistant:
                 try:
-                    self._assistant = await get_enterprise_assistant()
+                    from app.services.llm import LLMService
+                    llm_service = LLMService()
+                    self._assistant = await get_enterprise_assistant(llm_client=llm_service)
                 except Exception as e:
                     logger.debug(f"获取助手实例失败: {str(e)}")
                     # 返回部分健康状态，表示服务框架可用但助手未初始化
@@ -70,6 +80,11 @@ class OptimizedAssistantService(BaseService):
         session_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """获取智能回答"""
+        # 会话管理（若未提供则自动创建）
+        if not session_id:
+            session_id = str(uuid.uuid4())
+            logger.info(f"为请求创建新会话: {session_id}")
+
         # 参数验证
         self._validate_question(question)
         self._validate_mode(mode)
@@ -487,8 +502,11 @@ class OptimizedAssistantService(BaseService):
         """确保服务就绪"""
         if not self._assistant:
             try:
-                # 尝试直接获取助手实例，不依赖initialize
-                self._assistant = await get_enterprise_assistant()
+                # 尝试直接获取助手实例，注入 LLMService，避免 Core 直接依赖 Service
+                from app.services.llm import LLMService
+
+                llm_service = LLMService()
+                self._assistant = await get_enterprise_assistant(llm_client=llm_service)
                 logger.info("智能助手在运行时成功初始化")
             except Exception as e:
                 logger.error(f"无法初始化智能助手: {str(e)}")
@@ -595,8 +613,10 @@ class OptimizedAssistantService(BaseService):
     ) -> Dict[str, Any]:
         """处理MCP模式请求"""
         try:
-            # 懒加载MCP服务
-            mcp_service = await self._get_mcp_service()
+            # 通过工厂获取MCP服务单例（延迟导入以避免循环依赖）
+            from .mcp_service import MCPService
+
+            mcp_service: MCPService = await ServiceFactory.get_service("mcp", MCPService)
 
             # 调用MCP服务处理
             result = await mcp_service.get_answer(
@@ -606,21 +626,21 @@ class OptimizedAssistantService(BaseService):
             # 记录成功指标
             self._performance_monitor.record_success()
 
-            return result
+            # 增强结果，保持返回结构一致
+            enhanced_result = self._enhance_result(result, question, session_id)
+            enhanced_result["mode"] = "mcp"
+            return enhanced_result
 
         except Exception as e:
             self._performance_monitor.record_failure()
             logger.error(f"MCP获取答案失败: {str(e)}")
             return await self._use_mcp_fallback_response(question, session_id, str(e))
 
-    async def _get_mcp_service(self):
-        """懒加载MCP服务"""
-        if not hasattr(self, "_mcp_service") or self._mcp_service is None:
-            from .mcp_service import MCPService
+    async def _get_mcp_service(self) -> "MCPService":
+        """兼容旧接口：通过工厂获取MCP服务单例"""
+        from .mcp_service import MCPService
 
-            self._mcp_service = MCPService()
-            await self._mcp_service.initialize()
-        return self._mcp_service
+        return await ServiceFactory.get_service("mcp", MCPService)
 
     async def _use_mcp_fallback_response(
         self, question: str, session_id: Optional[str], error_reason: str

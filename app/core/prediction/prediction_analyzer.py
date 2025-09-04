@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional
 
 from app.core.prediction.prompt_templates import prompt_builder
 from app.models import PredictionType
-from app.services.llm import LLMService
+from app.core.interfaces.llm_client import LLMClient, NullLLMClient
 
 logger = logging.getLogger("aiops.core.prediction.analyzer")
 
@@ -25,8 +25,9 @@ logger = logging.getLogger("aiops.core.prediction.analyzer")
 class PredictionAnalyzer:
     """智能预测分析器 - 结合大模型的预测结果分析"""
 
-    def __init__(self):
-        self.llm_service = LLMService()
+    def __init__(self, llm_client: Optional[LLMClient] = None):
+        # 默认使用空实现，服务层可注入真实实现
+        self.llm_service: LLMClient = llm_client or NullLLMClient()
 
     async def analyze_historical_context(
         self,

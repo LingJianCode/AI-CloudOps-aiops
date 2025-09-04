@@ -51,10 +51,7 @@ from .assistant_models import (
     SessionInfoResponse,
     UploadKnowledgeResponse,
 )
-from .common_models import (
-    APIResponse,
-    ListResponse,
-)
+from .base import BaseResponse, ErrorResponse, ListResponse
 from .autofix_models import (
     AutoFixRequest,
     AutoFixResponse,
@@ -77,7 +74,8 @@ __all__ = [
     "DiagnoseRequest",
     # 响应模型
     "AddDocumentResponse",
-    "APIResponse",
+    "BaseResponse",
+    "ErrorResponse",
     "AutoFixResponse",
     "AssistantResponse",
     "ClearCacheResponse",

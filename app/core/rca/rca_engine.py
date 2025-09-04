@@ -28,7 +28,7 @@ from app.models.rca_models import (
     RootCauseAnalysis,
     SeverityLevel,
 )
-from app.services.llm import LLMService
+from app.core.interfaces.llm_client import LLMClient, NullLLMClient
 
 from .events_collector import EventsCollector
 from .logs_collector import LogsCollector
@@ -103,7 +103,14 @@ class RCAAnalysisEngine:
         },
     }
 
-    def __init__(self, config_dict: Optional[Dict[str, Any]] = None):
+    def __init__(
+        self,
+        config_dict: Optional[Dict[str, Any]] = None,
+        llm_client: Optional[LLMClient] = None,
+        metrics_collector: Optional[MetricsCollector] = None,
+        events_collector: Optional[EventsCollector] = None,
+        logs_collector: Optional[LogsCollector] = None,
+    ):
         self.config = config_dict or {}
         self.logger = logging.getLogger("aiops.rca.engine")
 
@@ -116,18 +123,13 @@ class RCAAnalysisEngine:
         self.max_retries = rca_config_dict.get("max_retries", 3)
         self.timeout = rca_config_dict.get("timeout", 30)
 
-        # 初始化收集器
-        self.metrics_collector = MetricsCollector(config_dict)
-        self.events_collector = EventsCollector(config_dict)
-        self.logs_collector = LogsCollector(config_dict)
+        # 初始化收集器（支持依赖注入）
+        self.metrics_collector = metrics_collector or MetricsCollector(config_dict)
+        self.events_collector = events_collector or EventsCollector(config_dict)
+        self.logs_collector = logs_collector or LogsCollector(config_dict)
 
-        # 初始化LLM服务
-        try:
-            self.llm_service = LLMService()
-            self.logger.info("LLM服务初始化成功")
-        except Exception as e:
-            self.logger.warning(f"LLM服务初始化失败: {str(e)}，将使用基础建议")
-            self.llm_service = None
+        # 注入LLM客户端（可为空实现）
+        self.llm_service: LLMClient = llm_client or NullLLMClient()
 
         # 分析缓存
         self._analysis_cache = {}

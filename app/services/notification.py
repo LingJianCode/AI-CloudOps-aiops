@@ -19,11 +19,12 @@ import requests
 from app.common.constants import ServiceConstants
 from app.config.settings import config
 from app.services.base import BaseService
+from app.core.interfaces.notification_client import NotificationClient
 
 logger = logging.getLogger("aiops.notification")
 
 
-class NotificationService(BaseService):
+class NotificationService(BaseService, NotificationClient):
     """AI-CloudOps智能通知服务 - 支持多种通知渠道"""
 
     # 通知颜色映射

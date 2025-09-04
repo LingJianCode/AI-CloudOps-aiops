@@ -22,7 +22,7 @@ from app.core.prediction.intelligent_report_generator import (
 from app.core.prediction.prediction_analyzer import PredictionAnalyzer
 from app.core.prediction.unified_predictor import UnifiedPredictor
 from app.models import PredictionDataPoint, PredictionGranularity, PredictionType
-from app.services.llm import LLMService
+from app.core.interfaces.llm_client import LLMClient, NullLLMClient
 
 logger = logging.getLogger("aiops.core.prediction.intelligent")
 
@@ -30,14 +30,14 @@ logger = logging.getLogger("aiops.core.prediction.intelligent")
 class IntelligentPredictor:
     """智能预测引擎 - 在预测全流程中集成大模型分析"""
 
-    def __init__(self, model_manager, feature_extractor):
+    def __init__(self, model_manager, feature_extractor, llm_client: Optional[LLMClient] = None):
         # 基础预测组件
         self.unified_predictor = UnifiedPredictor(model_manager, feature_extractor)
 
         # AI增强组件
-        self.analyzer = PredictionAnalyzer()
-        self.report_generator = IntelligentReportGenerator()
-        self.llm_service = LLMService()
+        self.llm_service: LLMClient = llm_client or NullLLMClient()
+        self.analyzer = PredictionAnalyzer(self.llm_service)
+        self.report_generator = IntelligentReportGenerator(self.llm_service)
 
         # 状态管理
         self._initialized = False

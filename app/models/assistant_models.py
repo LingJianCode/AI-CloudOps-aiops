@@ -62,6 +62,9 @@ class ServiceReadyResponse(BaseModel):
     service: str
     timestamp: str
     message: Optional[str] = None
+    initialized: Optional[bool] = None
+    healthy: Optional[bool] = None
+    status: Optional[str] = None
 
 
 class ServiceHealthResponse(BaseModel):

@@ -116,17 +116,20 @@ class PredictionService(BaseService, HealthCheckMixin):
             # 初始化AI增强组件
             try:
                 # 智能预测引擎
+                from app.services.llm import LLMService
+                llm_service = LLMService()
                 self._intelligent_predictor = IntelligentPredictor(
                     model_manager=self._model_manager,
                     feature_extractor=self._feature_extractor,
+                    llm_client=llm_service,
                 )
                 await self._intelligent_predictor.initialize()
 
                 # 预测分析器
-                self._prediction_analyzer = PredictionAnalyzer()
+                self._prediction_analyzer = PredictionAnalyzer(llm_service)
 
                 # 报告生成器
-                self._report_generator = IntelligentReportGenerator()
+                self._report_generator = IntelligentReportGenerator(llm_service)
 
                 self.logger.info("AI增强组件初始化完成")
 

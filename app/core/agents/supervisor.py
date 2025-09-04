@@ -17,7 +17,7 @@ from pydantic import BaseModel
 from typing_extensions import Literal
 
 from app.models.data_models import AgentState
-from app.services.llm import LLMService
+from app.core.interfaces.llm_client import LLMClient, NullLLMClient
 
 logger = logging.getLogger("aiops.supervisor")
 
@@ -32,9 +32,9 @@ class RouteResponse(BaseModel):
 class SupervisorAgent:
     """智能监督代理"""
 
-    def __init__(self):
-        # 使用我们自己的LLM服务进行智能决策
-        self.llm_service = LLMService()
+    def __init__(self, llm_client: Optional[LLMClient] = None):
+        # 使用注入的LLM客户端（默认空实现）
+        self.llm_service: LLMClient = llm_client or NullLLMClient()
 
         # 定义可用的工作代理成员
         self.members = ["Researcher", "Coder", "K8sFixer", "Notifier"]

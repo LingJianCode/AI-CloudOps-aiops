@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional
 
 from app.core.prediction.prompt_templates import prompt_builder
 from app.models import PredictionType
-from app.services.llm import LLMService
+from app.core.interfaces.llm_client import LLMClient, NullLLMClient
 
 logger = logging.getLogger("aiops.core.prediction.report_generator")
 
@@ -39,8 +39,9 @@ class ReportContext:
 class IntelligentReportGenerator:
     """智能报告生成器 - 结合大模型生成多样化的分析报告"""
 
-    def __init__(self):
-        self.llm_service = LLMService()
+    def __init__(self, llm_client: Optional[LLMClient] = None):
+        # 默认使用空实现，服务层可注入真实实现
+        self.llm_service: LLMClient = llm_client or NullLLMClient()
 
     def _safe_get_dict(
         self, data: Any, default: Optional[Dict] = None

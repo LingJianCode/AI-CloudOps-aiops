@@ -17,7 +17,6 @@ import numpy as np
 import pandas as pd
 
 from app.models import PredictionDataPoint, PredictionGranularity, PredictionType
-from app.services.prometheus import PrometheusService
 
 logger = logging.getLogger("aiops.core.predictor")
 
@@ -29,7 +28,6 @@ class UnifiedPredictor:
         """初始化预测器"""
         self.model_manager = model_manager
         self.feature_extractor = feature_extractor
-        self.prometheus = PrometheusService()
         self._initialized = False
 
     async def initialize(self) -> None:
@@ -462,5 +460,4 @@ class UnifiedPredictor:
                 else "not_loaded"
             ),
             "feature_extractor_available": self.feature_extractor is not None,
-            "prometheus_available": self.prometheus is not None,
         }

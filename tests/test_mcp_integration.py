@@ -155,7 +155,11 @@ class MCPIntegrationTester:
                         print(f"   - MCP模式状态: {mcp_status}")
                         
                         supported_modes = result.get('supported_modes', [])
-                        print(f"   - 支持的模式: {[f'{m.get('mode')}({m.get('name')})' for m in supported_modes]}")
+                        # 使用安全的字符串拼接避免嵌套f-string语法问题
+                        formatted_modes = [
+                            f"{m.get('mode')}({m.get('name')})" for m in supported_modes
+                        ]
+                        print(f"   - 支持的模式: {formatted_modes}")
                         
                         return True
                     else:

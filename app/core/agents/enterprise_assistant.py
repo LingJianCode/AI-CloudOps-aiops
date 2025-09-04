@@ -1607,8 +1607,11 @@ _assistant_instance = None
 _lock = asyncio.Lock()
 
 
-async def get_enterprise_assistant() -> RAGAssistant:
-    """获取全局助手实例"""
+from app.core.interfaces.llm_client import LLMClient, NullLLMClient
+
+
+async def get_enterprise_assistant(llm_client: Optional[LLMClient] = None) -> RAGAssistant:
+    """获取全局助手实例（支持注入 LLM 客户端以避免Core层依赖Service层）"""
     global _assistant_instance
 
     if _assistant_instance is None:
@@ -1620,12 +1623,11 @@ async def get_enterprise_assistant() -> RAGAssistant:
                     from app.core.vector.redis_vector_store import (
                         EnhancedRedisVectorStore,
                     )
-                    from app.services.llm import LLMService
 
                     logger.info("初始化优化的RAG助手...")
 
-                    # 创建服务
-                    llm_service = LLMService()
+                    # 使用注入的 LLM 客户端，若未提供则使用空实现
+                    llm_service = llm_client if llm_client is not None else NullLLMClient()
 
                     # 缓存配置
                     cache_config = {

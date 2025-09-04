@@ -194,6 +194,7 @@ class ApiEndpoints:
     ASSISTANT_QUERY = f"{ASSISTANT}/query"
     ASSISTANT_SESSION = f"{ASSISTANT}/session"
     ASSISTANT_REFRESH = f"{ASSISTANT}/refresh"
+    ASSISTANT_CONFIG = f"{ASSISTANT}/config"
     ASSISTANT_HEALTH = f"{ASSISTANT}/health"
     ASSISTANT_READY = f"{ASSISTANT}/ready"
     ASSISTANT_INFO = f"{ASSISTANT}/info"

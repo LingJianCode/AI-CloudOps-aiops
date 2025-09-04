@@ -13,7 +13,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 
 from app.common.constants import ServiceConstants
 
@@ -56,6 +56,8 @@ class ResourceConstraints(BaseModel):
 
 class BasePredictionRequest(BaseModel):
     """预测请求基础模型"""
+
+    model_config = ConfigDict(extra="forbid")
 
     metric_query: Optional[str] = Field(None)
     prediction_hours: int = Field(default=24, ge=1, le=168)

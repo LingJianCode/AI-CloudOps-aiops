@@ -59,6 +59,14 @@ try:
 except Exception as e:
     logger.warning(f"注册缓存管理路由失败: {str(e)}")
 
+try:
+    from .health import router as health_router
+
+    api_v1.include_router(health_router, prefix="/health")
+    logger.info("已注册健康检查路由")
+except Exception as e:
+    logger.warning(f"注册健康检查路由失败: {str(e)}")
+
 
 def register_routes(app):
     # 注册API v1路由

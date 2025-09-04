@@ -13,9 +13,10 @@ import hashlib
 import logging
 import time
 from datetime import datetime, timedelta, timezone
+import asyncio
 from typing import Any, Dict, List, Optional
 
-from fastapi import HTTPException
+from app.common.exceptions import AIOpsException, ValidationError
 
 from ..common.constants import HttpStatusCodes
 from ..common.exceptions import RCAError
@@ -67,19 +68,55 @@ class RCAService(BaseService, HealthCheckMixin):
                 self.logger.warning(f"Redis缓存管理器初始化失败: {str(cache_e)}，将在无缓存模式下运行")
                 self._cache_manager = None
 
-            # 初始化引擎
-            self._engine = RCAAnalysisEngine()
-            await self._engine.initialize()
+            # 初始化依赖（LLM、Prometheus、K8s）
+            from ..services.llm import LLMService
+            from ..services.prometheus import PrometheusService
+            from ..services.kubernetes import KubernetesService
+            from ..core.interfaces.prometheus_client import NullPrometheusClient
+            from ..core.interfaces.k8s_client import NullK8sClient
 
-            # 初始化收集器
-            self._metrics_collector = MetricsCollector()
-            await self._metrics_collector.initialize()
+            llm_service = LLMService()
 
-            self._events_collector = EventsCollector()
-            await self._events_collector.initialize()
+            # Prometheus 客户端，失败时降级为空实现
+            prometheus_client = None
+            try:
+                prometheus_client = PrometheusService()
+                await prometheus_client.initialize()
+            except Exception as e:
+                self.logger.warning(f"Prometheus初始化失败，启用降级模式: {e}")
+                prometheus_client = NullPrometheusClient()
 
-            self._logs_collector = LogsCollector()
-            await self._logs_collector.initialize()
+            # Kubernetes 客户端，失败或不健康时降级为空实现
+            try:
+                k8s_client = KubernetesService()
+                # 明确健康性检查，不健康则使用空实现
+                if not k8s_client.is_healthy():
+                    self.logger.warning("Kubernetes不健康，启用降级模式")
+                    k8s_client = NullK8sClient()
+            except Exception as e:
+                self.logger.warning(f"Kubernetes初始化失败，启用降级模式: {e}")
+                k8s_client = NullK8sClient()
+
+            # 初始化收集器（依赖注入）
+            self._metrics_collector = MetricsCollector(prometheus_client=prometheus_client)
+            self._events_collector = EventsCollector(k8s_client=k8s_client)
+            self._logs_collector = LogsCollector(k8s_client=k8s_client)
+
+            # 初始化引擎并注入收集器与LLM
+            self._engine = RCAAnalysisEngine(
+                llm_client=llm_service,
+                metrics_collector=self._metrics_collector,
+                events_collector=self._events_collector,
+                logs_collector=self._logs_collector,
+            )
+
+            # 并发初始化所有组件（收集器允许降级空实现通过自身健康检查返回False）
+            await asyncio.gather(
+                self._metrics_collector.initialize(),
+                self._events_collector.initialize(),
+                self._logs_collector.initialize(),
+                self._engine.initialize(),
+            )
 
             self.logger.info("RCA服务组件初始化完成")
         except Exception as e:
@@ -1158,18 +1195,15 @@ class RCAService(BaseService, HealthCheckMixin):
             解析后的datetime对象或None
             
         Raises:
-            HTTPException: 时间格式错误时抛出
+            ValidationError: 时间格式错误时抛出
         """
         if not timestamp_str:
             return None
         
         try:
             return datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
-        except ValueError:
-            raise HTTPException(
-                status_code=HttpStatusCodes.BAD_REQUEST,
-                detail=f"无效的{field_name}格式，请使用ISO格式"
-            )
+        except ValueError as e:
+            raise ValidationError(field_name, "无效的时间格式，请使用ISO格式", {"value": timestamp_str}) from e
 
     def handle_service_error(self, operation: str, error: Exception) -> None:
         """
@@ -1180,22 +1214,32 @@ class RCAService(BaseService, HealthCheckMixin):
             error: 异常对象
             
         Raises:
-            HTTPException: 处理后的HTTP异常
+            AIOpsException: 处理后的领域异常
         """
         error_message = f"{operation}失败: {str(error)}"
         self.logger.error(error_message, exc_info=True)
-        
-        # 根据异常类型判断HTTP状态码
+
+        # 将不同类型异常映射为领域异常，交由上层中间件统一处理
+        if isinstance(error, (ValidationError,)):
+            raise error
         if isinstance(error, ValueError):
-            status_code = HttpStatusCodes.BAD_REQUEST
-        elif isinstance(error, ConnectionError):
-            status_code = HttpStatusCodes.SERVICE_UNAVAILABLE
-        elif isinstance(error, TimeoutError):
-            status_code = HttpStatusCodes.REQUEST_TIMEOUT
-        else:
-            status_code = HttpStatusCodes.INTERNAL_SERVER_ERROR
-        
-        raise HTTPException(
-            status_code=status_code,
-            detail=error_message,
+            raise ValidationError("parameters", str(error))
+        if isinstance(error, ConnectionError):
+            raise AIOpsException(
+                message=error_message,
+                error_code="SERVICE_UNAVAILABLE",
+                details={"operation": operation},
+            )
+        if isinstance(error, TimeoutError):
+            raise AIOpsException(
+                message=error_message,
+                error_code="REQUEST_TIMEOUT",
+                details={"operation": operation},
+            )
+
+        # 未知异常统一上抛
+        raise AIOpsException(
+            message=error_message,
+            error_code="INTERNAL_ERROR",
+            details={"operation": operation},
         )

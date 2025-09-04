@@ -19,6 +19,7 @@ from contextlib import asynccontextmanager
 from typing import Any, Dict
 
 from fastapi import FastAPI
+from fastapi.openapi.utils import get_openapi
 
 # 添加项目根目录到系统路径
 current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -31,6 +32,7 @@ from app.common.constants import AppConstants, ServiceConstants
 from app.config.logging import setup_logging
 from app.config.settings import config
 from app.services.startup import StartupService
+from app.services.factory import ServiceFactory
 
 # 全局启动服务实例
 startup_service = StartupService()
@@ -65,8 +67,15 @@ async def lifespan(app: FastAPI):
     # 初始化启动服务
     await startup_service.initialize()
 
-    # 注册需要管理的服务实例
+    # 注册需要管理的服务实例（保持原有机制）
     await _register_managed_services()
+
+    # 通过ServiceFactory预热关键服务（懒初始化已经异步触发，这里仅确保健康）
+    try:
+        factory_health = await ServiceFactory.health()
+        logger.info(f"ServiceFactory 管理的服务健康状态: {factory_health}")
+    except Exception as e:
+        logger.warning(f"获取ServiceFactory健康状态失败: {e}")
 
     # 启动预热机制
     warmup_results = await startup_service.warmup_services()
@@ -118,6 +127,16 @@ async def lifespan(app: FastAPI):
 
     # 清理资源
     await cleanup_resources()
+
+    # 工厂统一清理（在启动服务清理之后执行，确保路由持有的单例也被关闭）
+    try:
+        factory_cleanup = await ServiceFactory.cleanup_all()
+        if factory_cleanup.get("success", False):
+            logger.info("ServiceFactory 所有服务清理完成")
+        else:
+            logger.warning(f"ServiceFactory 清理存在失败: {factory_cleanup}")
+    except Exception as e:
+        logger.warning(f"ServiceFactory 清理失败: {e}")
 
     total_time = startup_service.get_uptime()
     logger.info(f"{AppConstants.APP_NAME} 运行总时长: {total_time:.2f}秒")
@@ -327,6 +346,16 @@ def create_app() -> FastAPI:
         logger = logging.getLogger("aiops")
         logger.error(f"路由注册失败: {str(e)}")
         logger.warning("将继续启动，但部分路由功能可能不可用")
+
+    # 自定义OpenAPI元数据（分类标签）
+    app.openapi_tags = [
+        {"name": "prediction", "description": "预测服务API，包括QPS、CPU、内存、磁盘预测"},
+        {"name": "assistant", "description": "智能助手API，包括问答、会话、知识库管理"},
+        {"name": "rca", "description": "根因分析API"},
+        {"name": "autofix", "description": "自动修复API"},
+        {"name": "cache", "description": "缓存管理API，包括统计、健康、清理、配置与性能"},
+        {"name": "health", "description": "系统健康与探针API，包括健康、就绪、存活、组件与指标"},
+    ]
 
     return app
 

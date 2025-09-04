@@ -18,6 +18,7 @@ from ..common.constants import ServiceConstants
 from ..common.exceptions import AutoFixError, ResourceNotFoundError, ValidationError
 from ..core.agents.k8s_fixer import K8sFixerAgent
 from ..core.agents.supervisor import SupervisorAgent
+from ..core.interfaces.k8s_client import K8sClient
 from .base import BaseService
 
 logger = logging.getLogger("aiops.services.autofix")
@@ -33,12 +34,16 @@ class AutoFixService(BaseService):
 
     async def _do_initialize(self) -> None:
         try:
-            # 初始化K8s修复代理
-            self._k8s_fixer = K8sFixerAgent()
+            # 初始化K8s修复代理（注入K8s和LLM依赖）
+            from .kubernetes import KubernetesService
+            from .llm import LLMService
+            k8s_client: K8sClient = KubernetesService()
+            llm_client = LLMService()
+            self._k8s_fixer = K8sFixerAgent(llm_client=llm_client, k8s_client=k8s_client)
             self.logger.info("K8s修复代理初始化完成")
 
-            # 初始化监督代理
-            self._supervisor = SupervisorAgent()
+            # 初始化监督代理（注入LLM）
+            self._supervisor = SupervisorAgent(llm_client=llm_client)
             self.logger.info("监督代理初始化完成")
 
         except Exception as e:
@@ -114,7 +119,7 @@ class AutoFixService(BaseService):
                 # 使用K8s修复代理分析和修复
                 fix_result = await self.execute_with_timeout(
                     lambda: self._k8s_fixer.analyze_and_fix_deployment(
-                        deployment_info, namespace, dry_run=dry_run
+                        deployment, namespace, ""
                     ),
                     timeout=ServiceConstants.AUTOFIX_ANALYSIS_TIMEOUT,
                     operation_name="k8s_fix_analysis",

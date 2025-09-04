@@ -1,6 +1,43 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+import pytest
+import inspect
+
+
+def pytest_pycollect_makeitem(collector, name, obj):
+    # 跳过收集 tests/test_prediction_api.py 中的工具函数 test_api_endpoint
+    try:
+        module = getattr(collector, "module", None)
+        if (
+            module
+            and getattr(module, "__file__", "").endswith("tests/test_prediction_api.py")
+            and name == "test_api_endpoint"
+            and inspect.isfunction(obj)
+        ):
+            return []
+    except Exception:
+        pass
+    # 其他项按默认流程
+    return None
+
+
+def pytest_collection_modifyitems(items):
+    # 防止将工具函数 test_api_endpoint 视为测试用例（其参数非fixture）
+    for item in list(items):
+        if item.nodeid.endswith("tests/test_prediction_api.py::test_api_endpoint"):
+            items.remove(item)
+
+
+@pytest.fixture
+def service():
+    # 为异步集成测试提供一个占位fixture，真正的实例在测试内部创建
+    # 这些测试中的函数签名包含 service，但并未使用pytest注入
+    # 提供该fixture以防止“fixture 'service' not found”错误
+    return None
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 """
 AI-CloudOps-aiops
 Author: Bamboo

@@ -126,6 +126,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# 统一注册错误处理器（与主应用一致）
+try:
+    from app.api.middleware.error_handler import setup_error_handlers
+
+    setup_error_handlers(app)
+    logger.info("MCP 应用已注册统一错误处理器")
+except Exception as e:
+    logger.warning(f"MCP 错误处理器注册失败: {e}")
+
 
 @app.get("/health")
 async def health_check() -> Dict[str, Any]:

@@ -13,14 +13,14 @@ import json
 import logging
 import os
 import time
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import requests
 import yaml
 
 from app.config.settings import config
-from app.services.kubernetes import KubernetesService
-from app.services.llm import LLMService
+from app.core.interfaces.k8s_client import K8sClient, NullK8sClient
+from app.core.interfaces.llm_client import LLMClient, NullLLMClient
 
 logger = logging.getLogger("aiops.k8s_fixer")
 
@@ -28,9 +28,9 @@ logger = logging.getLogger("aiops.k8s_fixer")
 class K8sFixerAgent:
     """K8s自动修复代理"""
 
-    def __init__(self):
-        self.k8s_service = KubernetesService()
-        self.llm_service = LLMService()
+    def __init__(self, llm_client: Optional[LLMClient] = None, k8s_client: Optional[K8sClient] = None):
+        self.k8s_service: K8sClient = k8s_client or NullK8sClient()
+        self.llm_service: LLMClient = llm_client or NullLLMClient()
         self.llm = self.llm_service  # 保留一个llm属性作为兼容
 
         # 从配置获取重试参数
