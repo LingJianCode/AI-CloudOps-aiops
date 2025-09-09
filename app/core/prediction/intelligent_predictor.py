@@ -10,8 +10,8 @@ Description: AI-CloudOps智能预测引擎 - 结合大模型的全流程预测�
 """
 
 import asyncio
-import logging
 from datetime import datetime
+import logging
 from typing import Any, Dict, List, Optional, Union
 
 from app.common.exceptions import PredictionError
@@ -450,10 +450,12 @@ class IntelligentPredictor:
                     "insights_count": len(result.get("ai_insights", [])),
                 }
 
+            import json as _json
+
             insights_prompt = f"""基于多维度预测分析结果，生成综合洞察：
 
 各维度预测概况：
-{json.dumps(dimensions_summary, ensure_ascii=False, indent=2)}
+{_json.dumps(dimensions_summary, ensure_ascii=False, indent=2)}
 
 关联分析结果：
 {correlation_analysis.get("correlation_analysis", "未提供") if correlation_analysis else "未执行关联分析"}

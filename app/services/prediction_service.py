@@ -9,9 +9,9 @@ License: Apache 2.0
 Description: AI-CloudOps智能预测服务 - 提供四种资源预测能力
 """
 
+from datetime import datetime, timedelta
 import hashlib
 import logging
-from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 from app.common.exceptions import PredictionError, ValidationError
@@ -1086,26 +1086,29 @@ class PredictionService(BaseService, HealthCheckMixin):
 
     def _get_default_query(self, prediction_type: PredictionType) -> Optional[str]:
         """获取默认的Prometheus查询语句 - 使用node_exporter标准指标"""
-        default_queries = {
-            PredictionType.QPS: (
-                # 使用网络接收字节数作为QPS的替代指标 (每秒请求数的近似值)
-                'rate(node_network_receive_bytes_total{device!="lo"}[5m])'
-            ),
-            PredictionType.CPU: (
-                # CPU使用率：100 - 空闲CPU百分比
-                '100 - (avg(rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)'
-            ),
-            PredictionType.MEMORY: (
-                # 内存使用率：(总内存 - 可用内存) / 总内存 * 100
-                "(1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100"
-            ),
-            PredictionType.DISK: (
-                # 磁盘使用率：(总空间 - 可用空间) / 总空间 * 100
-                '(1 - (node_filesystem_avail_bytes{fstype!="tmpfs"} / node_filesystem_size_bytes{fstype!="tmpfs"})) * 100'
-            ),
-        }
+        try:
+            # QPS 默认查询优先使用配置文件中的 prediction.prometheus_query
+            if prediction_type == PredictionType.QPS:
+                from app.config.settings import config as _config
 
-        return default_queries.get(prediction_type)
+                query = _config.prediction.prometheus_query
+                return query
+
+            # 其他资源类型沿用内置默认查询
+            default_queries = {
+                PredictionType.CPU: (
+                    '100 - (avg(rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)'
+                ),
+                PredictionType.MEMORY: (
+                    "(1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100"
+                ),
+                PredictionType.DISK: (
+                    '(1 - (node_filesystem_avail_bytes{fstype!="tmpfs"} / node_filesystem_size_bytes{fstype!="tmpfs"})) * 100'
+                ),
+            }
+            return default_queries.get(prediction_type)
+        except Exception:
+            return None
 
     def _convert_prometheus_data(self, df) -> List[Dict[str, Any]]:
         """转换Prometheus数据格式"""

@@ -9,12 +9,12 @@ License: Apache 2.0
 Description: MD文档元数据增强器
 """
 
-import logging
-import re
-import time
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from enum import Enum
+import logging
+import re
+import time
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger("aiops.md_metadata_enhancer")

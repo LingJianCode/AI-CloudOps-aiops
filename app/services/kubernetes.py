@@ -10,16 +10,14 @@ Description: Kubernetes集群管理服务
 """
 
 import asyncio
+from datetime import datetime, timezone
 import json
 import logging
 import os
 import time
-from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from kubernetes import client
-from kubernetes import config as k8s_config
-from kubernetes import utils as k8s_utils
+from kubernetes import client, config as k8s_config, utils as k8s_utils
 from kubernetes.client.rest import ApiException
 
 from app.config.settings import config
@@ -120,6 +118,81 @@ class KubernetesService:
             logger.warning("Kubernetes未初始化，无法执行操作")
 
         return True  # 始终返回True，让调用者继续执行
+
+    async def list_nodes(self) -> List[Dict[str, Any]]:
+        """列出集群节点"""
+        if not self._ensure_initialized():
+            return 
+        try:
+            nodes = self.core_v1.list_node()
+            results: List[Dict[str, Any]] = []
+            for node in nodes.items:
+                d = node.to_dict()
+                if "metadata" in d:
+                    for key in ["managed_fields", "resource_version", "uid"]:
+                        d["metadata"].pop(key, None)
+                results.append(d)
+            return results
+        except Exception as e:
+            logger.error(f"获取节点失败: {e}")
+            return []
+
+    async def list_services(self, namespace: Optional[str] = None) -> List[Dict[str, Any]]:
+        """列出命名空间Service"""
+        if not self._ensure_initialized():
+            return []
+        try:
+            ns = namespace or config.k8s.namespace
+            svcs = self.core_v1.list_namespaced_service(namespace=ns)
+            results: List[Dict[str, Any]] = []
+            for svc in svcs.items:
+                d = svc.to_dict()
+                if "metadata" in d:
+                    for key in ["managed_fields", "resource_version", "uid"]:
+                        d["metadata"].pop(key, None)
+                results.append(d)
+            return results
+        except Exception as e:
+            logger.error(f"获取Service失败: {e}")
+            return []
+
+    async def list_endpoints(self, namespace: Optional[str] = None) -> List[Dict[str, Any]]:
+        """列出命名空间Endpoints"""
+        if not self._ensure_initialized():
+            return []
+        try:
+            ns = namespace or config.k8s.namespace
+            eps = self.core_v1.list_namespaced_endpoints(namespace=ns)
+            results: List[Dict[str, Any]] = []
+            for ep in eps.items:
+                d = ep.to_dict()
+                if "metadata" in d:
+                    for key in ["managed_fields", "resource_version", "uid"]:
+                        d["metadata"].pop(key, None)
+                results.append(d)
+            return results
+        except Exception as e:
+            logger.error(f"获取Endpoints失败: {e}")
+            return []
+
+    async def list_pvcs(self, namespace: Optional[str] = None) -> List[Dict[str, Any]]:
+        """列出命名空间PVC"""
+        if not self._ensure_initialized():
+            return []
+        try:
+            ns = namespace or config.k8s.namespace
+            pvcs = self.core_v1.list_namespaced_persistent_volume_claim(namespace=ns)
+            results: List[Dict[str, Any]] = []
+            for pvc in pvcs.items:
+                d = pvc.to_dict()
+                if "metadata" in d:
+                    for key in ["managed_fields", "resource_version", "uid"]:
+                        d["metadata"].pop(key, None)
+                results.append(d)
+            return results
+        except Exception as e:
+            logger.error(f"获取PVC失败: {e}")
+            return []
 
     async def get_deployment(self, name: str, namespace: str = None) -> Optional[Dict]:
         """获取Deployment信息"""

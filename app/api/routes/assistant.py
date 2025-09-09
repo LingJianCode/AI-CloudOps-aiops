@@ -9,10 +9,10 @@ License: Apache 2.0
 Description: 智能助手API接口
 """
 
-import logging
-import uuid
 from datetime import datetime
+import logging
 from typing import Any, Dict
+import uuid
 
 from fastapi import APIRouter, Body, File, HTTPException, UploadFile
 
@@ -26,8 +26,6 @@ from app.common.constants import (
 from app.common.exceptions import (
     AIOpsException,
     ServiceUnavailableError,
-)
-from app.common.exceptions import (
     ValidationError as DomainValidationError,
 )
 from app.config.settings import config

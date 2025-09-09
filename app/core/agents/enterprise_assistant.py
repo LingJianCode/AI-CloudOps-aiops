@@ -10,14 +10,14 @@ Description: AI-CloudOp小助手
 """
 
 import asyncio
-import hashlib
-import logging
-import os
-import time
 from collections import OrderedDict, defaultdict, deque
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+import hashlib
+import logging
+import os
+import time
 from typing import Any, Dict, List, Optional
 
 from langchain_core.documents import Document
@@ -1840,7 +1840,7 @@ async def _get_embedding_dimension(embedding_model) -> int:
     try:
         test_embedding = embedding_model.embed_query("test")
         return len(test_embedding)
-    except:
+    except Exception:
         # 默认维度
         return 1024
 

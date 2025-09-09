@@ -9,13 +9,13 @@ License: Apache 2.0
 Description: Redis缓存管理器
 """
 
+from dataclasses import dataclass, field
 import gzip
 import hashlib
 import logging
 import pickle
 import threading
 import time
-from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 import redis

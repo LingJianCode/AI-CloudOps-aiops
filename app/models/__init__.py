@@ -33,6 +33,13 @@ from .diagnose_models import (
     DiagnoseRequest,
     DiagnoseResponse,
 )
+from .inspection_models import (
+    InspectionFinding,
+    InspectionReport,
+    InspectionRunRequest,
+    InspectionSummary,
+    InspectionTaskStatus,
+)
 from .predict_models import (  # 枚举类型; 基础数据模型; 请求模型; 基础响应模型; AI增强响应模型
     AIAnalysisContext,
     AICapabilitiesResponse,
@@ -126,4 +133,13 @@ __all__ = [
     "MultiDimensionPredictionResponse",
     "PredictionReportResponse",
     "AICapabilitiesResponse",
+]
+
+# Inspection models
+__all__ += [
+    "InspectionRunRequest",
+    "InspectionFinding",
+    "InspectionSummary",
+    "InspectionReport",
+    "InspectionTaskStatus",
 ]

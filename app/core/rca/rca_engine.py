@@ -10,10 +10,10 @@ Description: AI-CloudOps智能根因分析引擎
 """
 
 import asyncio
-import json
-import logging
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
+import json
+import logging
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -280,7 +280,7 @@ class RCAAnalysisEngine:
 
         # 记录错误日志
         if logs:
-            error_logs = [l for l in logs if l.level in ["ERROR", "FATAL"]]
+            error_logs = [log for log in logs if log.level in ["ERROR", "FATAL"]]
             self.logger.info(f"错误日志数: {len(error_logs)}/{len(logs)}")
             for log in error_logs[:3]:  # 记录前3个错误日志
                 self.logger.info(f"错误日志: [{log.pod_name}] {log.message[:100]}")
@@ -1225,7 +1225,7 @@ class RCAAnalysisEngine:
             "logs": {
                 "available": len(logs) > 0,
                 "count": len(logs),
-                "error_logs": len([l for l in logs if l.level in ["ERROR", "FATAL"]]),
+                "error_logs": len([log for log in logs if log.level in ["ERROR", "FATAL"]]),
             },
         }
 

@@ -9,9 +9,9 @@ License: Apache 2.0
 Description: 配置管理模块
 """
 
+from dataclasses import dataclass, field
 import logging
 import os
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -67,7 +67,7 @@ def get_env_or_config(
     value = os.getenv(env_key) or config_value or default
 
     if transform and value is not None:
-        if transform == bool and isinstance(value, str):
+        if transform is bool and isinstance(value, str):
             return value.lower() == "true"
         return transform(value)
     return value
@@ -342,6 +342,87 @@ class PredictionConfig:
     def anomaly_detection_config(self) -> Dict[str, Any]:
         """获取异常检测配置"""
         return CONFIG.get("prediction", {}).get("anomaly_detection", {})
+
+
+@dataclass
+class InspectionConfig:
+    """Kubernetes 智能巡检配置"""
+
+    enabled: bool = field(
+        default_factory=lambda: get_env_or_config(
+            "INSPECTION_ENABLED", "inspection.enabled", True, bool
+        )
+    )
+    default_profile: str = field(
+        default_factory=lambda: get_env_or_config(
+            "INSPECTION_DEFAULT_PROFILE", "inspection.default_profile", "basic"
+        )
+    )
+    severity_threshold: float = field(
+        default_factory=lambda: get_env_or_config(
+            "INSPECTION_SEVERITY_THRESHOLD",
+            "inspection.severity_threshold",
+            0.5,
+            float,
+        )
+    )
+    time_window_minutes: int = field(
+        default_factory=lambda: get_env_or_config(
+            "INSPECTION_TIME_WINDOW_MINUTES", "inspection.time_window_minutes", 60, int
+        )
+    )
+    # K8s 采集相关
+    include_events: bool = field(
+        default_factory=lambda: get_env_or_config(
+            "INSPECTION_INCLUDE_EVENTS", "inspection.k8s.include_events", True, bool
+        )
+    )
+    include_logs: bool = field(
+        default_factory=lambda: get_env_or_config(
+            "INSPECTION_INCLUDE_LOGS", "inspection.k8s.include_logs", False, bool
+        )
+    )
+    log_tail_lines: int = field(
+        default_factory=lambda: get_env_or_config(
+            "INSPECTION_LOG_TAIL_LINES", "inspection.k8s.log_tail_lines", 200, int
+        )
+    )
+    # Prometheus 查询相关
+    prometheus_step: str = field(
+        default_factory=lambda: get_env_or_config(
+            "INSPECTION_PROMETHEUS_STEP", "inspection.prometheus.step", "1m"
+        )
+    )
+    prometheus_queries_timeout: int = field(
+        default_factory=lambda: get_env_or_config(
+            "INSPECTION_PROMETHEUS_QUERIES_TIMEOUT",
+            "inspection.prometheus.queries_timeout",
+            10,
+            int,
+        )
+    )
+    # 历史保留
+    retention_enabled: bool = field(
+        default_factory=lambda: get_env_or_config(
+            "INSPECTION_RETENTION_ENABLED", "inspection.retention.enabled", True, bool
+        )
+    )
+    max_reports: int = field(
+        default_factory=lambda: get_env_or_config(
+            "INSPECTION_MAX_REPORTS", "inspection.retention.max_reports", 200, int
+        )
+    )
+    # 简单调度开关（本实现不内置调度，仅暴露配置以便外部调用）
+    scheduler_enabled: bool = field(
+        default_factory=lambda: get_env_or_config(
+            "INSPECTION_SCHEDULER_ENABLED", "inspection.scheduler.enabled", False, bool
+        )
+    )
+    scheduler_cron: str = field(
+        default_factory=lambda: get_env_or_config(
+            "INSPECTION_SCHEDULER_CRON", "inspection.scheduler.cron", "*/30 * * * *"
+        )
+    )
 
 
 @dataclass
@@ -660,6 +741,7 @@ class AppConfig:
     testing: TestingConfig = field(default_factory=TestingConfig)
     security: SecurityConfig = field(default_factory=SecurityConfig)
     dev: DevConfig = field(default_factory=DevConfig)
+    inspection: InspectionConfig = field(default_factory=InspectionConfig)
 
 
 config = AppConfig()

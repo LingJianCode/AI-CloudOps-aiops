@@ -11,20 +11,20 @@ Description: 主应用程序入口
 
 import argparse
 import asyncio
+from contextlib import asynccontextmanager
 import json
 import logging
 import signal
 import sys
 import time
-from contextlib import asynccontextmanager
 from typing import Any, AsyncGenerator, Dict, Optional
 from urllib.parse import urlparse
 
-import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+import uvicorn
 
 try:
     from ..config.settings import config

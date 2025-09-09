@@ -59,6 +59,14 @@ try:
 except Exception as e:
     logger.warning(f"注册缓存管理路由失败: {str(e)}")
 
+try:
+    from .inspection import router as inspection_router
+
+    api_v1.include_router(inspection_router, prefix="/inspection")
+    logger.info("已注册巡检路由")
+except Exception as e:
+    logger.warning(f"注册巡检路由失败: {str(e)}")
+
 
 def register_routes(app):
     # 注册API v1路由

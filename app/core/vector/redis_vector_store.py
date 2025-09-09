@@ -10,21 +10,21 @@ Description: Redis向量存储
 """
 
 import asyncio
+from collections import defaultdict
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
 import hashlib
 import heapq
 import logging
 import pickle
 import re
 import time
-from collections import defaultdict
-from contextlib import asynccontextmanager
-from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
-import numpy as np
-import redis
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
+import numpy as np
+import redis
 
 # MD文档处理器导入
 try:
@@ -251,7 +251,7 @@ class EnhancedRedisVectorStore:
         if not self._closed and hasattr(self, "pool"):
             try:
                 self.pool.disconnect()
-            except:
+            except Exception:
                 pass
 
     @asynccontextmanager
@@ -273,7 +273,7 @@ class EnhancedRedisVectorStore:
             if client:
                 try:
                     client.close()
-                except:
+                except Exception:
                     pass
 
     async def add_documents(self, documents: List[Document]) -> List[str]:

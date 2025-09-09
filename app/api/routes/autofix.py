@@ -10,8 +10,8 @@ Description: AI-CloudOps智能自动修复API接口
 """
 
 import asyncio
-import logging
 from datetime import datetime
+import logging
 from typing import Any, Dict
 
 from fastapi import APIRouter, BackgroundTasks, Body, HTTPException
@@ -29,8 +29,6 @@ from app.common.exceptions import (
     RequestTimeoutError,
     ResourceNotFoundError,
     ServiceUnavailableError,
-)
-from app.common.exceptions import (
     ValidationError as DomainValidationError,
 )
 from app.models import (

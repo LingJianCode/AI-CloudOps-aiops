@@ -9,8 +9,8 @@ License: Apache 2.0
 Description: AI-CloudOps智能预测服务API接口
 """
 
-import logging
 from datetime import datetime
+import logging
 from typing import Any, Dict
 
 from fastapi import APIRouter, Body, HTTPException
@@ -21,8 +21,6 @@ from app.common.exceptions import (
     AIOpsException,
     PredictionError,
     ServiceUnavailableError,
-)
-from app.common.exceptions import (
     ValidationError as DomainValidationError,
 )
 from app.models import (
@@ -134,6 +132,7 @@ async def predict_qps(
     ),
 ) -> Dict[str, Any]:
     """QPS负载预测"""
+    logger.info("收到QPS预测请求")
     await (await get_prediction_service()).initialize()
 
     try:
@@ -149,8 +148,10 @@ async def predict_qps(
         # 使用Pydantic进行严格字段与数值校验
         try:
             req = QpsPredictionRequest(**payload)
+            logger.debug(f"QPS预测请求参数验证通过: current_qps={req.current_qps}, prediction_hours={req.prediction_hours}")
         except Exception as e:
             # 对数值范围等验证错误返回422
+            logger.warning(f"QPS预测请求参数验证失败: {str(e)}")
             raise HTTPException(
                 status_code=HttpStatusCodes.UNPROCESSABLE_ENTITY, detail=str(e)
             )
@@ -158,6 +159,7 @@ async def predict_qps(
         # 延后初始化，避免无效请求触发服务逻辑
         await (await get_prediction_service()).initialize()
 
+        logger.debug(f"开始执行QPS预测，使用AI增强: {req.enable_ai_insights}")
         if req.enable_ai_insights:
             prediction_result = await (
                 await get_prediction_service()

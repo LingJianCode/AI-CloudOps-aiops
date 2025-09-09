@@ -10,12 +10,12 @@ Description: 新预测系统验证脚本 - 完整测试所有预测功能
 """
 
 import asyncio
+from datetime import datetime
 import json
 import logging
+from pathlib import Path
 import sys
 import time
-from datetime import datetime
-from pathlib import Path
 
 # 添加项目根目录到路径
 project_root = Path(__file__).parent.parent

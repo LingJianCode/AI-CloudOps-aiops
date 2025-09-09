@@ -9,13 +9,13 @@ License: Apache 2.0
 Description: MD文档专用处理器
 """
 
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
+from enum import Enum
 import hashlib
 import logging
 import re
 import time
-from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
-from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 
 # 延迟导入元数据增强器
@@ -359,7 +359,7 @@ class MDDocumentProcessor:
                 content=content,
                 metadata={
                     "item_count": len(
-                        [l for l in list_lines if self.patterns["list_item"].match(l)]
+                        [line for line in list_lines if self.patterns["list_item"].match(line)]
                     )
                 },
             ),

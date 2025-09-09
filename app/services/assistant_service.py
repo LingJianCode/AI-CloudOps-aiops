@@ -10,11 +10,11 @@ Description: AI-CloudOps智能助手服务
 """
 
 import asyncio
+from datetime import datetime
 import logging
 import os
-import uuid
-from datetime import datetime
 from typing import TYPE_CHECKING, Any, Dict, Optional
+import uuid
 
 from ..common.exceptions import AssistantError, ValidationError
 from ..config.settings import config
@@ -303,7 +303,7 @@ class OptimizedAssistantService(BaseService):
 
             # 创建新会话
             if self._assistant and hasattr(self._assistant, "create_session"):
-                result = await self._assistant.create_session(
+                await self._assistant.create_session(
                     session_id,
                     {
                         "mode": mode,

@@ -10,16 +10,16 @@ Description: 层次化检索系统，解决多文档准确率下降问题
 """
 
 import asyncio
-import hashlib
-import logging
-import time
 from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum
+import hashlib
+import logging
+import time
 from typing import Any, Dict, List, Optional, Tuple
 
-import numpy as np
 from langchain_core.documents import Document
+import numpy as np
 
 logger = logging.getLogger("aiops.hierarchical_retriever")
 
@@ -199,10 +199,10 @@ class DocumentQualityScorer:
             "has_table",
         ]
 
-        for field in key_fields:
-            if field in metadata and metadata[field]:
-                if isinstance(metadata[field], (list, tuple)):
-                    score += 0.1 if len(metadata[field]) > 0 else 0
+        for key_field in key_fields:
+            if key_field in metadata and metadata[key_field]:
+                if isinstance(metadata[key_field], (list, tuple)):
+                    score += 0.1 if len(metadata[key_field]) > 0 else 0
                 else:
                     score += 0.1
 

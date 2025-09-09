@@ -445,7 +445,7 @@ class K8sDeploymentTool(K8sBaseTool):
             loop = asyncio.get_event_loop()
 
             # 获取ReplicaSet历史
-            replica_sets = await loop.run_in_executor(
+            await loop.run_in_executor(
                 self._executor,
                 lambda: apps_v1.list_namespaced_replica_set(
                     namespace=namespace, label_selector=f"app={deployment_name}"
@@ -470,12 +470,6 @@ class K8sDeploymentTool(K8sBaseTool):
                 revision = current_revision - 1 if current_revision > 1 else 1
 
             # 构建回滚请求
-            rollback_body = {
-                "apiVersion": "apps/v1",
-                "kind": "DeploymentRollback",
-                "name": deployment_name,
-                "rollbackTo": {"revision": revision},
-            }
 
             # 注意：Kubernetes 1.16+ 已废弃DeploymentRollback，我们使用kubectl rollout undo的等效操作
             # 这里我们通过更新Deployment的pod template来实现回滚
@@ -545,7 +539,7 @@ class K8sDeploymentTool(K8sBaseTool):
             deployment.spec.replicas = replicas
 
             # 更新Deployment
-            updated_deployment = await loop.run_in_executor(
+            await loop.run_in_executor(
                 self._executor,
                 lambda: apps_v1.patch_namespaced_deployment(
                     name=deployment_name, namespace=namespace, body=deployment
@@ -677,7 +671,7 @@ class K8sDeploymentTool(K8sBaseTool):
             ] = datetime.utcnow().isoformat() + "Z"
 
             # 更新Deployment
-            updated_deployment = await loop.run_in_executor(
+            await loop.run_in_executor(
                 self._executor,
                 lambda: apps_v1.patch_namespaced_deployment(
                     name=deployment_name, namespace=namespace, body=deployment

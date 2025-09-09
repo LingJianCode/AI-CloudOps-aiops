@@ -9,8 +9,8 @@ License: Apache 2.0
 Description: 预测API端到端测试脚本
 """
 
-import json
 from datetime import datetime
+import json
 from typing import Any, Dict, Optional
 
 import requests

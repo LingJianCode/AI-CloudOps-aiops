@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import pytest
 from httpx import ASGITransport, AsyncClient
+import pytest
 
 from app.main import app
 

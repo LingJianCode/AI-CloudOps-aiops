@@ -10,12 +10,12 @@ Description: AI-CloudOps主应用程序入口
 """
 
 import asyncio
+from contextlib import asynccontextmanager
 import logging
 import os
 import signal
 import sys
 import time
-from contextlib import asynccontextmanager
 from typing import Any, Dict
 
 from fastapi import FastAPI
@@ -527,7 +527,9 @@ if __name__ == "__main__":
     shutdown_handler.setup_signal_handlers()
 
     try:
-        # 创建自定义服务器配置
+        # 使用应用配置的日志级别，确保一致性
+        uvicorn_log_level = config.log_level.lower()
+        
         config_uvicorn = Config(
             app="app.main:app",
             host=config.host,
@@ -537,9 +539,11 @@ if __name__ == "__main__":
             reload_excludes=(
                 ["logs", "data", "__pycache__", "*.pyc"] if config.debug else None
             ),
-            log_level="info" if not config.debug else "debug",
+            log_level=uvicorn_log_level,
             access_log=True,
             reload_delay=0.25 if config.debug else None,
+            # 禁用uvicorn自己的日志配置
+            log_config=None,
         )
 
         server = Server(config_uvicorn)

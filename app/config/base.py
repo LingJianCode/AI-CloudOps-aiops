@@ -13,9 +13,9 @@ import os
 from pathlib import Path
 from typing import Any, Dict
 
-import yaml
 from dotenv import load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
+import yaml
 
 # 预加载 .env 到进程环境，确保自定义读取函数也能获取
 load_dotenv()

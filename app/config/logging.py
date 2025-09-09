@@ -62,19 +62,38 @@ def setup_logging(app: Optional[Any] = None) -> None:
         "aiops.services": config.log_level.upper(),
         "aiops.core": config.log_level.upper(),
         "aiops.api": config.log_level.upper(),
+        "aiops.routes": config.log_level.upper(),
+        "aiops.error_handler": config.log_level.upper(),
     }
     for name, level in module_loggers.items():
         logger = logging.getLogger(name)
         logger.setLevel(getattr(logging, level))
+        # 确保不传播到父级，避免重复输出
+        logger.propagate = True
 
-    # 第三方库降噪
-    logging.getLogger("urllib3").setLevel(logging.WARNING)
-    logging.getLogger("requests").setLevel(logging.WARNING)
-    logging.getLogger("httpx").setLevel(logging.WARNING)
-    logging.getLogger("openai").setLevel(logging.WARNING)
-    logging.getLogger("uvicorn").setLevel(logging.INFO)
-    logging.getLogger("fastapi").setLevel(logging.INFO)
+    # 第三方库降噪 - 在开发模式下稍微放宽一些限制
+    if config.env == "development":
+        logging.getLogger("urllib3").setLevel(logging.INFO)
+        logging.getLogger("requests").setLevel(logging.INFO)
+        logging.getLogger("httpx").setLevel(logging.INFO)
+        logging.getLogger("openai").setLevel(logging.INFO)
+        logging.getLogger("uvicorn.error").setLevel(logging.DEBUG)
+        logging.getLogger("uvicorn.access").setLevel(logging.INFO)
+        logging.getLogger("fastapi").setLevel(logging.DEBUG)
+    else:
+        logging.getLogger("urllib3").setLevel(logging.WARNING)
+        logging.getLogger("requests").setLevel(logging.WARNING)
+        logging.getLogger("httpx").setLevel(logging.WARNING)
+        logging.getLogger("openai").setLevel(logging.WARNING)
+        logging.getLogger("uvicorn").setLevel(logging.INFO)
+        logging.getLogger("fastapi").setLevel(logging.INFO)
+
+    # 确保uvicorn使用我们的日志配置
+    uvicorn_logger = logging.getLogger("uvicorn")
+    uvicorn_logger.handlers.clear()
+    uvicorn_logger.addHandler(console_handler)
+    uvicorn_logger.setLevel(getattr(logging, config.log_level.upper()))
 
     logging.getLogger("aiops.logging").info(
-        f"日志系统初始化完成，级别: {config.log_level.upper()}"
+        f"日志系统初始化完成，级别: {config.log_level.upper()}, 环境: {config.env}"
     )

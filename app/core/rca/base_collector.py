@@ -9,9 +9,9 @@ License: Apache 2.0
 Description: 数据收集器基础类
 """
 
-import logging
 from abc import ABC, abstractmethod
 from datetime import datetime
+import logging
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger("aiops.rca.collectors")

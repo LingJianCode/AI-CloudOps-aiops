@@ -13,10 +13,10 @@ import asyncio
 from datetime import datetime
 from typing import Any, Dict
 
-import yaml
 from kubernetes import client
 from kubernetes.client.rest import ApiException
 from kubernetes.dynamic import DynamicClient
+import yaml
 
 from .k8s_base_tool import K8sBaseTool
 
@@ -312,7 +312,7 @@ class K8sResourceTool(K8sBaseTool):
                 }
 
             # 删除标签
-            old_labels = (
+            (
                 resource.metadata.labels.copy() if resource.metadata.labels else {}
             )
             removed_labels = {}
@@ -381,7 +381,7 @@ class K8sResourceTool(K8sBaseTool):
             resource.metadata.annotations.update(annotations)
 
             # 应用更新
-            updated_resource = await self._patch_resource_by_type(
+            await self._patch_resource_by_type(
                 clients, resource_type, resource_name, namespace, resource, loop
             )
 
@@ -440,7 +440,7 @@ class K8sResourceTool(K8sBaseTool):
                         )
 
             # 应用更新
-            updated_resource = await self._patch_resource_by_type(
+            await self._patch_resource_by_type(
                 clients, resource_type, resource_name, namespace, resource, loop
             )
 

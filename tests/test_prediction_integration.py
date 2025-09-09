@@ -10,10 +10,10 @@ Description: 预测系统集成测试脚本
 """
 
 import asyncio
-import os
-import sys
 from datetime import datetime
+import os
 from pathlib import Path
+import sys
 
 # 添加项目根目录到Python路径
 sys.path.insert(0, str(Path(__file__).parent.parent))

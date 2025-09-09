@@ -225,3 +225,31 @@ security:
 dev:
   auto_reload: false # 是否启用自动重载
   enable_debug_endpoints: false # 是否启用调试端点
+
+## 巡检配置
+inspection:
+  enabled: true # 是否启用巡检
+  default_profile: basic # 默认规则集：basic 或 extended
+  severity_threshold: 0.5 # 严重度阈值(0~1)
+  time_window_minutes: 60 # 巡检时间窗口（分钟）
+  
+  # K8s 采集相关
+  k8s:
+    include_events: true # 是否采集K8s事件
+    include_logs: false # 是否采集Pod日志片段
+    log_tail_lines: 200 # 采集日志的尾部行数
+  
+  # Prometheus 查询相关
+  prometheus:
+    step: "1m" # 查询步长
+    queries_timeout: 10 # 单次查询超时（秒）
+  
+  # 历史保留
+  retention:
+    enabled: true # 是否保留历史报告
+    max_reports: 200 # 最大保留报告数量
+  
+  # 简单调度（内部）
+  scheduler:
+    enabled: false # 生产环境默认关闭内部调度
+    cron: "*/30 * * * *" # 调度表达式（粗略用于间隔解析）

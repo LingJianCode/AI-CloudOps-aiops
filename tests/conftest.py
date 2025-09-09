@@ -2,13 +2,13 @@
 # -*- coding: utf-8 -*-
 
 import asyncio
+from datetime import datetime, timedelta
 import inspect
 import logging
 import os
+from pathlib import Path
 import sys
 import time
-from datetime import datetime, timedelta
-from pathlib import Path
 
 import pytest
 import requests

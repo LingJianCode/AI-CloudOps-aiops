@@ -9,8 +9,8 @@ License: Apache 2.0
 Description: 数据验证工具
 """
 
-import re
 from datetime import datetime
+import re
 from typing import List
 
 

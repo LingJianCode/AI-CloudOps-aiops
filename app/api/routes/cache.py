@@ -9,8 +9,8 @@ License: Apache 2.0
 Description: 缓存管理API接口
 """
 
-import logging
 from datetime import datetime
+import logging
 from typing import Any, Dict
 
 from fastapi import APIRouter, HTTPException, Query
@@ -19,8 +19,6 @@ from app.api.decorators import api_response, log_api_call
 from app.common.exceptions import (
     AIOpsException,
     ConfigurationError,
-)
-from app.common.exceptions import (
     ValidationError as DomainValidationError,
 )
 from app.models import BaseResponse

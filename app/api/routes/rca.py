@@ -9,10 +9,10 @@ License: Apache 2.0
 Description: AI-CloudOps智能根因分析API接口
 """
 
-import logging
-import uuid
 from datetime import datetime
+import logging
 from typing import Any, Dict
+import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Body, HTTPException
 
@@ -22,8 +22,6 @@ from app.common.exceptions import (
     AIOpsException,
     RCAError,
     ServiceUnavailableError,
-)
-from app.common.exceptions import (
     ValidationError as DomainValidationError,
 )
 from app.models import (
@@ -291,7 +289,7 @@ async def quick_diagnosis(
             )
             current_dt = datetime.now(diagnosis_dt.tzinfo)
             analysis_duration = (current_dt - diagnosis_dt).total_seconds()
-        except:
+        except Exception:
             analysis_duration = 0.0
 
     # 优化：使用实际的诊断时间戳，而不是硬编码

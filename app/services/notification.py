@@ -9,9 +9,9 @@ License: Apache 2.0
 Description: AI-CloudOps智能通知服务
 """
 
+from datetime import datetime
 import json
 import logging
-from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 import requests

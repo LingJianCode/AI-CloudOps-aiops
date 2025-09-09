@@ -9,11 +9,11 @@ License: Apache 2.0
 Description: AIOps平台全量测试脚本，运行所有测试模块
 """
 
+from datetime import datetime
 import logging
+from pathlib import Path
 import sys
 import time
-from datetime import datetime
-from pathlib import Path
 
 import pytest
 
