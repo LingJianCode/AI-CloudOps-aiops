@@ -15,6 +15,7 @@ from typing import Any, Dict
 import uuid
 
 from fastapi import APIRouter, Body, File, HTTPException, UploadFile
+from starlette.websockets import WebSocket
 
 from app.api.decorators import api_response, log_api_call
 from app.common.constants import (
@@ -361,6 +362,7 @@ async def get_assistant_config() -> Dict[str, Any]:
     summary="AI-CloudOps智能助手服务信息",
     response_model=BaseResponse,
 )
+
 @api_response("AI-CloudOps智能助手服务信息")
 async def assistant_info() -> Dict[str, Any]:
     info = {
@@ -460,5 +462,10 @@ async def assistant_info() -> Dict[str, Any]:
     data["initialized"] = True
     return data
 
+@router.websocket("/stream", name="AI-CloudOps智能助手服务流式交互")
+@api_response("AI-CloudOps智能助手服务流式交互")
+async def ws_query(ws: WebSocket):
+    await (await get_assistant_service()).initialize()
+    await (await get_assistant_service()).websocket.handle_connection(ws)
 
 __all__ = ["router"]

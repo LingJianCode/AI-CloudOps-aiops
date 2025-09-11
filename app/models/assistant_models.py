@@ -100,6 +100,12 @@ class ClearCacheResponse(BaseModel):
     message: str
 
 
+class StreamResponse(BaseModel):
+    success: bool
+    data: Optional[Dict[str, Any]] = None
+    timestamp: str
+    message: Optional[str] = None
+
 class UploadKnowledgeResponse(BaseModel):
     uploaded: bool
     document_id: Optional[str] = None

@@ -10,17 +10,25 @@ Description: AI-CloudOps智能助手服务
 """
 
 import asyncio
+import json
+import time
+import traceback
 from datetime import datetime
 import logging
 import os
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional, Union, Type
 import uuid
+
+from pydantic import BaseModel
+from starlette.websockets import WebSocket
 
 from ..common.exceptions import AssistantError, ValidationError
 from ..config.settings import config
 from ..core.agents.enterprise_assistant import get_enterprise_assistant
 from .base import BaseService
 from .factory import ServiceFactory
+from ..models import AssistantRequest
+from ..models.assistant_models import StreamResponse
 
 if TYPE_CHECKING:
     from .mcp_service import MCPService
@@ -35,6 +43,29 @@ class OptimizedAssistantService(BaseService):
         super().__init__("assistant")
         self._assistant = None
         self._performance_monitor = PerformanceMonitor()
+        self.websocket = WebSocketManager(self.handle_ws_answer, AssistantRequest)
+
+    async def handle_ws_answer(self, websocket: WebSocket, req: AssistantRequest):
+        """WebSocket 消息处理适配器"""
+        try:
+            result = await self.get_answer(
+                question=req.question,
+                mode=req.mode,
+                session_id=req.session_id
+            )
+            await websocket.send_json(StreamResponse(
+                data=result,
+                success=True,
+                timestamp=datetime.now().isoformat(),
+            ).dict())
+
+        except Exception as e:
+
+            await websocket.send_json(StreamResponse(
+                success=False,
+                timestamp=datetime.now().isoformat(),
+                message=str(e),
+            ).dict())
 
     async def _do_initialize(self) -> None:
         try:
@@ -1078,3 +1109,121 @@ class PerformanceMonitor:
             "total_latency": 0.0,
             "latencies": [],
         }
+
+
+class WebSocketManager:
+
+    def __init__(self, message_handler, message_model: Optional[Type[BaseModel]]=None, heartbeat_interval: float = 30.0):
+        self.message_handler = message_handler
+        self.message_model = message_model
+
+        self.checker = self.Checker(interval=heartbeat_interval)
+
+    async def handle_connection(self, websocket: WebSocket, **kwargs) -> None:
+        await websocket.accept()
+        await self.checker.start(websocket)
+
+        message_queue = asyncio.Queue()
+        receiver_task = asyncio.create_task(
+            self.websocket_receiver(websocket, message_queue)
+        )
+        try:
+            await self.websocket_handler(websocket, message_queue)
+
+        except Exception as e:
+            logger.error(f"Error handling WebSocket connection: {str(e)}")
+            logger.error(traceback.format_exc())
+        finally:
+            receiver_task.cancel()
+            await self.checker.stop(websocket)
+            try:
+                await receiver_task
+            except asyncio.CancelledError:
+                pass
+
+    async def websocket_receiver(self, websocket: WebSocket, message_queue: asyncio.Queue) -> None:
+        """接收客户端消息推入队列"""
+        try:
+            while True:
+                msg = await websocket.receive()
+                logger.debug(f"Received raw WebSocket message: {msg}")
+                if "text" in msg and msg["text"] is not None:
+                    txt = msg["text"]
+                    await self.checker.on_message(websocket, txt)
+                    await message_queue.put(txt)
+                elif "bytes" in msg and msg["bytes"] is not None:
+                    await message_queue.put(msg["bytes"])
+                else:
+                    logger.warning(f"Unknown or empty message: {msg}")
+        except Exception as e:
+            logger.error(f"WebSocket receiver error: {str(e)}")
+        finally:
+            await message_queue.put(None)
+
+    async def websocket_handler(self, websocket: WebSocket, message_queue: asyncio.Queue, **kwargs) -> None:
+        """循环消费消息队列并调用业务处理器"""
+        while True:
+            info_raw = await message_queue.get()
+            if info_raw is None:  # 结束信号
+                break
+            # 尝试解析数据
+            parsed = await self._parse_message(info_raw, websocket)
+            if parsed is None:  # 解析失败，继续下一条
+                continue
+            # 调用业务逻辑
+            if self.message_handler:
+                await self.message_handler(websocket, parsed, **kwargs)
+
+    async def _parse_message(self, info_raw: Union[str, bytes], websocket: WebSocket) -> Optional[BaseModel] | None:
+        """解析原始数据"""
+        try:
+            if isinstance(info_raw, bytes):
+                info_raw = info_raw.decode()
+            data_dict = json.loads(info_raw)
+            if self.message_model:  # 用 Pydantic Model校验
+                return self.message_model(**data_dict)
+            else:
+                return data_dict
+        except Exception as e:
+            logger.error(f"Message parse/validation error: {str(e)}")
+            await websocket.send_json({"error": f"参数校验失败: {str(e)}"})
+            return None
+
+    class Checker:
+        """ws connection 心跳检查"""
+
+        def __init__(self, interval=30.0, timeout=10.0):
+            self.interval = interval
+            self.timeout = timeout
+            self.last_received_time: Dict[WebSocket, float] = {}
+            self.tasks: Dict[WebSocket, asyncio.Task] = {}
+
+        async def start(self, websocket):
+            self.last_received_time[websocket] = time.time()
+
+            async def loop():
+                while True:
+                    await asyncio.sleep(self.interval)
+                    now = time.time()
+                    if now - self.last_received_time[websocket] > self.interval + self.timeout:
+                        await websocket.close()
+                        break
+                    try:
+                        await websocket.send_text("__ping__")
+                    except:
+                        continue
+            self.tasks[websocket] = asyncio.create_task(loop())
+
+        async def stop(self, websocket: WebSocket):
+            task = self.tasks.pop(websocket, None)
+            if task:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+            self.last_received_time.pop(websocket, None)
+
+        async def on_message(self, websocket, message):
+            if message == "__pong__":
+                self.last_received_time[websocket] = time.time()
