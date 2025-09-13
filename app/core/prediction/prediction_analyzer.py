@@ -9,24 +9,25 @@ License: Apache 2.0
 Description: AI-CloudOps智能预测分析器 - 使用大模型解读和分析预测结果
 """
 
+from datetime import datetime
 import json
 import logging
 import re
-from datetime import datetime
 from typing import Any, Dict, List, Optional
 
+from app.core.interfaces.llm_client import LLMClient, NullLLMClient
 from app.core.prediction.prompt_templates import prompt_builder
 from app.models import PredictionType
-from app.services.llm import LLMService
 
 logger = logging.getLogger("aiops.core.prediction.analyzer")
 
 
 class PredictionAnalyzer:
-    """智能预测分析器 - 结合大模型的预测结果分析"""
+    """预测分析器 - 结合外部分析的结果解读"""
 
-    def __init__(self):
-        self.llm_service = LLMService()
+    def __init__(self, llm_client: Optional[LLMClient] = None):
+        # 默认使用空实现，服务层可注入真实实现
+        self.llm_service: LLMClient = llm_client or NullLLMClient()
 
     async def analyze_historical_context(
         self,
@@ -37,7 +38,7 @@ class PredictionAnalyzer:
     ) -> Dict[str, Any]:
         """分析历史数据上下文"""
         try:
-            # 构建分析提示词
+            # 构建分析提示
             prompt = prompt_builder.build_analysis_prompt(
                 prediction_type=prediction_type,
                 current_value=current_value,
@@ -45,7 +46,7 @@ class PredictionAnalyzer:
                 additional_context=additional_context,
             )
 
-            # 调用大模型分析
+            # 调用分析接口
             analysis_result = await self.llm_service.generate_response(
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.3,
@@ -78,14 +79,14 @@ class PredictionAnalyzer:
     ) -> Dict[str, Any]:
         """解读预测结果"""
         try:
-            # 构建解读提示词
+            # 构建解读提示
             prompt = prompt_builder.build_interpretation_prompt(
                 prediction_type=prediction_type,
                 prediction_results=prediction_results,
                 additional_analysis=analysis_context,
             )
 
-            # 调用大模型解读
+            # 调用解读接口
             interpretation = await self.llm_service.generate_response(
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.2,
@@ -125,7 +126,7 @@ class PredictionAnalyzer:
         context_analysis: Dict[str, Any],
         interpretation: Dict[str, Any],
     ) -> List[str]:
-        """生成智能洞察"""
+        """生成洞察"""
         try:
             # 综合所有分析信息
             combined_context = {
@@ -137,7 +138,7 @@ class PredictionAnalyzer:
                 "trends": prediction_results.get("trend_insights", []),
             }
 
-            # 构建洞察生成提示词
+            # 构建洞察生成提示
             insights_prompt = f"""基于以下综合分析信息，为{prediction_type.value}预测生成5-7个关键洞察：
 
 分析信息：
@@ -397,7 +398,9 @@ class PredictionAnalyzer:
                     "direction": (
                         "increasing"
                         if second_avg > first_avg
-                        else "decreasing" if second_avg < first_avg else "stable"
+                        else "decreasing"
+                        if second_avg < first_avg
+                        else "stable"
                     ),
                     "change_percentage": (
                         ((second_avg - first_avg) / first_avg * 100)

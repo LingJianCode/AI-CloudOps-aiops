@@ -9,15 +9,14 @@ License: Apache 2.0
 Description: AI-CloudOps统一预测引擎 - 支持多种资源类型预测
 """
 
-import logging
 from datetime import datetime, timedelta
+import logging
 from typing import Any, Dict, List
 
 import numpy as np
 import pandas as pd
 
 from app.models import PredictionDataPoint, PredictionGranularity, PredictionType
-from app.services.prometheus import PrometheusService
 
 logger = logging.getLogger("aiops.core.predictor")
 
@@ -29,7 +28,6 @@ class UnifiedPredictor:
         """初始化预测器"""
         self.model_manager = model_manager
         self.feature_extractor = feature_extractor
-        self.prometheus = PrometheusService()
         self._initialized = False
 
     async def initialize(self) -> None:
@@ -69,7 +67,6 @@ class UnifiedPredictor:
             scaler = self.model_manager.get_scaler(prediction_type)
 
             if model is None:
-
                 return await self._rule_based_prediction(
                     prediction_type, current_value, prediction_hours, granularity
                 )
@@ -462,5 +459,4 @@ class UnifiedPredictor:
                 else "not_loaded"
             ),
             "feature_extractor_available": self.feature_extractor is not None,
-            "prometheus_available": self.prometheus is not None,
         }

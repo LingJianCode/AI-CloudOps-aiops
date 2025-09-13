@@ -9,13 +9,17 @@ License: Apache 2.0
 Description: 配置管理模块
 """
 
-import os
 from dataclasses import dataclass, field
+import logging
+import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import yaml
 from dotenv import load_dotenv
+from pydantic import Field
+from pydantic_settings import SettingsConfigDict
+
+from app.config.base import BaseAppSettings
 
 ROOT_DIR = Path(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -25,26 +29,13 @@ ENV = os.getenv("ENV", "development")
 
 
 def load_config() -> Dict[str, Any]:
-    """加载配置文件"""
-    config_file = (
-        ROOT_DIR / "config" / f"config{'.' + ENV if ENV != 'development' else ''}.yaml"
-    )
-    default_config_file = ROOT_DIR / "config" / "config.yaml"
-
+    """加载配置文件（通过 BaseAppSettings 提供的统一加载器）"""
     try:
-        if config_file.exists():
-            with open(config_file, "r", encoding="utf-8") as f:
-                return yaml.safe_load(f)
-        elif default_config_file.exists():
-            with open(default_config_file, "r", encoding="utf-8") as f:
-                return yaml.safe_load(f)
-        else:
-            print(
-                f"警告: 未找到配置文件 {config_file} 或 {default_config_file}，将使用环境变量默认值"
-            )
-            return {}
+        data = BaseAppSettings.load_yaml_config()
+        return data or {}
     except Exception as e:
-        print(f"加载配置文件出错: {e}")
+        logger = logging.getLogger("aiops.config.settings")
+        logger.exception("加载配置文件出错: %s", e)
         return {}
 
 
@@ -76,7 +67,7 @@ def get_env_or_config(
     value = os.getenv(env_key) or config_value or default
 
     if transform and value is not None:
-        if transform == bool and isinstance(value, str):
+        if transform is bool and isinstance(value, str):
             return value.lower() == "true"
         return transform(value)
     return value
@@ -354,6 +345,87 @@ class PredictionConfig:
 
 
 @dataclass
+class InspectionConfig:
+    """Kubernetes 智能巡检配置"""
+
+    enabled: bool = field(
+        default_factory=lambda: get_env_or_config(
+            "INSPECTION_ENABLED", "inspection.enabled", True, bool
+        )
+    )
+    default_profile: str = field(
+        default_factory=lambda: get_env_or_config(
+            "INSPECTION_DEFAULT_PROFILE", "inspection.default_profile", "basic"
+        )
+    )
+    severity_threshold: float = field(
+        default_factory=lambda: get_env_or_config(
+            "INSPECTION_SEVERITY_THRESHOLD",
+            "inspection.severity_threshold",
+            0.5,
+            float,
+        )
+    )
+    time_window_minutes: int = field(
+        default_factory=lambda: get_env_or_config(
+            "INSPECTION_TIME_WINDOW_MINUTES", "inspection.time_window_minutes", 60, int
+        )
+    )
+    # K8s 采集相关
+    include_events: bool = field(
+        default_factory=lambda: get_env_or_config(
+            "INSPECTION_INCLUDE_EVENTS", "inspection.k8s.include_events", True, bool
+        )
+    )
+    include_logs: bool = field(
+        default_factory=lambda: get_env_or_config(
+            "INSPECTION_INCLUDE_LOGS", "inspection.k8s.include_logs", False, bool
+        )
+    )
+    log_tail_lines: int = field(
+        default_factory=lambda: get_env_or_config(
+            "INSPECTION_LOG_TAIL_LINES", "inspection.k8s.log_tail_lines", 200, int
+        )
+    )
+    # Prometheus 查询相关
+    prometheus_step: str = field(
+        default_factory=lambda: get_env_or_config(
+            "INSPECTION_PROMETHEUS_STEP", "inspection.prometheus.step", "1m"
+        )
+    )
+    prometheus_queries_timeout: int = field(
+        default_factory=lambda: get_env_or_config(
+            "INSPECTION_PROMETHEUS_QUERIES_TIMEOUT",
+            "inspection.prometheus.queries_timeout",
+            10,
+            int,
+        )
+    )
+    # 历史保留
+    retention_enabled: bool = field(
+        default_factory=lambda: get_env_or_config(
+            "INSPECTION_RETENTION_ENABLED", "inspection.retention.enabled", True, bool
+        )
+    )
+    max_reports: int = field(
+        default_factory=lambda: get_env_or_config(
+            "INSPECTION_MAX_REPORTS", "inspection.retention.max_reports", 200, int
+        )
+    )
+    # 简单调度开关（本实现不内置调度，仅暴露配置以便外部调用）
+    scheduler_enabled: bool = field(
+        default_factory=lambda: get_env_or_config(
+            "INSPECTION_SCHEDULER_ENABLED", "inspection.scheduler.enabled", False, bool
+        )
+    )
+    scheduler_cron: str = field(
+        default_factory=lambda: get_env_or_config(
+            "INSPECTION_SCHEDULER_CRON", "inspection.scheduler.cron", "*/30 * * * *"
+        )
+    )
+
+
+@dataclass
 class NotificationConfig:
     """通知配置"""
 
@@ -612,7 +684,9 @@ class SecurityConfig:
     )
     cors_origins: str = field(
         default_factory=lambda: get_env_or_config(
-            "CORS_ORIGINS", "security.cors_origins", "http://localhost:3000,http://localhost:8080"
+            "CORS_ORIGINS",
+            "security.cors_origins",
+            "http://localhost:3000,http://localhost:8080",
         )
     )
 
@@ -667,6 +741,30 @@ class AppConfig:
     testing: TestingConfig = field(default_factory=TestingConfig)
     security: SecurityConfig = field(default_factory=SecurityConfig)
     dev: DevConfig = field(default_factory=DevConfig)
+    inspection: InspectionConfig = field(default_factory=InspectionConfig)
 
 
 config = AppConfig()
+
+
+class Settings(BaseAppSettings):
+    """Pydantic Settings（顶层示例字段），用于提供标准的 ENV 管理入口。
+    实际业务仍通过 `config` （dataclass 聚合）访问，以保证向后兼容。
+    """
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
+
+    env: str = Field(default="development", alias="ENV")
+    debug: bool = Field(default=False, alias="DEBUG")
+    host: str = Field(default="0.0.0.0", alias="HOST")
+    port: int = Field(default=8080, alias="PORT")
+    log_level: str = Field(default="INFO", alias="LOG_LEVEL")
+
+
+# 保留一个标准 Settings 实例（可供后续迁移逐步使用）
+settings = Settings()

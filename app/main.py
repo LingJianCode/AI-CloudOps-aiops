@@ -10,12 +10,12 @@ Description: AI-CloudOps主应用程序入口
 """
 
 import asyncio
+from contextlib import asynccontextmanager
 import logging
 import os
 import signal
 import sys
 import time
-from contextlib import asynccontextmanager
 from typing import Any, Dict
 
 from fastapi import FastAPI
@@ -30,6 +30,7 @@ from app.api.routes import register_routes
 from app.common.constants import AppConstants, ServiceConstants
 from app.config.logging import setup_logging
 from app.config.settings import config
+from app.services.factory import ServiceFactory
 from app.services.startup import StartupService
 
 # 全局启动服务实例
@@ -65,8 +66,15 @@ async def lifespan(app: FastAPI):
     # 初始化启动服务
     await startup_service.initialize()
 
-    # 注册需要管理的服务实例
+    # 注册需要管理的服务实例（保持原有机制）
     await _register_managed_services()
+
+    # 通过ServiceFactory预热关键服务（懒初始化已经异步触发，这里仅确保健康）
+    try:
+        factory_health = await ServiceFactory.health()
+        logger.info(f"ServiceFactory 管理的服务健康状态: {factory_health}")
+    except Exception as e:
+        logger.warning(f"获取ServiceFactory健康状态失败: {e}")
 
     # 启动预热机制
     warmup_results = await startup_service.warmup_services()
@@ -77,16 +85,16 @@ async def lifespan(app: FastAPI):
     logger.info(f"服务地址: http://{config.host}:{config.port}")
     logger.info("主要API端点:")
     logger.info(
-        f"  - GET  {AppConstants.API_VERSION_V1}/predict/health - 预测服务健康检查"
+        f"  - GET  {AppConstants.API_VERSION_V1}/predict/ready - 预测服务就绪检查"
     )
     logger.info(
-        f"  - GET  {AppConstants.API_VERSION_V1}/rca/health     - RCA服务健康检查"
+        f"  - GET  {AppConstants.API_VERSION_V1}/rca/ready     - RCA服务就绪检查"
     )
     logger.info(
-        f"  - GET  {AppConstants.API_VERSION_V1}/autofix/health - 自动修复服务健康检查"
+        f"  - GET  {AppConstants.API_VERSION_V1}/autofix/ready - 自动修复服务就绪检查"
     )
     logger.info(
-        f"  - GET  {AppConstants.API_VERSION_V1}/assistant/health - 智能助手健康检查"
+        f"  - GET  {AppConstants.API_VERSION_V1}/assistant/ready - 智能助手就绪检查"
     )
     logger.info(f"  - POST {AppConstants.API_VERSION_V1}/predict       - 负载预测")
     logger.info(f"  - POST {AppConstants.API_VERSION_V1}/rca           - 根因分析")
@@ -118,6 +126,16 @@ async def lifespan(app: FastAPI):
 
     # 清理资源
     await cleanup_resources()
+
+    # 工厂统一清理（在启动服务清理之后执行，确保路由持有的单例也被关闭）
+    try:
+        factory_cleanup = await ServiceFactory.cleanup_all()
+        if factory_cleanup.get("success", False):
+            logger.info("ServiceFactory 所有服务清理完成")
+        else:
+            logger.warning(f"ServiceFactory 清理存在失败: {factory_cleanup}")
+    except Exception as e:
+        logger.warning(f"ServiceFactory 清理失败: {e}")
 
     total_time = startup_service.get_uptime()
     logger.info(f"{AppConstants.APP_NAME} 运行总时长: {total_time:.2f}秒")
@@ -328,6 +346,18 @@ def create_app() -> FastAPI:
         logger.error(f"路由注册失败: {str(e)}")
         logger.warning("将继续启动，但部分路由功能可能不可用")
 
+    # 自定义OpenAPI元数据（分类标签）
+    app.openapi_tags = [
+        {
+            "name": "prediction",
+            "description": "预测服务API，包括QPS、CPU、内存、磁盘预测",
+        },
+        {"name": "assistant", "description": "智能助手API，包括问答、会话、知识库管理"},
+        {"name": "rca", "description": "根因分析API"},
+        {"name": "autofix", "description": "自动修复API"},
+        {"name": "cache", "description": "缓存管理API，包括统计、清理、配置与性能"},
+    ]
+
     return app
 
 
@@ -497,7 +527,9 @@ if __name__ == "__main__":
     shutdown_handler.setup_signal_handlers()
 
     try:
-        # 创建自定义服务器配置
+        # 使用应用配置的日志级别，确保一致性
+        uvicorn_log_level = config.log_level.lower()
+        
         config_uvicorn = Config(
             app="app.main:app",
             host=config.host,
@@ -507,9 +539,11 @@ if __name__ == "__main__":
             reload_excludes=(
                 ["logs", "data", "__pycache__", "*.pyc"] if config.debug else None
             ),
-            log_level="info" if not config.debug else "debug",
+            log_level=uvicorn_log_level,
             access_log=True,
             reload_delay=0.25 if config.debug else None,
+            # 禁用uvicorn自己的日志配置
+            log_config=None,
         )
 
         server = Server(config_uvicorn)

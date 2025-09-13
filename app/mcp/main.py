@@ -11,21 +11,20 @@ Description: 主应用程序入口
 
 import argparse
 import asyncio
+from contextlib import asynccontextmanager
 import json
 import logging
-import os
 import signal
 import sys
 import time
-from contextlib import asynccontextmanager
 from typing import Any, AsyncGenerator, Dict, Optional
 from urllib.parse import urlparse
 
-import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+import uvicorn
 
 try:
     from ..config.settings import config
@@ -126,22 +125,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# 统一注册错误处理器（与主应用一致）
+try:
+    from app.api.middleware.error_handler import setup_error_handlers
 
-@app.get("/health")
-async def health_check() -> Dict[str, Any]:
-    """健康检查接口"""
-    return {
-        "status": "healthy",
-        "timestamp": time.time(),
-        "tools_count": len(mcp_server.tools) if mcp_server else 0,
-        "active_connections": len(active_sse_connections),
-        "server_info": {
-            "version": "1.0.0",
-            "python_version": sys.version,
-            "pid": os.getpid(),
-            "startup_command": "python -m app.mcp.main",
-        },
-    }
+    setup_error_handlers(app)
+    logger.info("MCP 应用已注册统一错误处理器")
+except Exception as e:
+    logger.warning(f"MCP 错误处理器注册失败: {e}")
 
 
 @app.get("/sse")
@@ -361,7 +352,7 @@ def main():
         reload_enabled = args.reload or config.debug
 
         logger.info(f"服务器将在 {server_host}:{server_port} 启动")
-        logger.info(f"启动命令: python -m app.mcp.main")
+        logger.info("启动命令: python -m app.mcp.main")
 
         uvicorn.run(
             "app.mcp.main:app",

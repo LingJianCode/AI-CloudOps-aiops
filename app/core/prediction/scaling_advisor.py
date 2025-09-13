@@ -9,8 +9,8 @@ License: Apache 2.0
 Description: AI-CloudOps扩缩容建议器 - 生成智能扩缩容建议
 """
 
-import logging
 from datetime import datetime
+import logging
 from typing import Dict, List, Optional
 
 import numpy as np
@@ -235,21 +235,37 @@ class ScalingAdvisor:
             # 基于QPS计算实例数
             per_instance_qps = self.thresholds[PredictionType.QPS]["per_instance"]
 
-            if action == ScalingAction.SCALE_UP:
-                target_instances = int(np.ceil(current_value / per_instance_qps * 1.2))
-            elif action == ScalingAction.SCALE_DOWN:
-                target_instances = int(np.ceil(current_value / per_instance_qps * 0.8))
-            else:
-                target_instances = int(np.ceil(current_value / per_instance_qps))
+            # 按目标利用率折算可承载QPS：更保守 -> 单实例可用容量 = per_instance_qps * target_utilization
+            effective_capacity = max(1.0, per_instance_qps * max(0.1, min(0.9, target_utilization)))
 
-            # 应用约束
+            base_instances = int(np.ceil(current_value / effective_capacity))
+
+            # 根据动作引入缓冲系数，扩容更保守，缩容更谨慎
+            if action == ScalingAction.SCALE_UP:
+                target_instances = int(np.ceil(base_instances * 1.2))
+            elif action == ScalingAction.SCALE_DOWN:
+                target_instances = int(np.ceil(max(1, base_instances * 0.8)))
+            else:
+                target_instances = base_instances
+
+            # 应用请求级约束
             if constraints:
                 if constraints.min_instances:
                     target_instances = max(target_instances, constraints.min_instances)
                 if constraints.max_instances:
                     target_instances = min(target_instances, constraints.max_instances)
 
-            config["instances"] = target_instances
+            # 应用全局实例数上下限
+            try:
+                from app.config.settings import config as _config
+
+                global_min = int(getattr(_config.prediction, "min_instances", 1))
+                global_max = int(getattr(_config.prediction, "max_instances", 20))
+                target_instances = max(global_min, min(target_instances, global_max))
+            except Exception:
+                pass
+
+            config["instances"] = max(1, target_instances)
 
         elif prediction_type == PredictionType.CPU:
             # 基于CPU计算核数

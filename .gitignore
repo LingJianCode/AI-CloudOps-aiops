@@ -144,5 +144,5 @@ dmypy.json
 
 # pytype static type analyzer
 .pytype/
-
+data/
 data/vector_db

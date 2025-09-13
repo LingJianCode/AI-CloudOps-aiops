@@ -9,13 +9,13 @@ License: Apache 2.0
 Description: MD文档专用处理器
 """
 
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
+from enum import Enum
 import hashlib
 import logging
 import re
 import time
-from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
-from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 
 # 延迟导入元数据增强器
@@ -359,7 +359,7 @@ class MDDocumentProcessor:
                 content=content,
                 metadata={
                     "item_count": len(
-                        [l for l in list_lines if self.patterns["list_item"].match(l)]
+                        [line for line in list_lines if self.patterns["list_item"].match(line)]
                     )
                 },
             ),
@@ -545,7 +545,6 @@ class MDDocumentProcessor:
                 current_size + element_size > self.max_chunk_size
                 and current_chunk_elements
             ):
-
                 # 尝试在合适的位置分割
                 split_point = self._find_optimal_split_point(
                     current_chunk_elements, element
@@ -727,8 +726,9 @@ class MDDocumentProcessor:
 
         # 标准化结构权重
         if structural_weights:
-            min_structural, max_structural = min(structural_weights), max(
-                structural_weights
+            min_structural, max_structural = (
+                min(structural_weights),
+                max(structural_weights),
             )
             range_structural = max_structural - min_structural
 

@@ -16,8 +16,8 @@ from langchain_core.messages import BaseMessage
 from pydantic import BaseModel
 from typing_extensions import Literal
 
+from app.core.interfaces.llm_client import LLMClient, NullLLMClient
 from app.models.data_models import AgentState
-from app.services.llm import LLMService
 
 logger = logging.getLogger("aiops.supervisor")
 
@@ -32,9 +32,9 @@ class RouteResponse(BaseModel):
 class SupervisorAgent:
     """智能监督代理"""
 
-    def __init__(self):
-        # 使用我们自己的LLM服务进行智能决策
-        self.llm_service = LLMService()
+    def __init__(self, llm_client: Optional[LLMClient] = None):
+        # 使用注入的LLM客户端（默认空实现）
+        self.llm_service: LLMClient = llm_client or NullLLMClient()
 
         # 定义可用的工作代理成员
         self.members = ["Researcher", "Coder", "K8sFixer", "Notifier"]
@@ -108,7 +108,8 @@ class SupervisorAgent:
             # 调用LLM服务进行智能路由决策
             messages = [{"role": "user", "content": full_prompt}]
             response_text = await self.llm_service.generate_response(
-                messages, use_task_model=True  # 简单操作：路由决策，使用task_model
+                messages,
+                use_task_model=True,  # 简单操作：路由决策，使用task_model
             )
 
             if not response_text:
@@ -226,7 +227,8 @@ class SupervisorAgent:
             ]
 
             response = await self.llm_service.generate_response(
-                messages, use_task_model=False  # 复杂操作：问题分析，使用主模型
+                messages,
+                use_task_model=False,  # 复杂操作：问题分析，使用主模型
             )
 
             try:

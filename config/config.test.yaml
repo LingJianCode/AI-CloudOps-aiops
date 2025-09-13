@@ -76,3 +76,23 @@ tavily:
   max_results: 5
 testing:
   skip_llm_tests: true
+
+# 巡检配置（测试环境）
+inspection:
+  enabled: true
+  default_profile: basic
+  severity_threshold: 0.5
+  time_window_minutes: 30
+  k8s:
+    include_events: true
+    include_logs: false
+    log_tail_lines: 100
+  prometheus:
+    step: "1m"
+    queries_timeout: 10
+  retention:
+    enabled: true
+    max_reports: 50
+  scheduler:
+    enabled: false
+    cron: "*/15 * * * *"

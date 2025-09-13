@@ -10,15 +10,16 @@ Description: AI-CloudOps智能根因分析引擎
 """
 
 import asyncio
-import json
-import logging
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
+import json
+import logging
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
 from app.config.settings import CONFIG, config
+from app.core.interfaces.llm_client import LLMClient, NullLLMClient
 from app.models.rca_models import (
     CorrelationResult,
     EventData,
@@ -28,7 +29,6 @@ from app.models.rca_models import (
     RootCauseAnalysis,
     SeverityLevel,
 )
-from app.services.llm import LLMService
 
 from .events_collector import EventsCollector
 from .logs_collector import LogsCollector
@@ -103,7 +103,14 @@ class RCAAnalysisEngine:
         },
     }
 
-    def __init__(self, config_dict: Optional[Dict[str, Any]] = None):
+    def __init__(
+        self,
+        config_dict: Optional[Dict[str, Any]] = None,
+        llm_client: Optional[LLMClient] = None,
+        metrics_collector: Optional[MetricsCollector] = None,
+        events_collector: Optional[EventsCollector] = None,
+        logs_collector: Optional[LogsCollector] = None,
+    ):
         self.config = config_dict or {}
         self.logger = logging.getLogger("aiops.rca.engine")
 
@@ -116,18 +123,13 @@ class RCAAnalysisEngine:
         self.max_retries = rca_config_dict.get("max_retries", 3)
         self.timeout = rca_config_dict.get("timeout", 30)
 
-        # 初始化收集器
-        self.metrics_collector = MetricsCollector(config_dict)
-        self.events_collector = EventsCollector(config_dict)
-        self.logs_collector = LogsCollector(config_dict)
+        # 初始化收集器（支持依赖注入）
+        self.metrics_collector = metrics_collector or MetricsCollector(config_dict)
+        self.events_collector = events_collector or EventsCollector(config_dict)
+        self.logs_collector = logs_collector or LogsCollector(config_dict)
 
-        # 初始化LLM服务
-        try:
-            self.llm_service = LLMService()
-            self.logger.info("LLM服务初始化成功")
-        except Exception as e:
-            self.logger.warning(f"LLM服务初始化失败: {str(e)}，将使用基础建议")
-            self.llm_service = None
+        # 注入分析客户端（可为空实现）
+        self.llm_service: LLMClient = llm_client or NullLLMClient()
 
         # 分析缓存
         self._analysis_cache = {}
@@ -174,19 +176,19 @@ class RCAAnalysisEngine:
 
         # 关联分析
         correlations = self._correlate_data(
-            analysis_results['metrics'], 
-            analysis_results['events'], 
-            analysis_results['logs'],
-            start_time, 
-            end_time
+            analysis_results["metrics"],
+            analysis_results["events"],
+            analysis_results["logs"],
+            start_time,
+            end_time,
         )
 
         # 识别根因
         root_causes = self._identify_root_causes(
-            analysis_results['metrics'], 
-            analysis_results['events'], 
-            analysis_results['logs'], 
-            correlations
+            analysis_results["metrics"],
+            analysis_results["events"],
+            analysis_results["logs"],
+            correlations,
         )
 
         # 记录根因识别结果
@@ -195,22 +197,24 @@ class RCAAnalysisEngine:
         # 生成时间线
         timeline = self._build_timeline(metrics_data, events_data, logs_data)
 
-        # 生成建议 (现在是异步的)
+        # 生成建议（异步）
         recommendations = await self._generate_recommendations(root_causes)
 
         # 计算数据完整性
-        data_completeness = self._calculate_data_completeness(metrics_data, events_data, logs_data)
+        data_completeness = self._calculate_data_completeness(
+            metrics_data, events_data, logs_data
+        )
 
-        # 生成分析报告 (使用LLM)
+        # 生成分析报告（调用外部服务）
         analysis_report = await self._generate_analysis_report(
             metrics_data, events_data, logs_data, root_causes, data_completeness
         )
-        
+
         # 整合异常数据
         anomalies = {
-            "metrics": analysis_results['metrics'],
-            "events": analysis_results['events'],
-            "logs": analysis_results['logs']
+            "metrics": analysis_results["metrics"],
+            "events": analysis_results["events"],
+            "logs": analysis_results["logs"],
         }
 
         return RootCauseAnalysis(
@@ -234,17 +238,14 @@ class RCAAnalysisEngine:
         )
 
     def _log_data_collection_summary(
-        self, 
-        metrics: List[MetricData], 
-        events: List[EventData], 
-        logs: List[LogData]
+        self, metrics: List[MetricData], events: List[EventData], logs: List[LogData]
     ) -> None:
         """
         记录数据收集的摘要信息
-        
+
         Args:
             metrics: 收集到的指标数据
-            events: 收集到的事件数据  
+            events: 收集到的事件数据
             logs: 收集到的日志数据
         """
         # 记录收集到的数据量
@@ -267,7 +268,8 @@ class RCAAnalysisEngine:
         # 记录关键事件
         if events:
             critical_events = [
-                e for e in events
+                e
+                for e in events
                 if e.severity in [SeverityLevel.CRITICAL, SeverityLevel.HIGH]
             ]
             self.logger.info(f"关键事件数: {len(critical_events)}/{len(events)}")
@@ -278,7 +280,7 @@ class RCAAnalysisEngine:
 
         # 记录错误日志
         if logs:
-            error_logs = [l for l in logs if l.level in ["ERROR", "FATAL"]]
+            error_logs = [log for log in logs if log.level in ["ERROR", "FATAL"]]
             self.logger.info(f"错误日志数: {len(error_logs)}/{len(logs)}")
             for log in error_logs[:3]:  # 记录前3个错误日志
                 self.logger.info(f"错误日志: [{log.pod_name}] {log.message[:100]}")
@@ -286,19 +288,16 @@ class RCAAnalysisEngine:
             self.logger.warning("未收集到任何日志数据")
 
     async def _perform_multi_dimensional_analysis(
-        self, 
-        metrics: List[MetricData], 
-        events: List[EventData], 
-        logs: List[LogData]
+        self, metrics: List[MetricData], events: List[EventData], logs: List[LogData]
     ) -> Dict[str, Dict[str, Any]]:
         """
         执行多维度分析的统一方法
-        
+
         Args:
             metrics: 指标数据
             events: 事件数据
             logs: 日志数据
-            
+
         Returns:
             包含各维度分析结果的字典
         """
@@ -312,7 +311,7 @@ class RCAAnalysisEngine:
 
         # 处理分析结果和异常
         metric_anomalies = self._handle_analysis_result(analysis_results[0], "指标分析")
-        event_patterns = self._handle_analysis_result(analysis_results[1], "事件分析") 
+        event_patterns = self._handle_analysis_result(analysis_results[1], "事件分析")
         log_patterns = self._handle_analysis_result(analysis_results[2], "日志分析")
 
         # 记录分析结果摘要
@@ -323,12 +322,14 @@ class RCAAnalysisEngine:
         )
 
         return {
-            'metrics': metric_anomalies,
-            'events': event_patterns,
-            'logs': log_patterns
+            "metrics": metric_anomalies,
+            "events": event_patterns,
+            "logs": log_patterns,
         }
 
-    def _handle_analysis_result(self, result: Any, analysis_name: str) -> Dict[str, Any]:
+    def _handle_analysis_result(
+        self, result: Any, analysis_name: str
+    ) -> Dict[str, Any]:
         """
         处理分析结果，统一异常处理
         """
@@ -345,7 +346,7 @@ class RCAAnalysisEngine:
         self.logger.info(f"根因识别完成: 发现 {len(root_causes)} 个根因")
         for i, cause in enumerate(root_causes):
             self.logger.info(
-                f"根因 {i+1}: {cause.cause_type} "
+                f"根因 {i + 1}: {cause.cause_type} "
                 f"(置信度: {cause.confidence:.2f}) - {cause.description}"
             )
 
@@ -387,9 +388,7 @@ class RCAAnalysisEngine:
         collection_names = ["指标收集", "事件收集", "日志收集"]
         for i, result in enumerate(results):
             if isinstance(result, Exception):
-                self.logger.warning(
-                    f"{collection_names[i]}失败: {str(result)}"
-                )
+                self.logger.warning(f"{collection_names[i]}失败: {str(result)}")
             else:
                 self.logger.info(
                     f"{collection_names[i]}成功: 获得 {len(result)} 条数据"
@@ -433,7 +432,7 @@ class RCAAnalysisEngine:
             violations = self._check_threshold_violations(metric)
             if violations:
                 anomalies["threshold_violations"].extend(violations)
-            
+
             # 即使没有超过高阈值，也记录中等异常
             elif metric.anomaly_score > 0.3 and metric.anomaly_score <= 0.5:
                 anomalies["trending_metrics"].append(
@@ -743,7 +742,7 @@ class RCAAnalysisEngine:
     async def _generate_recommendations(
         self, root_causes: List[RootCause]
     ) -> List[str]:
-        """生成综合建议 - 使用LLM生成智能建议"""
+        """生成综合建议"""
         if not self.llm_service:
             # 如果LLM服务不可用，返回基础建议
             if not root_causes:
@@ -772,7 +771,7 @@ class RCAAnalysisEngine:
                     }
                 )
 
-            # 构造LLM请求
+            # 构造请求
             system_prompt = """你是一个Kubernetes和云运维专家。基于根因分析结果，生成5个简洁实用的解决建议。
 要求：
 1. 每个建议不超过30个字
@@ -786,7 +785,7 @@ class RCAAnalysisEngine:
             else:
                 user_prompt = "当前没有发现明确的根因，请生成通用的系统运维和监控建议"
 
-            # 调用LLM生成建议
+            # 生成建议
             response = await self.llm_service.generate_response(
                 messages=[{"role": "user", "content": user_prompt}],
                 system_prompt=system_prompt,
@@ -796,7 +795,7 @@ class RCAAnalysisEngine:
             )
 
             if response:
-                # 解析LLM响应为建议列表
+                # 解析响应为建议列表
                 recommendations = self._parse_recommendations_from_llm_response(
                     response
                 )
@@ -805,7 +804,7 @@ class RCAAnalysisEngine:
                     return recommendations[:5]
 
         except Exception as e:
-            self.logger.error(f"LLM生成建议失败: {str(e)}")
+            self.logger.error(f"生成建议失败: {str(e)}")
 
         # 备用方案：返回基础建议
         if not root_causes:
@@ -817,10 +816,11 @@ class RCAAnalysisEngine:
             return list(set(recommendations))[:5]
 
     def _parse_recommendations_from_llm_response(self, response: str) -> List[str]:
-        """解析LLM响应为建议列表"""
+        """解析响应为建议列表"""
         try:
             # 首先尝试解析为JSON数组
             import json
+
             try:
                 # 如果响应是JSON格式的列表
                 recommendations = json.loads(response)
@@ -829,7 +829,7 @@ class RCAAnalysisEngine:
                     return [str(r) for r in recommendations[:5]]
             except json.JSONDecodeError:
                 pass  # 不是JSON格式，继续尝试其他解析方式
-            
+
             # 尝试按行分割
             lines = response.strip().split("\n")
             recommendations = []
@@ -852,7 +852,7 @@ class RCAAnalysisEngine:
             return recommendations[:5]  # 最多返回5个建议
 
         except Exception as e:
-            self.logger.warning(f"解析LLM建议响应失败: {str(e)}")
+            self.logger.warning(f"解析建议响应失败: {str(e)}")
             # 尝试直接使用响应文本
             if response and len(response.strip()) > 10:
                 return [response.strip()[:100]]  # 截断过长的响应
@@ -951,32 +951,40 @@ class RCAAnalysisEngine:
         if len(evidence) >= 2:
             # 构建时间线
             timeline = []
-            
+
             # 添加指标异常到时间线
             for metric in metric_anomalies.get("high_anomaly_metrics", []):
                 # 使用传入的时间范围或当前时间
                 timestamp = end_time if end_time else datetime.now(timezone.utc)
-                timeline.append({
-                    "timestamp": timestamp.isoformat(),
-                    "type": "metric_anomaly",
-                    "description": f"指标 {metric.get('name')} 异常 (异常分数: {metric.get('score', 0):.2f})",
-                    "severity": "high" if metric.get('score', 0) > 0.8 else "medium"
-                })
-            
+                timeline.append(
+                    {
+                        "timestamp": timestamp.isoformat(),
+                        "type": "metric_anomaly",
+                        "description": f"指标 {metric.get('name')} 异常 (异常分数: {metric.get('score', 0):.2f})",
+                        "severity": "high"
+                        if metric.get("score", 0) > 0.8
+                        else "medium",
+                    }
+                )
+
             # 添加关键事件到时间线
             for event in event_patterns.get("critical_events", [])[:5]:  # 限制数量
-                event_time = event.get("timestamp", 
-                                     (end_time if end_time else datetime.now(timezone.utc)).isoformat())
-                timeline.append({
-                    "timestamp": event_time,
-                    "type": "critical_event",
-                    "description": f"{event.get('reason', '')}: {event.get('message', '')[:100]}",
-                    "severity": event.get("severity", "high")
-                })
-            
+                event_time = event.get(
+                    "timestamp",
+                    (end_time if end_time else datetime.now(timezone.utc)).isoformat(),
+                )
+                timeline.append(
+                    {
+                        "timestamp": event_time,
+                        "type": "critical_event",
+                        "description": f"{event.get('reason', '')}: {event.get('message', '')[:100]}",
+                        "severity": event.get("severity", "high"),
+                    }
+                )
+
             # 按时间排序
             timeline.sort(key=lambda x: x["timestamp"])
-            
+
             return CorrelationResult(
                 confidence=0.7 + 0.1 * len(evidence),
                 correlation_type="temporal",
@@ -1026,14 +1034,16 @@ class RCAAnalysisEngine:
             # 构建组件相关的时间线
             timeline = []
             for comp in multi_source_components[:3]:
-                timeline.append({
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                    "type": "component_anomaly",
-                    "description": f"组件 {comp} 在多个数据源中出现异常",
-                    "component": comp,
-                    "severity": "high"
-                })
-            
+                timeline.append(
+                    {
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "type": "component_anomaly",
+                        "description": f"组件 {comp} 在多个数据源中出现异常",
+                        "component": comp,
+                        "severity": "high",
+                    }
+                )
+
             return CorrelationResult(
                 confidence=0.75,
                 correlation_type="component",
@@ -1063,15 +1073,16 @@ class RCAAnalysisEngine:
 
         # 1. 检查资源不足（从事件和指标中）
         resource_insufficient = False
-        
+
         # 从事件检查资源不足
         if any(
-            "InsufficientMemory" in e.get("reason", "") or "InsufficientCPU" in e.get("reason", "")
+            "InsufficientMemory" in e.get("reason", "")
+            or "InsufficientCPU" in e.get("reason", "")
             for e in event_patterns.get("critical_events", [])
         ):
             resource_insufficient = True
             chain.append("资源不足")
-        
+
         # 从指标检查资源不足
         elif any(
             "memory" in metric.get("name", "").lower() and metric.get("score", 0) > 0.8
@@ -1095,14 +1106,19 @@ class RCAAnalysisEngine:
             # 构建因果链时间线
             timeline = []
             for i, step in enumerate(chain):
-                timeline.append({
-                    "timestamp": (datetime.now(timezone.utc) - timedelta(minutes=len(chain)-i)).isoformat(),
-                    "type": "causal_step",
-                    "description": step,
-                    "step_number": i + 1,
-                    "severity": "high" if i == 0 else "medium"
-                })
-            
+                timeline.append(
+                    {
+                        "timestamp": (
+                            datetime.now(timezone.utc)
+                            - timedelta(minutes=len(chain) - i)
+                        ).isoformat(),
+                        "type": "causal_step",
+                        "description": step,
+                        "step_number": i + 1,
+                        "severity": "high" if i == 0 else "medium",
+                    }
+                )
+
             return CorrelationResult(
                 confidence=0.8,
                 correlation_type="causal",
@@ -1142,23 +1158,25 @@ class RCAAnalysisEngine:
         has_metrics = bool(metric_anomalies.get("high_anomaly_metrics"))
         has_events = bool(event_patterns.get("critical_events"))
         has_logs = bool(log_patterns.get("error_types"))
-        
+
         # 如果完全没有数据，返回数据不足的关联
         if not any([has_metrics, has_events, has_logs]):
-            timeline = [{
-                "timestamp": end_time.isoformat(),
-                "type": "data_insufficient",
-                "description": "分析时间窗口内未发现足够的异常数据",
-                "severity": "low"
-            }]
-            
+            timeline = [
+                {
+                    "timestamp": end_time.isoformat(),
+                    "type": "data_insufficient",
+                    "description": "分析时间窗口内未发现足够的异常数据",
+                    "severity": "low",
+                }
+            ]
+
             return CorrelationResult(
                 confidence=0.1,  # 低置信度，因为数据不足
                 correlation_type="data_insufficient",
                 evidence=["数据不足 - 未发现足够的异常数据进行分析"],
                 timeline=timeline,
             )
-        
+
         # 如果只有单一数据源有数据，返回单一数据源关联
         data_sources = []
         if has_metrics:
@@ -1167,22 +1185,24 @@ class RCAAnalysisEngine:
             data_sources.append("事件数据")
         if has_logs:
             data_sources.append("日志数据")
-        
+
         if len(data_sources) == 1:
-            timeline = [{
-                "timestamp": end_time.isoformat(),
-                "type": "single_data_source",
-                "description": f"仅发现{data_sources[0]}，建议收集更多数据源进行分析",
-                "severity": "medium"
-            }]
-            
+            timeline = [
+                {
+                    "timestamp": end_time.isoformat(),
+                    "type": "single_data_source",
+                    "description": f"仅发现{data_sources[0]}，建议收集更多数据源进行分析",
+                    "severity": "medium",
+                }
+            ]
+
             return CorrelationResult(
                 confidence=0.3,  # 中等置信度，因为只有单一数据源
                 correlation_type="single_data_source",
                 evidence=[f"单一数据源 - 仅发现{data_sources[0]}"],
                 timeline=timeline,
             )
-        
+
         return None
 
     def _calculate_data_completeness(
@@ -1205,7 +1225,7 @@ class RCAAnalysisEngine:
             "logs": {
                 "available": len(logs) > 0,
                 "count": len(logs),
-                "error_logs": len([l for l in logs if l.level in ["ERROR", "FATAL"]]),
+                "error_logs": len([log for log in logs if log.level in ["ERROR", "FATAL"]]),
             },
         }
 
@@ -1244,7 +1264,7 @@ class RCAAnalysisEngine:
         root_causes: List[RootCause],
         data_completeness: Dict[str, Any],
     ) -> Dict[str, Any]:
-        """生成详细的分析报告 - 使用LLM生成智能报告"""
+        """生成详细的分析报告"""
         # 基础报告结构
         base_report = {
             "summary": {
@@ -1253,7 +1273,9 @@ class RCAAnalysisEngine:
                 "analysis_confidence": (
                     "high"
                     if data_completeness["overall_score"] > 0.7
-                    else "medium" if data_completeness["overall_score"] > 0.3 else "low"
+                    else "medium"
+                    if data_completeness["overall_score"] > 0.3
+                    else "low"
                 ),
             },
             "data_quality": {
@@ -1267,9 +1289,9 @@ class RCAAnalysisEngine:
             },
         }
 
-        # 如果LLM服务不可用，返回基础报告
+        # 如果外部服务不可用，返回基础报告
         if not self.llm_service:
-            base_report["llm_summary"] = "LLM服务不可用，使用基础分析报告"
+            base_report["llm_summary"] = "外部分析不可用，使用基础分析报告"
             return base_report
 
         try:
@@ -1290,7 +1312,7 @@ class RCAAnalysisEngine:
                 "data_completeness": data_completeness,
             }
 
-            # 构造LLM请求
+            # 构造请求
             system_prompt = """你是一个专业的云运维分析师。基于根因分析结果，生成一份简洁的分析总结。
 要求：
 1. 总结不超过200字
@@ -1304,7 +1326,7 @@ class RCAAnalysisEngine:
 
 请生成一份专业的根因分析总结。"""
 
-            # 调用LLM生成报告
+            # 生成报告
             llm_summary = await self.llm_service.generate_response(
                 messages=[{"role": "user", "content": user_prompt}],
                 system_prompt=system_prompt,
@@ -1315,12 +1337,12 @@ class RCAAnalysisEngine:
 
             if llm_summary:
                 base_report["llm_summary"] = llm_summary.strip()
-                self.logger.info("LLM生成分析报告成功")
+                self.logger.info("生成分析报告成功")
             else:
-                base_report["llm_summary"] = "AI分析暂时不可用，请查看基础分析数据"
+                base_report["llm_summary"] = "分析暂时不可用，请查看基础分析数据"
 
         except Exception as e:
-            self.logger.error(f"LLM生成分析报告失败: {str(e)}")
-            base_report["llm_summary"] = f"AI分析生成失败: {str(e)[:100]}"
+            self.logger.error(f"生成分析报告失败: {str(e)}")
+            base_report["llm_summary"] = f"分析生成失败: {str(e)[:100]}"
 
         return base_report

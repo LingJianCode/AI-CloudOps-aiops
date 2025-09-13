@@ -15,8 +15,8 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Set
 
 from app.config.settings import CONFIG, config
+from app.core.interfaces.k8s_client import K8sClient, NullK8sClient
 from app.models.rca_models import EventData, SeverityLevel
-from app.services.kubernetes import KubernetesService
 
 from .base_collector import BaseDataCollector
 
@@ -55,9 +55,13 @@ class EventsCollector(BaseDataCollector):
         },
     }
 
-    def __init__(self, config_dict: Optional[Dict[str, Any]] = None):
+    def __init__(
+        self,
+        config_dict: Optional[Dict[str, Any]] = None,
+        k8s_client: Optional[K8sClient] = None,
+    ):
         super().__init__("events", config_dict)
-        self.k8s: Optional[KubernetesService] = None
+        self.k8s: K8sClient = k8s_client or NullK8sClient()
 
         # 从配置文件读取事件收集器配置
         self.rca_config = config.rca
@@ -82,33 +86,34 @@ class EventsCollector(BaseDataCollector):
         return cache
 
     async def _do_initialize(self) -> None:
-        """初始化Kubernetes服务连接"""
+        """初始化Kubernetes客户端（通过依赖注入）"""
         try:
-            self.k8s = KubernetesService()
+            if isinstance(self.k8s, NullK8sClient):
+                self.logger.warning("未注入K8s客户端，将以降级模式运行")
+                return
 
-            # 增加重试机制的健康检查
             for attempt in range(3):
                 try:
                     if await self.k8s.health_check():
-                        self.logger.info("Kubernetes连接初始化成功")
+                        self.logger.info("Kubernetes客户端健康检查通过")
                         return
                     else:
                         self.logger.warning(
                             f"Kubernetes健康检查失败，尝试 {attempt + 1}/3"
                         )
                         if attempt < 2:
-                            await asyncio.sleep(2**attempt)  # 指数退避
+                            await asyncio.sleep(2**attempt)
                 except Exception as e:
                     self.logger.warning(
-                        f"Kubernetes连接尝试 {attempt + 1}/3 失败: {str(e)}"
+                        f"Kubernetes客户端连接尝试 {attempt + 1}/3 失败: {str(e)}"
                     )
                     if attempt < 2:
                         await asyncio.sleep(2**attempt)
 
-            raise RuntimeError("无法连接到Kubernetes集群，已尝试3次")
+            raise RuntimeError("无法连接到Kubernetes客户端，已尝试3次")
 
         except Exception as e:
-            self.logger.error(f"初始化Kubernetes服务时发生错误: {str(e)}")
+            self.logger.error(f"初始化Kubernetes客户端时发生错误: {str(e)}")
             raise
 
     async def collect(
@@ -225,7 +230,9 @@ class EventsCollector(BaseDataCollector):
 
             return self._convert_to_event_data(event)
         except Exception as e:
-            self.logger.debug(f"处理单个事件时出错: {e}, 事件: {event.get('reason', 'Unknown')}")
+            self.logger.debug(
+                f"处理单个事件时出错: {e}, 事件: {event.get('reason', 'Unknown')}"
+            )
             return None
 
     def _parse_event_time(self, event: Dict[str, Any]) -> datetime:
@@ -289,7 +296,7 @@ class EventsCollector(BaseDataCollector):
 
         # 注意：Kubernetes API返回的是involvedObject（驼峰命名）
         involved_object = event.get("involvedObject", {})
-        
+
         # 确保所有字段都有值，避免空字段
         object_info = {
             "kind": involved_object.get("kind", "Unknown"),

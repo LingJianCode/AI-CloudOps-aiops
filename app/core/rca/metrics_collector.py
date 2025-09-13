@@ -18,8 +18,11 @@ import pandas as pd
 from scipy import stats
 
 from app.config.settings import CONFIG, config
+from app.core.interfaces.prometheus_client import (
+    NullPrometheusClient,
+    PrometheusClient,
+)
 from app.models.rca_models import MetricData
-from app.services.prometheus import PrometheusService
 
 from .base_collector import BaseDataCollector
 
@@ -27,9 +30,13 @@ from .base_collector import BaseDataCollector
 class MetricsCollector(BaseDataCollector):
     """优化的Prometheus指标数据收集器"""
 
-    def __init__(self, config_dict: Optional[Dict[str, Any]] = None):
+    def __init__(
+        self,
+        config_dict: Optional[Dict[str, Any]] = None,
+        prometheus_client: Optional[PrometheusClient] = None,
+    ):
         super().__init__("metrics", config_dict)
-        self.prometheus: Optional[PrometheusService] = None
+        self.prometheus: PrometheusClient = prometheus_client or NullPrometheusClient()
 
         # 从配置文件读取RCA指标配置
         self.rca_config = config.rca
@@ -61,33 +68,36 @@ class MetricsCollector(BaseDataCollector):
         self.thresholds = self.metrics_config.get("thresholds", {})
 
     async def _do_initialize(self) -> None:
-        """初始化Prometheus服务连接"""
+        """初始化Prometheus客户端连接（通过依赖注入）"""
         try:
-            self.prometheus = PrometheusService()
+            # 如果是空实现，直接返回，让上层服务感知健康状态
+            if isinstance(self.prometheus, NullPrometheusClient):
+                self.logger.warning("未注入Prometheus客户端，将以降级模式运行")
+                return
 
-            # 增加重试机制的健康检查
+            # 重试健康检查
             for attempt in range(3):
                 try:
                     if await self.prometheus.health_check():
-                        self.logger.info("Prometheus连接初始化成功")
+                        self.logger.info("Prometheus客户端健康检查通过")
                         return
                     else:
                         self.logger.warning(
                             f"Prometheus健康检查失败，尝试 {attempt + 1}/3"
                         )
                         if attempt < 2:
-                            await asyncio.sleep(2**attempt)  # 指数退避
+                            await asyncio.sleep(2**attempt)
                 except Exception as e:
                     self.logger.warning(
-                        f"Prometheus连接尝试 {attempt + 1}/3 失败: {str(e)}"
+                        f"Prometheus客户端连接尝试 {attempt + 1}/3 失败: {str(e)}"
                     )
                     if attempt < 2:
                         await asyncio.sleep(2**attempt)
 
-            raise RuntimeError("无法连接到Prometheus服务，已尝试3次")
+            raise RuntimeError("无法连接到Prometheus客户端，已尝试3次")
 
         except Exception as e:
-            self.logger.error(f"初始化Prometheus服务时发生错误: {str(e)}")
+            self.logger.error(f"初始化Prometheus客户端时发生错误: {str(e)}")
             raise
 
     async def collect(
@@ -267,7 +277,7 @@ class MetricsCollector(BaseDataCollector):
 
         # 组合查询
         if filters:
-            query = f'{base_query}{{{",".join(filters)}}}'
+            query = f"{base_query}{{{','.join(filters)}}}"
         else:
             query = base_query
 
@@ -295,7 +305,7 @@ class MetricsCollector(BaseDataCollector):
             # 安全检查
             if data is None:
                 return []
-            if hasattr(data, 'empty') and data.empty:
+            if hasattr(data, "empty") and data.empty:
                 return []
 
             # 智能分组
@@ -407,7 +417,7 @@ class MetricsCollector(BaseDataCollector):
                 if len(diff) > 0:
                     change_rate = np.std(diff) / (np.mean(np.abs(values)) + 1e-10)
                     scores.append(min(change_rate * 1.5, 1.0))  # 增加敏感度
-            
+
             # 4. 添加移动平均异常检测
             if len(values) > 10:
                 ma = values.rolling(window=5, min_periods=1).mean()

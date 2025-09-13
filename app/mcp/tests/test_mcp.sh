@@ -82,7 +82,7 @@ start_mcp_server() {
     # 等待服务启动
     log_info "等待MCP服务端启动..."
     for i in {1..30}; do
-        if curl -s "${MCP_SERVER_URL}/health" &> /dev/null; then
+        if curl -s "${MCP_SERVER_URL}/tools" &> /dev/null; then
             log_success "MCP服务端启动成功 (PID: ${MCP_SERVER_PID})"
             return 0
         fi
@@ -97,7 +97,7 @@ start_mcp_server() {
 test_health_check() {
     log_info "测试健康检查接口..."
     
-    response=$(curl -s "${MCP_SERVER_URL}/health")
+    response=$(curl -s "${MCP_SERVER_URL}/tools")
     if [[ $? -eq 0 ]]; then
         log_success "健康检查成功: ${response}"
     else

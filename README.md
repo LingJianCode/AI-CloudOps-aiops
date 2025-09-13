@@ -15,19 +15,19 @@ AIOps Platform 是一个**AI-CloudOps智能云原生运维平台**，基于人�
 
 ### 🏗️ 技术架构
 
-```
+```text
 AIOps Platform AI-CloudOps架构
 ┌─────────────────────────────────────────────────────────────┐
-│                     接口与协议层                               │
+│                     接口与协议层                              │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐          │
 │  │  REST API   │  │     MCP     │  │   WebSocket │          │
 │  │   (FastAPI) │  │  Tool Calls │  │     SSE     │          │
 │  └─────────────┘  └─────────────┘  └─────────────┘          │
 ├─────────────────────────────────────────────────────────────┤
-│                     智能代理层                                 │
+│                     智能代理层                                │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐          │
-│  │AI-CloudOps助手 │  │  自动修复    │  │  根因分析    │          │
-│  │(RAG+MCP)   │  │ (K8s Fixer) │  │ (RCA Engine)│          │
+│  │AI-CloudOps助手│ │  自动修复    │  │  根因分析     │          │
+│  │(RAG+MCP)    │  │ (K8s Fixer) │  │ (RCA Engine)│           │
 │  └─────────────┘  └─────────────┘  └─────────────┘          │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐          │
 │  │  负载预测    │  │  健康监控    │  │  通知管理    │          │
@@ -50,7 +50,7 @@ AIOps Platform AI-CloudOps架构
 
 ## 📁 项目结构
 
-```
+```text
 Ai-CloudOps-aiops/
 ├── app/                          # 应用主目录
 │   ├── __init__.py              # 应用初始化
@@ -148,12 +148,14 @@ Ai-CloudOps-aiops/
 ### 环境要求
 
 #### 系统要求
+
 - **操作系统**: Linux/macOS/Windows (推荐 Linux)
 - **内存**: 最少 8GB RAM (推荐 16GB+)
 - **存储**: 最少 20GB 可用空间
 - **网络**: 能够访问外部API服务
 
 #### 软件依赖
+
 - **Python 3.11+** - 核心运行环境
 - **Docker 20.10+** - 容器化部署
 - **Docker Compose 2.0+** - 容器编排
@@ -171,7 +173,7 @@ git clone https://github.com/GoSimplicity/AI-CloudOps.git
 cd Ai-CloudOps-aiops
 ```
 
-2. **配置环境变量**
+1. **配置环境变量**
 
 ```bash
 # 复制环境配置文件
@@ -182,6 +184,7 @@ nano .env
 ```
 
 **核心环境变量配置**：
+
 ```bash
 # 基础配置
 ENV=production                    # 环境类型
@@ -205,7 +208,7 @@ TAVILY_API_KEY=your-tavily-key   # Tavily搜索API
 REDIS_PASSWORD=your-redis-password  # Redis密码
 ```
 
-3. **一键部署**
+1. **一键部署**
 
 ```bash
 # 给部署脚本执行权限
@@ -218,7 +221,7 @@ chmod +x scripts/deploy.sh
 ./scripts/deploy.sh --production --health-check
 ```
 
-4. **验证部署**
+1. **验证部署**
 
 ```bash
 # 查看服务状态
@@ -235,6 +238,7 @@ chmod +x scripts/deploy.sh
 #### 1. 安装系统依赖
 
 **Ubuntu/Debian**:
+
 ```bash
 # 更新包列表
 sudo apt update
@@ -254,6 +258,7 @@ sudo usermod -aG docker $USER
 ```
 
 **CentOS/RHEL**:
+
 ```bash
 # 安装Docker
 sudo yum install -y docker docker-compose
@@ -267,6 +272,7 @@ sudo yum install -y git curl
 ```
 
 **macOS**:
+
 ```bash
 # 使用Homebrew安装
 brew install docker docker-compose git curl
@@ -309,7 +315,7 @@ export K8S_CONFIG_PATH=/path/to/your/kubeconfig
 
 ### 📋 服务组件架构
 
-```
+```text
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
 │   主应用服务      │    │   MCP服务        │    │   Prometheus    │
 │   (8080)        │◄──►│   (9000)        │    │   (9090)        │
@@ -324,6 +330,7 @@ export K8S_CONFIG_PATH=/path/to/your/kubeconfig
 ```
 
 #### 核心服务
+
 - **主应用服务** (aiops-platform): 提供API接口、根因分析、智能预测等核心功能
 - **MCP服务** (aiops-mcp): 提供工具调用能力和SSE服务端
 - **Redis**: 用于缓存和向量数据存储
@@ -337,25 +344,28 @@ export K8S_CONFIG_PATH=/path/to/your/kubeconfig
 
 | 服务       | 地址                   | 说明                      |
 | ---------- | ---------------------- | ------------------------- |
-| 主应用     | http://localhost:8080  | 主要API接口               |
-| MCP服务    | http://localhost:9000  | 工具调用接口              |
-| Prometheus | http://localhost:9090  | 监控数据查询              |
-
-| Ollama     | http://localhost:11434 | 本地模型API               |
+| 主应用     | `http://localhost:8080`  | 主要API接口               |
+| MCP服务    | `http://localhost:9000`  | 工具调用接口              |
+| Prometheus | `http://localhost:9090`  | 监控数据查询              |
+| Ollama     | `http://localhost:11434` | 本地模型API               |
 
 #### API文档
-- 主应用API文档: http://localhost:8080/docs
-- MCP服务API文档: http://localhost:9000/docs (如果启用)
+
+- 主应用API文档: [http://localhost:8080/docs](http://localhost:8080/docs)
+- MCP服务API文档: [http://localhost:9000/docs](http://localhost:9000/docs) (如果启用)
+- OpenAPI 标签: prediction, assistant, rca, autofix, cache, health
 
 ### ✅ 健康检查
 
 #### 自动健康检查
+
 ```bash
 # 执行完整健康检查
 ./scripts/deploy.sh --health-check
 ```
 
 #### 手动检查
+
 ```bash
 # 检查主应用
 curl http://localhost:8080/api/v1/health
@@ -375,6 +385,7 @@ docker exec aiops-redis redis-cli ping
 ### 📊 数据持久化
 
 所有重要数据都会持久化到本地目录：
+
 - `./data`: 应用数据、模型文件
 - `./logs`: 日志文件
 - `./config`: 配置文件
@@ -383,7 +394,8 @@ docker exec aiops-redis redis-cli ping
 
 #### 常见问题
 
-**1. 服务无法启动**
+#### 1) 服务无法启动
+
 ```bash
 # 查看服务日志
 docker-compose logs aiops-platform
@@ -398,7 +410,8 @@ docker system df
 docker system prune  # 清理未使用的资源
 ```
 
-**2. MCP服务连接失败**
+#### 2) MCP服务连接失败
+
 ```bash
 # 检查MCP服务状态
 curl http://localhost:9000/health
@@ -411,7 +424,8 @@ docker network inspect aiops-network
 docker-compose restart aiops-mcp
 ```
 
-**3. Kubernetes配置问题**
+#### 3) Kubernetes配置问题
+
 ```bash
 # 检查kubeconfig
 kubectl config current-context
@@ -423,6 +437,7 @@ kubectl auth can-i create deployments
 ```
 
 #### 日志分析
+
 ```bash
 # 所有服务日志
 docker-compose logs -f
@@ -436,6 +451,7 @@ docker-compose logs --tail=100 aiops-platform
 ```
 
 日志文件位置：
+
 - 主应用日志: `./logs/app.log`
 - MCP服务日志: `./logs/mcp.log`
 - Docker容器日志: `docker logs <container_name>`
@@ -462,9 +478,15 @@ docker-compose logs --tail=100 aiops-platform
 - 资源使用率优化计算
 
 **API端点**:
-- `POST /api/v1/predict/predict` - QPS预测
-- `GET /api/v1/predict/trend` - 负载趋势分析
+
+- `POST /api/v1/predict/qps` - QPS预测
+- `POST /api/v1/predict/cpu` - CPU使用率预测
+- `POST /api/v1/predict/memory` - 内存使用率预测
+- `POST /api/v1/predict/disk` - 磁盘使用率预测
 - `GET /api/v1/predict/models` - 模型信息
+- `GET /api/v1/predict/health` - 健康检查
+- `GET /api/v1/predict/ready` - 就绪检查
+- `GET /api/v1/predict/info` - 服务信息
 
 **使用示例**:
 
@@ -508,6 +530,7 @@ result = await prediction_service.predict_instances(
 - 多维度相关性分析
 
 **API端点**:
+
 - `POST /api/v1/rca/analyze` - 综合根因分析
 - `GET /api/v1/rca/metrics` - 获取所有可用的Prometheus指标
 - `GET /api/v1/rca/health` - RCA服务健康检查
@@ -557,9 +580,13 @@ result = await rca_service.analyze_root_cause(
 - 可扩展的自定义工具接口
 
 **API端点**:
-- `POST /api/v1/assistant/query` - 智能问答（支持mode参数）
-- `GET /api/v1/assistant/session` - 会话管理
+
+- `POST /api/v1/assistant/query` - 智能问答（mode: 1=RAG, 2=MCP）
+- `POST /api/v1/assistant/session` - 创建会话
+- `GET /api/v1/assistant/session/{session_id}` - 会话信息
 - `POST /api/v1/assistant/refresh` - 刷新知识库
+- `GET /api/v1/assistant/config` - 服务配置
+- `GET /api/v1/assistant/info` - 服务信息
 
 **使用示例**:
 
@@ -567,14 +594,14 @@ result = await rca_service.analyze_root_cause(
 # RAG模式 - 知识问答
 response = await post("/api/v1/assistant/query", {
     "question": "如何优化Kubernetes集群性能？",
-    "mode": "rag",
+    "mode": 1,
     "session_id": "user123"
 })
 
 # MCP模式 - 工具调用
 response = await post("/api/v1/assistant/query", {
     "question": "获取default命名空间下的Pod列表",
-    "mode": "mcp", 
+    "mode": 2,
     "session_id": "user123"
 })
 ```
@@ -607,6 +634,7 @@ response = await post("/api/v1/assistant/query", {
 - 配置错误自动纠正
 
 **API端点**:
+
 - `POST /api/v1/autofix/fix` - 执行自动修复
 - `POST /api/v1/autofix/diagnose` - 资源诊断
 - `GET /api/v1/autofix/config` - 获取修复配置
@@ -676,18 +704,33 @@ result = await autofix_service.fix_resources(
 ### 健康检查 API
 
 #### 基础健康检查
-```
+
+```http
 GET /api/v1/health
 ```
 
 #### 详细组件状态
-```
-GET /api/v1/health/detail
+
+```http
+GET /api/v1/health/components
 ```
 
 #### 依赖关系检查
+
+```http
+GET /api/v1/health/metrics
 ```
-GET /api/v1/health/dependencies
+
+#### 就绪性探针
+
+```http
+GET /api/v1/health/ready
+```
+
+#### 存活性探针
+
+```http
+GET /api/v1/health/live
 ```
 
 **响应示例**:
@@ -730,8 +773,9 @@ GET /api/v1/health/dependencies
 ### 负载预测 API
 
 #### QPS预测
-```
-POST /api/v1/predict/predict
+
+```http
+POST /api/v1/predict/qps
 Content-Type: application/json
 
 {
@@ -743,14 +787,60 @@ Content-Type: application/json
 }
 ```
 
-#### 负载趋势分析
+#### CPU 使用率预测
+
+```http
+POST /api/v1/predict/cpu
 ```
-GET /api/v1/predict/trend?service_name=my-service&hours=48
+
+#### 内存使用率预测
+
+```http
+POST /api/v1/predict/memory
+```
+
+#### 磁盘使用率预测
+
+```http
+POST /api/v1/predict/disk
 ```
 
 #### 模型信息
-```
+
+```http
 GET /api/v1/predict/models
+```
+
+### 缓存管理 API
+
+#### 获取缓存统计
+
+```http
+GET /api/v1/cache/stats
+```
+
+#### 缓存系统健康检查
+
+```http
+GET /api/v1/cache/health
+```
+
+#### 清空缓存
+
+```http
+POST /api/v1/cache/clear?service=prediction|rca|all&pattern=<optional>
+```
+
+#### 获取缓存性能报告
+
+```http
+GET /api/v1/cache/performance
+```
+
+#### 获取缓存配置信息
+
+```http
+GET /api/v1/cache/config
 ```
 
 **响应示例**:
@@ -796,7 +886,8 @@ GET /api/v1/predict/models
 ### 根因分析 API
 
 #### 综合根因分析
-```
+
+```http
 POST /api/v1/rca/analyze
 Content-Type: application/json
 
@@ -811,7 +902,8 @@ Content-Type: application/json
 ```
 
 #### 获取所有可用指标
-```
+
+```http
 GET /api/v1/rca/metrics
 ```
 
@@ -922,7 +1014,8 @@ GET /api/v1/rca/metrics
 ### 自动修复 API
 
 #### 执行自动修复
-```
+
+```http
 POST /api/v1/autofix/fix
 Content-Type: application/json
 
@@ -935,7 +1028,8 @@ Content-Type: application/json
 ```
 
 #### 资源诊断
-```
+
+```http
 POST /api/v1/autofix/diagnose
 Content-Type: application/json
 
@@ -949,7 +1043,8 @@ Content-Type: application/json
 ```
 
 #### 获取修复配置
-```
+
+```http
 GET /api/v1/autofix/config
 ```
 
@@ -1013,7 +1108,8 @@ GET /api/v1/autofix/config
 ### AI-CloudOps智能助手 API
 
 #### 智能问答（支持双模式）
-```
+
+```http
 POST /api/v1/assistant/query
 Content-Type: application/json
 
@@ -1027,17 +1123,20 @@ Content-Type: application/json
 ```
 
 #### 会话管理
-```
-GET /api/v1/assistant/session?session_id=user123
+
+```http
+GET /api/v1/assistant/session/user123
 ```
 
 #### 刷新知识库
-```
+
+```http
 POST /api/v1/assistant/refresh
 ```
 
 #### 服务配置
-```
+
+```http
 GET /api/v1/assistant/config
 ```
 
@@ -1126,7 +1225,7 @@ GET /api/v1/assistant/config
 
 ### WebSocket 流式 API
 
-```
+```text
 WS /api/v1/assistant/stream
 ```
 
@@ -1192,13 +1291,13 @@ WS /api/v1/assistant/stream
 python app/main.py
 ```
 
-2. **Kubernetes 部署**
+1. **Kubernetes 部署**
 
 ```bash
 # TODO: 待实现
 ```
 
-3. **生产部署**
+1. **生产部署**
 
 ```bash
 # 设置环境变量
@@ -1213,6 +1312,7 @@ python app/main.py
 ### 生产环境优化
 
 #### 1. 环境配置
+
 ```bash
 # 设置生产环境
 ENV=production
@@ -1225,7 +1325,9 @@ LLM_REQUEST_TIMEOUT=300
 ```
 
 #### 2. 资源限制
+
 在 `docker-compose.yml` 中添加资源限制：
+
 ```yaml
 services:
   aiops-platform:
@@ -1240,6 +1342,7 @@ services:
 ```
 
 #### 3. 缓存优化
+
 ```bash
 # Redis缓存配置
 REDIS_MAX_CONNECTIONS=20
@@ -1252,7 +1355,9 @@ PREDICTION_MODEL_CACHE_SIZE=100
 ### 监控配置
 
 #### Prometheus配置
+
 编辑 `deploy/prometheus/prometheus.yml`:
+
 ```yaml
 global:
   scrape_interval: 15s
@@ -1265,8 +1370,6 @@ scrape_configs:
     metrics_path: '/metrics'
     scrape_interval: 30s
 ```
-
-
 
 ### 系统性能
 
@@ -1283,6 +1386,7 @@ scrape_configs:
 ### 生产环境安全
 
 #### 1. 访问控制
+
 ```bash
 # Redis密码保护
 REDIS_PASSWORD=your-redis-password
@@ -1292,6 +1396,7 @@ API_RATE_LIMIT=100
 ```
 
 #### 2. 网络安全
+
 ```yaml
 # docker-compose.yml 网络配置
 networks:
@@ -1303,6 +1408,7 @@ networks:
 ```
 
 #### 3. 数据安全
+
 - **加密存储**: 敏感数据加密存储
 - **传输加密**: HTTPS/TLS 加密传输
 - **访问控制**: 基于角色的访问控制
@@ -1320,6 +1426,7 @@ networks:
 ## 💾 备份与恢复
 
 ### 数据备份
+
 ```bash
 # 备份数据目录
 tar -czf aiops-backup-$(date +%Y%m%d).tar.gz ./data ./config
@@ -1332,6 +1439,7 @@ cp .env .env.backup
 ```
 
 ### 恢复数据
+
 ```bash
 # 恢复数据目录
 tar -xzf aiops-backup-YYYYMMDD.tar.gz
@@ -1343,6 +1451,7 @@ docker exec aiops-redis redis-cli --eval backup.rdb
 ## 🔄 更新升级
 
 ### 应用更新
+
 ```bash
 # 拉取最新代码
 git pull origin main
@@ -1355,6 +1464,7 @@ docker-compose up -d --force-recreate
 ```
 
 ### 配置更新
+
 ```bash
 # 更新配置文件
 cp config/config.yaml config/config.yaml.backup
@@ -1367,13 +1477,16 @@ docker-compose restart aiops-platform aiops-mcp
 ### 扩展部署
 
 #### 集群部署
+
 对于大规模部署，可以考虑：
+
 1. 使用 Kubernetes 部署
 2. 配置负载均衡
 3. 使用外部 Redis 集群
 4. 配置 Prometheus 高可用
 
 #### 多环境部署
+
 ```bash
 # 开发环境
 ENV=development ./scripts/deploy.sh --dev
@@ -1396,18 +1509,21 @@ ENV=production ./scripts/deploy.sh --production
 
 ### v2.0.0 (2025-01-22) - 重大优化版本 ✨
 
-🚀 **架构优化**:
+**架构优化**:
+
 - 完成全项目代码优化和重构
 - 统一配置管理系统
 - 清理冗余代码，提升性能30%
 - 标准化API响应格式
 
-🧠 **智能增强**:
+**智能增强**:
+
 - 升级智能预测引擎，支持多维度分析
 - 增强根因分析算法，准确率提升至90%+
 - 优化MCP工具调用性能
 
-🛠️ **功能完善**:
+**功能完善**:
+
 - 新增成本分析和优化建议
 - 增强自动修复安全性
 - 完善健康检查和监控
@@ -1415,17 +1531,18 @@ ENV=production ./scripts/deploy.sh --production
 ## 📋 附录
 
 ### 端口列表
+
 | 服务       | 端口  | 协议 | 说明       |
 | ---------- | ----- | ---- | ---------- |
 | 主应用     | 8080  | HTTP | API接口    |
 | MCP服务    | 9000  | HTTP | 工具调用   |
 | Prometheus | 9090  | HTTP | 监控数据   |
-
 | Redis      | 6379  | TCP  | 缓存数据库 |
 | Ollama     | 11434 | HTTP | 本地模型   |
 
 ### 目录结构说明
-```
+
+```text
 Ai-CloudOps-aiops/
 ├── app/                 # 应用代码
 ├── config/             # 配置文件
@@ -1441,16 +1558,17 @@ Ai-CloudOps-aiops/
 ```
 
 ### 版本信息
+
 - Python: 3.11+
 - Docker: 20.10+
 - Docker Compose: 2.0+
 - Redis: 7.0+
 - Prometheus: 2.45.0+
 
-
 ## 🛟 技术支持
 
 如遇到问题，请：
+
 1. 查看本文档的故障排除部分
 2. 检查 [GitHub Issues](https://github.com/GoSimplicity/AI-CloudOps/issues)
 3. 查看项目日志文件

@@ -10,21 +10,21 @@ Description: Redis向量存储
 """
 
 import asyncio
+from collections import defaultdict
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
 import hashlib
 import heapq
 import logging
 import pickle
 import re
 import time
-from collections import defaultdict
-from contextlib import asynccontextmanager
-from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
-import numpy as np
-import redis
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
+import numpy as np
+import redis
 
 # MD文档处理器导入
 try:
@@ -251,7 +251,7 @@ class EnhancedRedisVectorStore:
         if not self._closed and hasattr(self, "pool"):
             try:
                 self.pool.disconnect()
-            except:
+            except Exception:
                 pass
 
     @asynccontextmanager
@@ -273,7 +273,7 @@ class EnhancedRedisVectorStore:
             if client:
                 try:
                     client.close()
-                except:
+                except Exception:
                     pass
 
     async def add_documents(self, documents: List[Document]) -> List[str]:
@@ -337,7 +337,7 @@ class EnhancedRedisVectorStore:
             )
             metadata.update({"document_type": "markdown", "is_structured": True})
 
-            logger.info(f"处理MD文档 {i+1}/{len(md_contents)}")
+            logger.info(f"处理MD文档 {i + 1}/{len(md_contents)}")
 
             # 解析MD文档为结构化块
             md_chunks = self.md_processor.parse_document(md_content, metadata)
@@ -599,9 +599,11 @@ class EnhancedRedisVectorStore:
         start_time = time.time()
 
         try:
-            logger.info(f"开始文档搜索: query='{query[:50]}...', k={k}, threshold={config.similarity_threshold}")
+            logger.info(
+                f"开始文档搜索: query='{query[:50]}...', k={k}, threshold={config.similarity_threshold}"
+            )
             logger.debug(f"搜索配置: {config.__dict__}")
-            
+
             # 检查缓存
             if config.use_cache:
                 cache_key = self._get_search_cache_key(query, k, config)
@@ -615,12 +617,12 @@ class EnhancedRedisVectorStore:
             use_hierarchical = self._should_use_hierarchical_retrieval(config)
 
             if use_hierarchical and self.hierarchical_retriever:
-                logger.info(f"使用层次化检索策略")
+                logger.info("使用层次化检索策略")
                 results = await self._hierarchical_search_with_fallback(
                     query, k, config
                 )
             else:
-                logger.info(f"使用标准检索策略")
+                logger.info("使用标准检索策略")
                 results = await self._standard_search(query, k, config)
 
             # 缓存结果
@@ -631,13 +633,15 @@ class EnhancedRedisVectorStore:
             logger.info(
                 f"搜索完成: 返回 {len(results)} 个结果，耗时 {elapsed_time:.3f}秒"
             )
-            
+
             # 输出结果详情（仅在DEBUG级别）
             if logger.isEnabledFor(logging.DEBUG) and results:
                 for i, (doc, score) in enumerate(results):
-                    content_preview = doc.page_content[:100].replace('\n', ' ')
-                    logger.debug(f"结果 {i+1}: score={score:.4f}, content='{content_preview}...'")
-                    
+                    content_preview = doc.page_content[:100].replace("\n", " ")
+                    logger.debug(
+                        f"结果 {i + 1}: score={score:.4f}, content='{content_preview}...'"
+                    )
+
             return results
 
         except Exception as e:
@@ -659,14 +663,16 @@ class EnhancedRedisVectorStore:
         try:
             doc_count = self.hierarchical_retriever.stats.get("total_documents", 0)
             cluster_count = self.hierarchical_retriever.stats.get("total_clusters", 0)
-            logger.debug(f"层次化检索状态检查: 文档数={doc_count}, 聚类数={cluster_count}, 阈值={config.hierarchical_threshold}")
-            
+            logger.debug(
+                f"层次化检索状态检查: 文档数={doc_count}, 聚类数={cluster_count}, 阈值={config.hierarchical_threshold}"
+            )
+
             # 需要有足够的文档和至少一个聚类才能使用层次化检索
             if doc_count >= config.hierarchical_threshold and cluster_count > 0:
                 return True
         except Exception as e:
             logger.warning(f"检查层次化检索状态失败: {e}")
-            
+
         logger.debug("不满足层次化检索条件，使用标准检索")
         return False
 
@@ -716,7 +722,10 @@ class EnhancedRedisVectorStore:
 
         # 执行混合搜索
         results = await self._hybrid_search(
-            query, query_vector, k * 3, config  # 获取更多候选
+            query,
+            query_vector,
+            k * 3,
+            config,  # 获取更多候选
         )
 
         # MMR去重和重排序
@@ -731,8 +740,10 @@ class EnhancedRedisVectorStore:
         self, query: str, query_vector: np.ndarray, k: int, config: SearchConfig
     ) -> List[Tuple[Document, float]]:
         """混合搜索"""
-        logger.debug(f"开始混合搜索: k={k}, semantic_weight={config.semantic_weight}, lexical_weight={config.lexical_weight}")
-        
+        logger.debug(
+            f"开始混合搜索: k={k}, semantic_weight={config.semantic_weight}, lexical_weight={config.lexical_weight}"
+        )
+
         # 并行执行语义和词汇搜索
         semantic_task = asyncio.create_task(self._semantic_search(query_vector, k))
         lexical_task = asyncio.create_task(self._lexical_search(query, k))
@@ -740,8 +751,10 @@ class EnhancedRedisVectorStore:
         semantic_results, lexical_results = await asyncio.gather(
             semantic_task, lexical_task
         )
-        
-        logger.debug(f"搜索阶段结果: 语义搜索={len(semantic_results)}, 词汇搜索={len(lexical_results)}")
+
+        logger.debug(
+            f"搜索阶段结果: 语义搜索={len(semantic_results)}, 词汇搜索={len(lexical_results)}"
+        )
 
         # 融合结果
         fused_results = self._fuse_results(
@@ -751,7 +764,7 @@ class EnhancedRedisVectorStore:
             config.lexical_weight,
             config.similarity_threshold,
         )
-        
+
         logger.debug(f"混合搜索完成: 融合后结果数={len(fused_results)}")
         return fused_results
 
@@ -847,7 +860,9 @@ class EnhancedRedisVectorStore:
                 results.append((doc_map[doc_id], score))
 
         results.sort(key=lambda x: x[1], reverse=True)
-        logger.debug(f"融合搜索结果: 原始阈值={threshold:.3f}, 自适应阈值={adaptive_threshold:.3f}, 结果数={len(results)}")
+        logger.debug(
+            f"融合搜索结果: 原始阈值={threshold:.3f}, 自适应阈值={adaptive_threshold:.3f}, 结果数={len(results)}"
+        )
         return results
 
     def _mmr_rerank(
@@ -1177,17 +1192,11 @@ class EnhancedRedisVectorStore:
 
         # 性能日志
         if duration > 1.0:  # 超过1秒的操作记录为警告
-            logger.warning(
-                f"性能警告 - {operation}: {duration:.3f}秒, " f"详情: {details}"
-            )
+            logger.warning(f"性能警告 - {operation}: {duration:.3f}秒, 详情: {details}")
         elif duration > 0.5:  # 超过500ms记录为信息
-            logger.info(
-                f"性能监控 - {operation}: {duration:.3f}秒, " f"详情: {details}"
-            )
+            logger.info(f"性能监控 - {operation}: {duration:.3f}秒, 详情: {details}")
         else:
-            logger.debug(
-                f"性能监控 - {operation}: {duration:.3f}秒, " f"详情: {details}"
-            )
+            logger.debug(f"性能监控 - {operation}: {duration:.3f}秒, 详情: {details}")
 
     def health_check(self) -> Dict[str, Any]:
         """健康检查"""
@@ -1648,16 +1657,16 @@ class EnhancedRedisVectorStore:
         try:
             logger.info(f"开始清空向量存储: {self.collection_name}")
             start_time = time.time()
-            
+
             async with self.get_redis_client() as client:
                 # 统计删除数量
                 deleted_counts = {
                     "documents": 0,
                     "vectors": 0,
                     "terms": 0,
-                    "indices": 0
+                    "indices": 0,
                 }
-                
+
                 # 1. 删除所有文档数据
                 doc_pattern = f"{self.collection_name}:doc:*"
                 cursor = 0
@@ -1670,7 +1679,7 @@ class EnhancedRedisVectorStore:
                         deleted_counts["documents"] += len(keys)
                     if cursor == 0:
                         break
-                
+
                 # 2. 删除所有向量数据
                 vec_pattern = f"{self.collection_name}:vec:*"
                 cursor = 0
@@ -1683,7 +1692,7 @@ class EnhancedRedisVectorStore:
                         deleted_counts["vectors"] += len(keys)
                     if cursor == 0:
                         break
-                
+
                 # 3. 删除所有倒排索引
                 term_pattern = f"{self.collection_name}:term:*"
                 cursor = 0
@@ -1696,7 +1705,7 @@ class EnhancedRedisVectorStore:
                         deleted_counts["terms"] += len(keys)
                     if cursor == 0:
                         break
-                
+
                 # 4. 删除所有索引映射
                 idx_pattern = f"{self.collection_name}:idx:*"
                 cursor = 0
@@ -1709,16 +1718,20 @@ class EnhancedRedisVectorStore:
                         deleted_counts["indices"] += len(keys)
                     if cursor == 0:
                         break
-            
+
             # 5. 清理FAISS索引
-            if self.index_manager and hasattr(self.index_manager, 'faiss_index') and self.index_manager.faiss_index:
+            if (
+                self.index_manager
+                and hasattr(self.index_manager, "faiss_index")
+                and self.index_manager.faiss_index
+            ):
                 try:
                     # 重新创建空的FAISS索引
                     self.index_manager.create_index(self.vector_dim, self.index_type)
                     logger.info("FAISS索引已重新创建")
                 except Exception as e:
                     logger.warning(f"重新创建FAISS索引失败: {e}")
-            
+
             # 6. 清理查询缓存
             if self.query_cache:
                 try:
@@ -1726,21 +1739,21 @@ class EnhancedRedisVectorStore:
                     logger.info("查询缓存已清空")
                 except Exception as e:
                     logger.warning(f"清理查询缓存失败: {e}")
-            
+
             # 7. 清理层次化检索器
             if self.hierarchical_retriever:
                 try:
                     # 重置聚类状态
-                    if hasattr(self.hierarchical_retriever, 'stats'):
+                    if hasattr(self.hierarchical_retriever, "stats"):
                         self.hierarchical_retriever.stats = {
                             "total_documents": 0,
                             "total_clusters": 0,
-                            "last_cluster_update": 0
+                            "last_cluster_update": 0,
                         }
                     logger.info("层次化检索器状态已重置")
                 except Exception as e:
                     logger.warning(f"重置层次化检索器失败: {e}")
-            
+
             # 8. 重置统计信息
             self.stats = {
                 "search_count": 0,
@@ -1748,31 +1761,31 @@ class EnhancedRedisVectorStore:
                 "error_count": 0,
                 "last_error": None,
             }
-            
+
             elapsed_time = time.time() - start_time
             total_deleted = sum(deleted_counts.values())
-            
+
             logger.info(
                 f"向量存储清空完成: 删除了 {total_deleted} 个条目 "
                 f"(文档: {deleted_counts['documents']}, 向量: {deleted_counts['vectors']}, "
                 f"词条: {deleted_counts['terms']}, 索引: {deleted_counts['indices']}), "
                 f"耗时: {elapsed_time:.3f}秒"
             )
-            
+
             return {
                 "success": True,
                 "deleted_counts": deleted_counts,
                 "total_deleted": total_deleted,
                 "processing_time": elapsed_time,
-                "message": "向量存储清空成功"
+                "message": "向量存储清空成功",
             }
-            
+
         except Exception as e:
             logger.error(f"清空向量存储失败: {e}")
             return {
                 "success": False,
                 "error": str(e),
-                "message": f"向量存储清空失败: {str(e)}"
+                "message": f"向量存储清空失败: {str(e)}",
             }
 
 

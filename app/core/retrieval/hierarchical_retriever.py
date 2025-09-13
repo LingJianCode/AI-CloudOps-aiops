@@ -10,16 +10,16 @@ Description: 层次化检索系统，解决多文档准确率下降问题
 """
 
 import asyncio
-import hashlib
-import logging
-import time
 from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum
+import hashlib
+import logging
+import time
 from typing import Any, Dict, List, Optional, Tuple
 
-import numpy as np
 from langchain_core.documents import Document
+import numpy as np
 
 logger = logging.getLogger("aiops.hierarchical_retriever")
 
@@ -199,10 +199,10 @@ class DocumentQualityScorer:
             "has_table",
         ]
 
-        for field in key_fields:
-            if field in metadata and metadata[field]:
-                if isinstance(metadata[field], (list, tuple)):
-                    score += 0.1 if len(metadata[field]) > 0 else 0
+        for key_field in key_fields:
+            if key_field in metadata and metadata[key_field]:
+                if isinstance(metadata[key_field], (list, tuple)):
+                    score += 0.1 if len(metadata[key_field]) > 0 else 0
                 else:
                     score += 0.1
 
@@ -228,7 +228,6 @@ class DocumentQualityScorer:
             "kubernetes",
             "docker",
             "prometheus",
-
             "nginx",
             "deployment",
             "service",
@@ -310,11 +309,11 @@ class ClusterManager:
         for cluster in self.clusters:
             # 如果总聚类数量不多，放宽size要求
             min_size_threshold = (
-                max(1, self.min_cluster_size // 2) 
-                if len(self.clusters) < 5 
+                max(1, self.min_cluster_size // 2)
+                if len(self.clusters) < 5
                 else self.min_cluster_size
             )
-            
+
             if cluster.size >= min_size_threshold:
                 similarity = self._cosine_similarity(query_embedding, cluster.centroid)
                 combined_score = similarity * 0.7 + cluster.quality_score * 0.3
@@ -322,8 +321,10 @@ class ClusterManager:
 
         cluster_scores.sort(key=lambda x: x[1], reverse=True)
         selected_clusters = [cluster for cluster, _ in cluster_scores[:k]]
-        
-        logger.debug(f"获取聚类结果: 总聚类数={len(self.clusters)}, 符合条件={len(cluster_scores)}, 返回={len(selected_clusters)}")
+
+        logger.debug(
+            f"获取聚类结果: 总聚类数={len(self.clusters)}, 符合条件={len(cluster_scores)}, 返回={len(selected_clusters)}"
+        )
         return selected_clusters
 
     def _cosine_similarity(self, vec1: np.ndarray, vec2: np.ndarray) -> float:

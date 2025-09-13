@@ -10,12 +10,15 @@ Description: 通知代理
 """
 
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from langchain_core.tools import tool
 
 from app.config.settings import config
-from app.services.notification import NotificationService
+from app.core.interfaces.notification_client import (
+    NotificationClient,
+    NullNotificationClient,
+)
 
 logger = logging.getLogger("aiops.notifier")
 
@@ -23,8 +26,10 @@ logger = logging.getLogger("aiops.notifier")
 class NotifierAgent:
     """Notification agent for sending operational alerts and messages"""
 
-    def __init__(self):
-        self.notification_service = NotificationService()
+    def __init__(self, notification_client: Optional[NotificationClient] = None):
+        self.notification_service: NotificationClient = (
+            notification_client or NullNotificationClient()
+        )
         logger.info("Notifier Agent initialized")
 
     async def send_human_help_request(
@@ -97,7 +102,7 @@ class NotifierAgent:
             services_list = "\n".join([f"- {service}" for service in affected_services])
 
             message = f"""
-{config_info['emoji']} **系统事件告警**
+{config_info["emoji"]} **系统事件告警**
 
 **严重程度:** {severity.upper()}
 
@@ -191,8 +196,8 @@ class NotifierAgent:
 {status_emoji} **系统健康状态报告**
 
 **整体状态:** {overall_status}
-**检查时间:** {health_data.get('timestamp', 'N/A')}
-**系统版本:** {health_data.get('version', 'N/A')}
+**检查时间:** {health_data.get("timestamp", "N/A")}
+**系统版本:** {health_data.get("version", "N/A")}
 """
 
             if unhealthy_components:

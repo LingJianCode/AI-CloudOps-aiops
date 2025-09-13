@@ -9,103 +9,241 @@ License: Apache 2.0
 Description: AI-CloudOps智能预测服务API接口
 """
 
-import logging
 from datetime import datetime
+import logging
 from typing import Any, Dict
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Body, HTTPException
 
 from app.api.decorators import api_response, log_api_call
 from app.common.constants import ErrorMessages, HttpStatusCodes
-from app.common.response import ResponseWrapper
+from app.common.exceptions import (
+    AIOpsException,
+    PredictionError,
+    ServiceUnavailableError,
+    ValidationError as DomainValidationError,
+)
 from app.models import (
+    BaseResponse,
     CpuPredictionRequest,
     DiskPredictionRequest,
     MemoryPredictionRequest,
     ModelInfoResponse,
     PredictionResponse,
-    PredictionServiceHealthResponse,
     QpsPredictionRequest,
     ServiceInfoResponse,
     ServiceReadyResponse,
 )
+from app.services.factory import ServiceFactory
 from app.services.prediction_service import PredictionService
 
-logger = logging.getLogger("aiops.api.predict")
+try:
+    from app.common.logger import get_logger
+
+    logger = get_logger("aiops.api.predict")
+except Exception:
+    logger = logging.getLogger("aiops.api.predict")
 
 router = APIRouter(tags=["prediction"])
-prediction_service = PredictionService()
+prediction_service = None
 
 
-@router.post("/qps", summary="AI-CloudOps QPS负载预测与实例建议")
+async def get_prediction_service() -> PredictionService:
+    global prediction_service
+    if prediction_service is None:
+        prediction_service = await ServiceFactory.get_service(
+            "prediction", PredictionService
+        )
+    return prediction_service
+
+
+@router.post(
+    "/qps",
+    summary="AI-CloudOps QPS负载预测与实例建议",
+    response_model=BaseResponse,
+    responses={
+        400: {
+            "description": "包含不支持的参数",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "extra_field": {
+                            "summary": "包含未定义字段时返回400",
+                            "value": {
+                                "code": 400,
+                                "message": "包含不支持的参数: prediction_type_invalid",
+                                "data": {
+                                    "status_code": 400,
+                                    "path": "/api/v1/predict/qps",
+                                    "method": "POST",
+                                    "detail": "包含不支持的参数: prediction_type_invalid",
+                                    "timestamp": "2025-01-01T00:00:00",
+                                },
+                            },
+                        }
+                    }
+                }
+            },
+        },
+        422: {
+            "description": "请求参数格式或范围错误",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "invalid_range": {
+                            "summary": "current_qps 不在允许范围",
+                            "value": {
+                                "code": 422,
+                                "message": "1 validation error for QpsPredictionRequest\ncurrent_qps\n  Input should be greater than 0 (type=greater_than, input_value=-10, gt=0.0)",
+                                "data": {
+                                    "status_code": 422,
+                                    "path": "/api/v1/predict/qps",
+                                    "method": "POST",
+                                    "detail": "current_qps 应为大于 0 的数值",
+                                    "timestamp": "2025-01-01T00:00:00",
+                                },
+                            },
+                        }
+                    }
+                }
+            },
+        },
+    },
+)
 @api_response("AI-CloudOps QPS负载预测与实例建议")
 @log_api_call(log_request=True)
-async def predict_qps(request: QpsPredictionRequest) -> Dict[str, Any]:
+async def predict_qps(
+    payload: Dict[str, Any] = Body(
+        ...,
+        examples={
+            "default": {
+                "value": {
+                    "current_qps": 123.45,
+                    "prediction_hours": 24,
+                    "granularity": "hour",
+                    "include_confidence": True,
+                    "include_anomaly_detection": True,
+                    "consider_historical_pattern": True,
+                    "target_utilization": 0.7,
+                    "sensitivity": 0.8,
+                }
+            }
+        },
+    ),
+) -> Dict[str, Any]:
     """QPS负载预测"""
-    await prediction_service.initialize()
+    logger.info("收到QPS预测请求")
+    await (await get_prediction_service()).initialize()
 
     try:
+        # 额外参数校验：禁止未定义字段，返回400（测试期望）
+        allowed_keys = set(QpsPredictionRequest.model_fields.keys())
+        extra_keys = set((payload or {}).keys()) - allowed_keys
+        if extra_keys:
+            raise HTTPException(
+                status_code=HttpStatusCodes.BAD_REQUEST,
+                detail=f"包含不支持的参数: {', '.join(sorted(extra_keys))}",
+            )
 
-        if request.enable_ai_insights:
-            prediction_result = await prediction_service.predict_with_ai_analysis(
+        # 使用Pydantic进行严格字段与数值校验
+        try:
+            req = QpsPredictionRequest(**payload)
+            logger.debug(f"QPS预测请求参数验证通过: current_qps={req.current_qps}, prediction_hours={req.prediction_hours}")
+        except Exception as e:
+            # 对数值范围等验证错误返回422
+            logger.warning(f"QPS预测请求参数验证失败: {str(e)}")
+            raise HTTPException(
+                status_code=HttpStatusCodes.UNPROCESSABLE_ENTITY, detail=str(e)
+            )
+
+        # 延后初始化，避免无效请求触发服务逻辑
+        await (await get_prediction_service()).initialize()
+
+        logger.debug(f"开始执行QPS预测，使用AI增强: {req.enable_ai_insights}")
+        if req.enable_ai_insights:
+            prediction_result = await (
+                await get_prediction_service()
+            ).predict_with_ai_analysis(
                 prediction_type="qps",
-                current_value=request.current_qps,
-                metric_query=request.metric_query,
-                prediction_hours=request.prediction_hours,
-                granularity=request.granularity.value,
+                current_value=req.current_qps,
+                metric_query=req.metric_query,
+                prediction_hours=req.prediction_hours,
+                granularity=req.granularity.value,
                 resource_constraints=(
-                    request.resource_constraints.dict()
-                    if request.resource_constraints
+                    req.resource_constraints.dict()
+                    if req.resource_constraints
                     else None
                 ),
-                enable_ai_insights=request.enable_ai_insights,
-                report_style=request.ai_report_style,
-                target_utilization=request.target_utilization,
-                sensitivity=request.sensitivity,
+                enable_ai_insights=req.enable_ai_insights,
+                report_style=req.ai_report_style,
+                target_utilization=req.target_utilization,
+                sensitivity=req.sensitivity,
             )
         else:
-            prediction_result = await prediction_service.predict_qps(
-                current_qps=request.current_qps,
-                metric_query=request.metric_query,
-                prediction_hours=request.prediction_hours,
-                granularity=request.granularity.value,
+            prediction_result = await (await get_prediction_service()).predict_qps(
+                current_qps=req.current_qps,
+                metric_query=req.metric_query,
+                prediction_hours=req.prediction_hours,
+                granularity=req.granularity.value,
                 resource_constraints=(
-                    request.resource_constraints.dict()
-                    if request.resource_constraints
+                    req.resource_constraints.dict()
+                    if req.resource_constraints
                     else None
                 ),
-                include_confidence=request.include_confidence,
-                include_anomaly_detection=request.include_anomaly_detection,
-                consider_historical_pattern=request.consider_historical_pattern,
-                target_utilization=request.target_utilization,
-                sensitivity=request.sensitivity,
+                include_confidence=req.include_confidence,
+                include_anomaly_detection=req.include_anomaly_detection,
+                consider_historical_pattern=req.consider_historical_pattern,
+                target_utilization=req.target_utilization,
+                sensitivity=req.sensitivity,
             )
 
         response = PredictionResponse(**prediction_result)
-        ai_status = "AI增强" if request.enable_ai_insights else "基础"
-        return ResponseWrapper.success(
-            data=response.dict(), message=f"QPS预测完成 ({ai_status}模式)"
-        )
+        return response.dict()
 
+    except (AIOpsException, DomainValidationError) as e:
+        raise e
+    except HTTPException as he:
+        # 透传显式的HTTP错误（如不支持的参数 -> 400，Pydantic校验 -> 422）
+        raise he
     except Exception as e:
         logger.error(f"QPS预测失败: {str(e)}")
-        raise HTTPException(
-            status_code=HttpStatusCodes.INTERNAL_SERVER_ERROR,
-            detail=ErrorMessages.PREDICTION_SERVICE_ERROR,
-        )
+        raise PredictionError(ErrorMessages.PREDICTION_SERVICE_ERROR)
 
 
-@router.post("/cpu", summary="AI-CloudOps CPU使用率预测与资源建议")
+@router.post(
+    "/cpu",
+    summary="AI-CloudOps CPU使用率预测与资源建议",
+    response_model=BaseResponse,
+)
 @api_response("AI-CloudOps CPU使用率预测与资源建议")
 @log_api_call(log_request=True)
-async def predict_cpu(request: CpuPredictionRequest) -> Dict[str, Any]:
+async def predict_cpu(
+    request: CpuPredictionRequest = Body(
+        ...,
+        examples={
+            "default": {
+                "value": {
+                    "current_cpu_percent": 57.2,
+                    "prediction_hours": 24,
+                    "granularity": "hour",
+                    "include_confidence": True,
+                    "include_anomaly_detection": True,
+                    "consider_historical_pattern": True,
+                    "target_utilization": 0.7,
+                    "sensitivity": 0.8,
+                }
+            }
+        },
+    ),
+) -> Dict[str, Any]:
     """CPU使用率预测"""
-    await prediction_service.initialize()
+    await (await get_prediction_service()).initialize()
 
     try:
-
         if request.enable_ai_insights:
-            prediction_result = await prediction_service.predict_with_ai_analysis(
+            prediction_result = await (
+                await get_prediction_service()
+            ).predict_with_ai_analysis(
                 prediction_type="cpu",
                 current_value=request.current_cpu_percent,
                 metric_query=request.metric_query,
@@ -122,7 +260,9 @@ async def predict_cpu(request: CpuPredictionRequest) -> Dict[str, Any]:
                 sensitivity=request.sensitivity,
             )
         else:
-            prediction_result = await prediction_service.predict_cpu_utilization(
+            prediction_result = await (
+                await get_prediction_service()
+            ).predict_cpu_utilization(
                 current_cpu_percent=request.current_cpu_percent,
                 metric_query=request.metric_query,
                 prediction_hours=request.prediction_hours,
@@ -140,30 +280,49 @@ async def predict_cpu(request: CpuPredictionRequest) -> Dict[str, Any]:
             )
 
         response = PredictionResponse(**prediction_result)
-        ai_status = "AI增强" if request.enable_ai_insights else "基础"
-        return ResponseWrapper.success(
-            data=response.dict(), message=f"CPU预测完成 ({ai_status}模式)"
-        )
+        return response.dict()
 
+    except (AIOpsException, DomainValidationError) as e:
+        raise e
     except Exception as e:
         logger.error(f"CPU预测失败: {str(e)}")
-        raise HTTPException(
-            status_code=HttpStatusCodes.INTERNAL_SERVER_ERROR,
-            detail=ErrorMessages.PREDICTION_SERVICE_ERROR,
-        )
+        raise PredictionError(ErrorMessages.PREDICTION_SERVICE_ERROR)
 
 
-@router.post("/memory", summary="AI-CloudOps 内存使用率预测与资源建议")
+@router.post(
+    "/memory",
+    summary="AI-CloudOps 内存使用率预测与资源建议",
+    response_model=BaseResponse,
+)
 @api_response("AI-CloudOps 内存使用率预测与资源建议")
 @log_api_call(log_request=True)
-async def predict_memory(request: MemoryPredictionRequest) -> Dict[str, Any]:
+async def predict_memory(
+    request: MemoryPredictionRequest = Body(
+        ...,
+        examples={
+            "default": {
+                "value": {
+                    "current_memory_percent": 68.1,
+                    "prediction_hours": 24,
+                    "granularity": "hour",
+                    "include_confidence": True,
+                    "include_anomaly_detection": True,
+                    "consider_historical_pattern": True,
+                    "target_utilization": 0.7,
+                    "sensitivity": 0.8,
+                }
+            }
+        },
+    ),
+) -> Dict[str, Any]:
     """内存使用率预测"""
-    await prediction_service.initialize()
+    await (await get_prediction_service()).initialize()
 
     try:
-
         if request.enable_ai_insights:
-            prediction_result = await prediction_service.predict_with_ai_analysis(
+            prediction_result = await (
+                await get_prediction_service()
+            ).predict_with_ai_analysis(
                 prediction_type="memory",
                 current_value=request.current_memory_percent,
                 metric_query=request.metric_query,
@@ -180,7 +339,9 @@ async def predict_memory(request: MemoryPredictionRequest) -> Dict[str, Any]:
                 sensitivity=request.sensitivity,
             )
         else:
-            prediction_result = await prediction_service.predict_memory_utilization(
+            prediction_result = await (
+                await get_prediction_service()
+            ).predict_memory_utilization(
                 current_memory_percent=request.current_memory_percent,
                 metric_query=request.metric_query,
                 prediction_hours=request.prediction_hours,
@@ -198,30 +359,49 @@ async def predict_memory(request: MemoryPredictionRequest) -> Dict[str, Any]:
             )
 
         response = PredictionResponse(**prediction_result)
-        ai_status = "AI增强" if request.enable_ai_insights else "基础"
-        return ResponseWrapper.success(
-            data=response.dict(), message=f"内存预测完成 ({ai_status}模式)"
-        )
+        return response.dict()
 
+    except (AIOpsException, DomainValidationError) as e:
+        raise e
     except Exception as e:
         logger.error(f"内存预测失败: {str(e)}")
-        raise HTTPException(
-            status_code=HttpStatusCodes.INTERNAL_SERVER_ERROR,
-            detail=ErrorMessages.PREDICTION_SERVICE_ERROR,
-        )
+        raise PredictionError(ErrorMessages.PREDICTION_SERVICE_ERROR)
 
 
-@router.post("/disk", summary="AI-CloudOps 磁盘使用率预测与存储建议")
+@router.post(
+    "/disk",
+    summary="AI-CloudOps 磁盘使用率预测与存储建议",
+    response_model=BaseResponse,
+)
 @api_response("AI-CloudOps 磁盘使用率预测与存储建议")
 @log_api_call(log_request=True)
-async def predict_disk(request: DiskPredictionRequest) -> Dict[str, Any]:
+async def predict_disk(
+    request: DiskPredictionRequest = Body(
+        ...,
+        examples={
+            "default": {
+                "value": {
+                    "current_disk_percent": 75.4,
+                    "prediction_hours": 24,
+                    "granularity": "hour",
+                    "include_confidence": True,
+                    "include_anomaly_detection": True,
+                    "consider_historical_pattern": True,
+                    "target_utilization": 0.7,
+                    "sensitivity": 0.8,
+                }
+            }
+        },
+    ),
+) -> Dict[str, Any]:
     """磁盘使用率预测"""
-    await prediction_service.initialize()
+    await (await get_prediction_service()).initialize()
 
     try:
-
         if request.enable_ai_insights:
-            prediction_result = await prediction_service.predict_with_ai_analysis(
+            prediction_result = await (
+                await get_prediction_service()
+            ).predict_with_ai_analysis(
                 prediction_type="disk",
                 current_value=request.current_disk_percent,
                 metric_query=request.metric_query,
@@ -238,7 +418,9 @@ async def predict_disk(request: DiskPredictionRequest) -> Dict[str, Any]:
                 sensitivity=request.sensitivity,
             )
         else:
-            prediction_result = await prediction_service.predict_disk_utilization(
+            prediction_result = await (
+                await get_prediction_service()
+            ).predict_disk_utilization(
                 current_disk_percent=request.current_disk_percent,
                 metric_query=request.metric_query,
                 prediction_hours=request.prediction_hours,
@@ -256,79 +438,57 @@ async def predict_disk(request: DiskPredictionRequest) -> Dict[str, Any]:
             )
 
         response = PredictionResponse(**prediction_result)
-        ai_status = "AI增强" if request.enable_ai_insights else "基础"
-        return ResponseWrapper.success(
-            data=response.dict(), message=f"磁盘预测完成 ({ai_status}模式)"
-        )
+        return response.dict()
 
+    except (AIOpsException, DomainValidationError) as e:
+        raise e
     except Exception as e:
         logger.error(f"磁盘预测失败: {str(e)}")
-        raise HTTPException(
-            status_code=HttpStatusCodes.INTERNAL_SERVER_ERROR,
-            detail=ErrorMessages.PREDICTION_SERVICE_ERROR,
-        )
+        raise PredictionError(ErrorMessages.PREDICTION_SERVICE_ERROR)
 
 
-@router.get("/health", summary="AI-CloudOps 预测服务健康检查")
-@api_response("AI-CloudOps 预测服务健康检查")
-async def prediction_health() -> Dict[str, Any]:
-    """获取预测服务的健康状态信息"""
-    try:
-        await prediction_service.initialize()
-        health_info = await prediction_service.get_service_health_info()
-        response = PredictionServiceHealthResponse(**health_info)
-        return ResponseWrapper.success(data=response.dict(), message="健康检查完成")
-    except Exception as e:
-        logger.error(f"健康检查失败: {str(e)}")
-
-        return ResponseWrapper.success(
-            data={
-                "service_status": "error",
-                "model_status": "unknown",
-                "error_message": str(e),
-            },
-            message="健康检查部分失败",
-        )
-
-
-@router.get("/ready", summary="AI-CloudOps 预测服务就绪检查")
+@router.get(
+    "/ready",
+    summary="AI-CloudOps 预测服务就绪检查",
+    response_model=BaseResponse,
+)
 @api_response("AI-CloudOps 预测服务就绪检查")
 async def prediction_ready() -> Dict[str, Any]:
     """检查服务就绪状态"""
     try:
-        await prediction_service.initialize()
+        await (await get_prediction_service()).initialize()
 
-        is_initialized = prediction_service.is_initialized()
-        is_healthy = await prediction_service.health_check()
+        is_initialized = (await get_prediction_service()).is_initialized()
+        is_healthy = await (await get_prediction_service()).health_check()
         is_ready = is_initialized and is_healthy
 
         if not is_ready:
-            raise HTTPException(
-                status_code=HttpStatusCodes.SERVICE_UNAVAILABLE,
-                detail=ErrorMessages.SERVICE_UNAVAILABLE,
-            )
+            raise ServiceUnavailableError("prediction")
 
         response = ServiceReadyResponse(
             ready=True,
             service="prediction",
             timestamp=datetime.now().isoformat(),
             message="服务就绪",
+            initialized=is_initialized,
+            healthy=is_healthy,
+            status="ready",
         )
-        return ResponseWrapper.success(
-            data=response.dict(),
-            message="服务就绪",
-        )
+        return response.dict()
+    except (AIOpsException, DomainValidationError):
+        raise
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"就绪检查失败: {str(e)}")
-        raise HTTPException(
-            status_code=HttpStatusCodes.SERVICE_UNAVAILABLE,
-            detail=ErrorMessages.SERVICE_UNAVAILABLE,
-        )
+        raise ServiceUnavailableError("prediction", {"error": str(e)})
 
 
-@router.get("/info", summary="AI-CloudOps 预测服务信息")
+@router.get(
+    "/info",
+    summary="AI-CloudOps 预测服务信息",
+    response_model=BaseResponse,
+)
 @api_response("AI-CloudOps 预测服务信息")
 async def prediction_info() -> Dict[str, Any]:
     from app.common.constants import AppConstants
@@ -382,7 +542,6 @@ async def prediction_info() -> Dict[str, Any]:
             "cpu_predict": "/cpu",
             "memory_predict": "/memory",
             "disk_predict": "/disk",
-            "health": "/predict/health",
             "ready": "/predict/ready",
             "info": "/predict/info",
             "models": "/predict/models",
@@ -430,16 +589,23 @@ async def prediction_info() -> Dict[str, Any]:
         status=info["service_status"],
     )
 
-    return ResponseWrapper.success(data=response.dict(), message="服务信息获取成功")
+    data = response.dict()
+    # 将 required 字段放在顶层数据对象内，api_response将包裹
+    data["supported_prediction_types"] = info["supported_prediction_types"]
+    return data
 
 
-@router.get("/models", summary="AI-CloudOps 模型信息")
+@router.get(
+    "/models",
+    summary="AI-CloudOps 模型信息",
+    response_model=BaseResponse,
+)
 @api_response("AI-CloudOps 模型信息")
 async def model_info() -> Dict[str, Any]:
     """获取预测服务中加载的模型详细信息"""
     try:
-        await prediction_service.initialize()
-        model_details = await prediction_service.get_model_info()
+        await (await get_prediction_service()).initialize()
+        model_details = await (await get_prediction_service()).get_model_info()
 
         response = ModelInfoResponse(
             models=model_details.get("models", []),
@@ -448,21 +614,15 @@ async def model_info() -> Dict[str, Any]:
             status=model_details.get("status", "healthy"),
             timestamp=datetime.now().isoformat(),
         )
-        return ResponseWrapper.success(data=response.dict(), message="模型信息获取成功")
+        data = response.dict()
+        # 兼容测试期待字段
+        data["models_loaded"] = data.get("loaded_models", 0)
+        return data
+    except (AIOpsException, DomainValidationError) as e:
+        raise e
     except Exception as e:
         logger.error(f"获取模型信息失败: {str(e)}")
-
-        error_response = ModelInfoResponse(
-            models=[],
-            total_models=0,
-            loaded_models=0,
-            status="error",
-            timestamp=datetime.now().isoformat(),
-        )
-        return ResponseWrapper.success(
-            data=error_response.dict(),
-            message="模型信息获取失败",
-        )
+        raise PredictionError("获取模型信息失败")
 
 
 __all__ = ["router"]

@@ -1,27 +1,51 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-"""
-AI-CloudOps-aiops
-Author: Bamboo
-Email: bamboocloudops@gmail.com
-License: Apache 2.0
-Description: pytest测试配置文件，定义全局测试夹具和配置
-"""
-
 import asyncio
-import json
+from datetime import datetime, timedelta
+import inspect
 import logging
 import os
-import sys
-import tempfile
-import time
-from datetime import datetime, timedelta
 from pathlib import Path
+import sys
+import time
 
 import pytest
-import yaml
 import requests
+import yaml
+
+
+def pytest_pycollect_makeitem(collector, name, obj):
+    # 跳过收集 tests/test_prediction_api.py 中的工具函数 test_api_endpoint
+    try:
+        module = getattr(collector, "module", None)
+        if (
+            module
+            and getattr(module, "__file__", "").endswith("tests/test_prediction_api.py")
+            and name == "test_api_endpoint"
+            and inspect.isfunction(obj)
+        ):
+            return []
+    except Exception:
+        pass
+    # 其他项按默认流程
+    return None
+
+
+def _remove_prediction_api_helper(items):
+    # 防止将工具函数 test_api_endpoint 视为测试用例（其参数非fixture）
+    for item in list(items):
+        if item.nodeid.endswith("tests/test_prediction_api.py::test_api_endpoint"):
+            items.remove(item)
+
+
+@pytest.fixture
+def service():
+    # 为异步集成测试提供一个占位fixture，真正的实例在测试内部创建
+    # 这些测试中的函数签名包含 service，但并未使用pytest注入
+    # 提供该fixture以防止“fixture 'service' not found”错误
+    return None
+
 
 # 添加项目路径到sys.path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -343,9 +367,13 @@ def service_health_checker(api_base_url):
 
     def check_service_health(service_name=""):
         try:
-            endpoint = f"/health" if not service_name else f"/{service_name}/health"
+            # 统一检查对应服务的就绪接口
+            if not service_name:
+                endpoint = "/predict/ready"
+            else:
+                endpoint = f"/{service_name}/ready"
             response = requests.get(f"{api_base_url}{endpoint}", timeout=10)
-            return response.status_code in [200, 500]  # 500也表示服务在运行
+            return response.status_code in [200, 503]  # 503也表示服务在运行但未就绪
         except Exception:
             return False
 
@@ -406,7 +434,6 @@ def performance_monitor():
     return PerformanceMonitor()
 
 
-
 def pytest_addoption(parser):
     """添加pytest命令行选项"""
     parser.addoption(
@@ -438,6 +465,9 @@ def pytest_collection_modifyitems(config, items):
     """修改测试收集"""
     skip_integration = pytest.mark.skip(reason="使用 --skip-integration 跳过")
     skip_slow = pytest.mark.skip(reason="使用 --skip-slow 跳过")
+
+    # 移除不应被收集的辅助测试函数
+    _remove_prediction_api_helper(items)
 
     for item in items:
         if "integration" in item.keywords and config.getoption("--skip-integration"):

@@ -11,6 +11,7 @@ Description: 时间工具类
 
 import calendar
 from datetime import datetime, timedelta, timezone
+from typing import Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
@@ -26,7 +27,7 @@ class TimeUtils:
         return set(config.time.holidays)
 
     @staticmethod
-    def extract_time_features(timestamp: datetime) -> dict:
+    def extract_time_features(timestamp: datetime) -> Dict[str, float | int | bool]:
         # 将时间转换为分钟
         minutes = timestamp.hour * 60 + timestamp.minute
 
@@ -113,7 +114,7 @@ class TimeUtils:
     @staticmethod
     def get_time_windows(
         start_time: datetime, end_time: datetime, window_size_minutes: int = 5
-    ) -> list:
+    ) -> List[Tuple[datetime, datetime]]:
         """获取时间窗口列表"""
         windows = []
         current = start_time
@@ -132,6 +133,6 @@ class TimeUtils:
         if seconds < 60:
             return f"{seconds:.1f}秒"
         elif seconds < 3600:
-            return f"{seconds/60:.1f}分钟"
+            return f"{seconds / 60:.1f}分钟"
         else:
-            return f"{seconds/3600:.1f}小时"
+            return f"{seconds / 3600:.1f}小时"

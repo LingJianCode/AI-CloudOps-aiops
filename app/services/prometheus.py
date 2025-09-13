@@ -9,8 +9,8 @@ License: Apache 2.0
 Description: Prometheus监控数据服务
 """
 
-import logging
 from datetime import datetime
+import logging
 from typing import Any, Dict, List, Optional
 
 import pandas as pd

@@ -9,21 +9,22 @@ License: Apache 2.0
 Description: AI-CloudOps智能通知服务
 """
 
+from datetime import datetime
 import json
 import logging
-from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 import requests
 
 from app.common.constants import ServiceConstants
 from app.config.settings import config
+from app.core.interfaces.notification_client import NotificationClient
 from app.services.base import BaseService
 
 logger = logging.getLogger("aiops.notification")
 
 
-class NotificationService(BaseService):
+class NotificationService(BaseService, NotificationClient):
     """AI-CloudOps智能通知服务 - 支持多种通知渠道"""
 
     # 通知颜色映射
@@ -118,8 +119,8 @@ class NotificationService(BaseService):
 🚨 **根因分析告警**
 
 **分析时间范围：**
-- 开始时间: {time_range.get('start', 'N/A')}
-- 结束时间: {time_range.get('end', 'N/A')}
+- 开始时间: {time_range.get("start", "N/A")}
+- 结束时间: {time_range.get("end", "N/A")}
 - 分析指标数: {metrics_count}
 
 **发现的根因：**
@@ -132,16 +133,16 @@ class NotificationService(BaseService):
                 )
 
                 message += f"""
-{i}. {confidence_emoji} **{cause.get('metric', 'Unknown')}**
+{i}. {confidence_emoji} **{cause.get("metric", "Unknown")}**
    - 置信度: {confidence:.2f}
-   - 异常次数: {cause.get('anomaly_count', 0)}
-   - 首次发现: {cause.get('first_occurrence', 'N/A')}
+   - 异常次数: {cause.get("anomaly_count", 0)}
+   - 首次发现: {cause.get("first_occurrence", "N/A")}
 """
 
                 if cause.get("description"):
                     message += f"   - 描述: {cause['description']}\n"
 
-            message += f"""
+            message += """
 **建议操作：**
 - 检查相关服务状态
 - 查看详细监控数据
@@ -257,7 +258,7 @@ class NotificationService(BaseService):
             if not unhealthy_components:
                 return True  # 系统健康，不需要告警
 
-            message = f"""
+            message = """
 🚨 **系统健康告警**
 
 **异常组件：**
@@ -266,7 +267,7 @@ class NotificationService(BaseService):
                 message += f"- ❌ {component}\n"
 
             if healthy_components:
-                message += f"""
+                message += """
 **正常组件：**
 """
                 for component in healthy_components:

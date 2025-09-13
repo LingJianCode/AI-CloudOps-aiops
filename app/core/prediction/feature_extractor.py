@@ -9,8 +9,8 @@ License: Apache 2.0
 Description: AI-CloudOps特征提取器 - 从时间序列数据中提取预测特征
 """
 
-import logging
 from datetime import datetime
+import logging
 from typing import Any, Dict, List
 
 import numpy as np
@@ -441,7 +441,7 @@ class FeatureExtractor:
             y = np.array(values)
             slope = np.polyfit(x, y, 1)[0]
             return float(np.clip(slope, -10, 10))  # 限制趋势范围
-        except:
+        except Exception:
             return 0.0
 
     def _calculate_growth_rate(

@@ -10,11 +10,13 @@ Description: AI-CloudOps智能预测引擎 - 结合大模型的全流程预测�
 """
 
 import asyncio
-import logging
 from datetime import datetime
+import json
+import logging
 from typing import Any, Dict, List, Optional, Union
 
 from app.common.exceptions import PredictionError
+from app.core.interfaces.llm_client import LLMClient, NullLLMClient
 from app.core.prediction.intelligent_report_generator import (
     IntelligentReportGenerator,
     ReportContext,
@@ -22,39 +24,40 @@ from app.core.prediction.intelligent_report_generator import (
 from app.core.prediction.prediction_analyzer import PredictionAnalyzer
 from app.core.prediction.unified_predictor import UnifiedPredictor
 from app.models import PredictionDataPoint, PredictionGranularity, PredictionType
-from app.services.llm import LLMService
 
 logger = logging.getLogger("aiops.core.prediction.intelligent")
 
 
 class IntelligentPredictor:
-    """智能预测引擎 - 在预测全流程中集成大模型分析"""
+    """预测引擎 - 在预测流程中集成外部分析"""
 
-    def __init__(self, model_manager, feature_extractor):
+    def __init__(
+        self, model_manager, feature_extractor, llm_client: Optional[LLMClient] = None
+    ):
         # 基础预测组件
         self.unified_predictor = UnifiedPredictor(model_manager, feature_extractor)
 
-        # AI增强组件
-        self.analyzer = PredictionAnalyzer()
-        self.report_generator = IntelligentReportGenerator()
-        self.llm_service = LLMService()
+        # 增强组件
+        self.llm_service: LLMClient = llm_client or NullLLMClient()
+        self.analyzer = PredictionAnalyzer(self.llm_service)
+        self.report_generator = IntelligentReportGenerator(self.llm_service)
 
         # 状态管理
         self._initialized = False
         self._analysis_cache = {}  # 分析结果缓存
 
     async def initialize(self):
-        """初始化智能预测引擎"""
+        """初始化预测引擎"""
         try:
             # 初始化基础预测器
             await self.unified_predictor.initialize()
             self._initialized = True
-            logger.info("智能预测引擎初始化完成")
+            logger.info("预测引擎初始化完成")
 
         except Exception as e:
-            logger.error(f"智能预测引擎初始化失败: {str(e)}")
+            logger.error(f"预测引擎初始化失败: {str(e)}")
             self._initialized = False
-            raise PredictionError(f"智能预测引擎初始化失败: {str(e)}")
+            raise PredictionError(f"预测引擎初始化失败: {str(e)}")
 
     async def predict_with_ai_analysis(
         self,
@@ -67,7 +70,7 @@ class IntelligentPredictor:
         enable_ai_insights: bool = True,
         report_style: str = "professional",
     ) -> Dict[str, Any]:
-        """执行AI增强的完整预测分析"""
+        """执行增强的预测分析"""
 
         if not self._initialized:
             raise PredictionError("智能预测引擎未初始化")
@@ -76,12 +79,12 @@ class IntelligentPredictor:
         analysis_id = f"{prediction_type.value}_{int(start_time.timestamp())}"
 
         try:
-            logger.info(f"开始执行AI增强预测分析 - ID: {analysis_id}")
+            logger.info(f"开始执行增强预测分析 - ID: {analysis_id}")
 
-            # 阶段1: 预测前 - AI分析历史上下文
+            # 阶段1: 预测前 - 分析历史上下文
             context_analysis = None
             if enable_ai_insights:
-                logger.info("阶段1: AI分析历史数据上下文")
+                logger.info("阶段1: 分析历史数据上下文")
                 context_analysis = await self.analyzer.analyze_historical_context(
                     prediction_type=prediction_type,
                     current_value=current_value,
@@ -116,12 +119,12 @@ class IntelligentPredictor:
                 granularity=granularity,
             )
 
-            # 阶段3: 预测后 - AI解读和分析
+            # 阶段3: 预测后 - 解读和分析
             interpretation = None
             insights = []
 
             if enable_ai_insights:
-                logger.info("阶段3: AI解读预测结果")
+                logger.info("阶段3: 解读预测结果")
 
                 # 执行预测解读
                 interpretation = await self.analyzer.interpret_prediction_results(
@@ -142,10 +145,10 @@ class IntelligentPredictor:
                 )
                 logger.debug(f"生成洞察: {len(insights)}条")
 
-            # 阶段4: 生成AI报告
+            # 阶段4: 生成报告
             ai_report = None
             if enable_ai_insights and context_analysis and interpretation:
-                logger.info("阶段4: 生成AI分析报告")
+                logger.info("阶段4: 生成分析报告")
 
                 # 安全获取字典数据，防止类型错误
                 safe_base_results = (
@@ -208,7 +211,7 @@ class IntelligentPredictor:
                     ),
                 }
 
-                logger.info("AI分析报告生成完成")
+                logger.info("分析报告生成完成")
 
             # 构建完整响应
             end_time = datetime.now()
@@ -217,7 +220,7 @@ class IntelligentPredictor:
             response = {
                 # 基础预测结果
                 **base_prediction_results,
-                # AI增强结果
+                # 增强结果
                 "ai_enhanced": enable_ai_insights,
                 "analysis_context": context_analysis,
                 "prediction_interpretation": interpretation,
@@ -239,12 +242,12 @@ class IntelligentPredictor:
             self._cache_analysis_result(analysis_id, response)
 
             logger.info(
-                f"AI增强预测分析完成 - ID: {analysis_id}, 耗时: {processing_time:.2f}秒"
+                f"增强预测分析完成 - ID: {analysis_id}, 耗时: {processing_time:.2f}秒"
             )
             return response
 
         except Exception as e:
-            logger.error(f"AI增强预测分析失败 - ID: {analysis_id}: {str(e)}")
+            logger.error(f"增强预测分析失败 - ID: {analysis_id}: {str(e)}")
             # 如果AI增强失败，返回基础预测结果
             return await self._fallback_to_basic_prediction(
                 prediction_type,

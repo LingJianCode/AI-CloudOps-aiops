@@ -81,32 +81,32 @@ services:
     networks:
       - aiops-network
 
-  ollama:
-    image: ollama/ollama:latest
-    container_name: ollama
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-    environment:
-      - OLLAMA_HOST=0.0.0.0
-      - OLLAMA_KEEP_ALIVE=24h
-    restart: unless-stopped
-    networks:
-      - aiops-network
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
-    # 预拉取常用模型
-    command: >
-      sh -c "ollama serve &
-             sleep 10 &&
-             ollama pull qwen2.5:3b &&
-             wait"
+  # ollama:
+  #   image: ollama/ollama:latest
+  #   container_name: ollama
+  #   ports:
+  #     - "11434:11434"
+  #   volumes:
+  #     - ollama_data:/root/.ollama
+  #   environment:
+  #     - OLLAMA_HOST=0.0.0.0
+  #     - OLLAMA_KEEP_ALIVE=24h
+  #   restart: unless-stopped
+  #   networks:
+  #     - aiops-network
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: 1
+  #             capabilities: [gpu]
+  #   # 预拉取常用模型
+  #   command: >
+  #     sh -c "ollama serve &
+  #            sleep 10 &&
+  #            ollama pull qwen2.5:3b &&
+  #            wait"
 
   redis:
     image: redis:6.2.5

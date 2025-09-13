@@ -18,7 +18,9 @@ from pydantic import BaseModel, Field
 class AssistantRequest(BaseModel):
     question: str = Field(..., min_length=1, description="用户提问")
     mode: int = Field(default=1, description="助手模式:1=RAG,2=MCP", ge=1, le=2)
-    chat_history: Optional[List[Dict[str, str]]] = Field(default=None, description="对话历史")
+    chat_history: Optional[List[Dict[str, str]]] = Field(
+        default=None, description="对话历史"
+    )
     use_web_search: bool = Field(default=False, description="是否使用网络搜索")
     session_id: Optional[str] = Field(default=None, description="会话ID")
 
@@ -62,6 +64,9 @@ class ServiceReadyResponse(BaseModel):
     service: str
     timestamp: str
     message: Optional[str] = None
+    initialized: Optional[bool] = None
+    healthy: Optional[bool] = None
+    status: Optional[str] = None
 
 
 class ServiceHealthResponse(BaseModel):
@@ -94,6 +99,12 @@ class ClearCacheResponse(BaseModel):
     timestamp: str
     message: str
 
+
+class StreamResponse(BaseModel):
+    success: bool
+    data: Optional[Dict[str, Any]] = None
+    timestamp: str
+    message: Optional[str] = None
 
 class UploadKnowledgeResponse(BaseModel):
     uploaded: bool

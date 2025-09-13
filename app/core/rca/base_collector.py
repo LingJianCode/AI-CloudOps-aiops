@@ -9,9 +9,9 @@ License: Apache 2.0
 Description: 数据收集器基础类
 """
 
-import logging
 from abc import ABC, abstractmethod
 from datetime import datetime
+import logging
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger("aiops.rca.collectors")
@@ -126,7 +126,7 @@ class BaseDataCollector(ABC):
         time_diff = (end_time - start_time).total_seconds()
         if time_diff > 24 * 3600:
             raise ValueError(
-                f"时间范围不能超过24小时，当前范围: {time_diff/3600:.2f}小时"
+                f"时间范围不能超过24小时，当前范围: {time_diff / 3600:.2f}小时"
             )
 
         if time_diff < 0:

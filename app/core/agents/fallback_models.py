@@ -9,16 +9,16 @@ License: Apache 2.0
 Description: AI-CloudOps回退模型管理器
 """
 
-import hashlib
-import logging
-import re
-import struct
-import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from functools import lru_cache
+import hashlib
+import logging
+import re
+import struct
 from typing import Any, Dict, List, Optional
+import uuid
 
 from langchain_core.embeddings import Embeddings
 from langchain_core.language_models.chat_models import BaseChatModel

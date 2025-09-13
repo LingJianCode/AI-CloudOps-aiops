@@ -10,15 +10,15 @@ Description: 日志数据收集器
 """
 
 import asyncio
-import hashlib
-import re
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
+import hashlib
+import re
 from typing import Any, Dict, List, Optional
 
 from app.config.settings import CONFIG, config
+from app.core.interfaces.k8s_client import K8sClient, NullK8sClient
 from app.models.rca_models import LogData
-from app.services.kubernetes import KubernetesService
 
 from .base_collector import BaseDataCollector
 
@@ -63,9 +63,13 @@ class LogsCollector(BaseDataCollector):
         "%Y-%m-%dT%H:%M:%S.%f%z",
     ]
 
-    def __init__(self, config_dict: Optional[Dict[str, Any]] = None):
+    def __init__(
+        self,
+        config_dict: Optional[Dict[str, Any]] = None,
+        k8s_client: Optional[K8sClient] = None,
+    ):
         super().__init__("logs", config_dict)
-        self.k8s: Optional[KubernetesService] = None
+        self.k8s: K8sClient = k8s_client or NullK8sClient()
 
         # 从配置文件读取日志收集器配置
         self.rca_config = config.rca
@@ -112,33 +116,34 @@ class LogsCollector(BaseDataCollector):
         )
 
     async def _do_initialize(self) -> None:
-        """初始化Kubernetes服务连接"""
+        """初始化Kubernetes客户端（通过依赖注入）"""
         try:
-            self.k8s = KubernetesService()
+            if isinstance(self.k8s, NullK8sClient):
+                self.logger.warning("未注入K8s客户端，将以降级模式运行")
+                return
 
-            # 增加重试机制的健康检查
             for attempt in range(3):
                 try:
                     if await self.k8s.health_check():
-                        self.logger.info("Kubernetes连接初始化成功")
+                        self.logger.info("Kubernetes客户端健康检查通过")
                         return
                     else:
                         self.logger.warning(
                             f"Kubernetes健康检查失败，尝试 {attempt + 1}/3"
                         )
                         if attempt < 2:
-                            await asyncio.sleep(2**attempt)  # 指数退避
+                            await asyncio.sleep(2**attempt)
                 except Exception as e:
                     self.logger.warning(
-                        f"Kubernetes连接尝试 {attempt + 1}/3 失败: {str(e)}"
+                        f"Kubernetes客户端连接尝试 {attempt + 1}/3 失败: {str(e)}"
                     )
                     if attempt < 2:
                         await asyncio.sleep(2**attempt)
 
-            raise RuntimeError("无法连接到Kubernetes集群，已尝试3次")
+            raise RuntimeError("无法连接到Kubernetes客户端，已尝试3次")
 
         except Exception as e:
-            self.logger.error(f"初始化Kubernetes服务时发生错误: {str(e)}")
+            self.logger.error(f"初始化Kubernetes客户端时发生错误: {str(e)}")
             raise
 
     async def collect(
@@ -298,7 +303,9 @@ class LogsCollector(BaseDataCollector):
             return logs if logs else ""
         except Exception as e:
             # 只记录debug级别日志，避免正常错误（如容器未启动）产生过多日志
-            self.logger.debug(f"获取Pod {pod_name} 容器 {container_name} 日志失败: {str(e)}")
+            self.logger.debug(
+                f"获取Pod {pod_name} 容器 {container_name} 日志失败: {str(e)}"
+            )
             return ""
 
     def _parse_logs_optimized(
@@ -331,7 +338,9 @@ class LogsCollector(BaseDataCollector):
                     continue
                 else:
                     # 超过最大行数，停止收集
-                    current_entry.stack_trace = "\n".join(stack_trace_lines[:self.max_stack_trace_lines])
+                    current_entry.stack_trace = "\n".join(
+                        stack_trace_lines[: self.max_stack_trace_lines]
+                    )
                     stack_trace_lines = []
                     continue
 
@@ -339,7 +348,9 @@ class LogsCollector(BaseDataCollector):
             if stack_trace_lines and current_entry:
                 # 将堆栈跟踪添加到当前条目
                 if not current_entry.stack_trace:
-                    current_entry.stack_trace = "\n".join(stack_trace_lines[:self.max_stack_trace_lines])
+                    current_entry.stack_trace = "\n".join(
+                        stack_trace_lines[: self.max_stack_trace_lines]
+                    )
                 stack_trace_lines = []
 
             # 解析新的日志条目
@@ -364,7 +375,7 @@ class LogsCollector(BaseDataCollector):
             log_hash = self._get_log_hash(pod_name, container_name, line)
             if log_hash not in self._log_dedup:
                 self._log_dedup.add(log_hash)
-                
+
                 # 定期清理去重缓存，防止内存泄漏
                 self._dedup_cleanup_counter += 1
                 if self._dedup_cleanup_counter >= 1000:
@@ -555,12 +566,25 @@ class LogsCollector(BaseDataCollector):
         # 快速检查常见的堆栈跟踪特征
         if line.startswith(("    at ", "  File ", "Traceback", "goroutine", "\tat")):
             return True
-        
+
         # 检查是否以空格或制表符开头（常见的堆栈跟踪缩进）
-        if line and (line[0] == ' ' or line[0] == '\t') and len(line.strip()) > 10:
+        if line and (line[0] == " " or line[0] == "\t") and len(line.strip()) > 10:
             # 检查是否包含函数调用或文件路径的特征
             # 更严格的判断，避免误判
-            if any(indicator in line for indicator in ['.java:', '.py:', '.go:', '()', '.js:', 'line ', 'Line ', 'at ', 'File ']):
+            if any(
+                indicator in line
+                for indicator in [
+                    ".java:",
+                    ".py:",
+                    ".go:",
+                    "()",
+                    ".js:",
+                    "line ",
+                    "Line ",
+                    "at ",
+                    "File ",
+                ]
+            ):
                 return True
 
         # 使用编译的模式

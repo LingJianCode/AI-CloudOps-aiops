@@ -1,0 +1,29 @@
+[tool.ruff]
+line-length = 220
+target-version = "py310"
+respect-gitignore = true
+
+# 选择常用基础规则集：
+# E (pycodestyle), F (pyflakes), I (import 排序)
+[tool.ruff.lint]
+select = [
+    "E",
+    "F",
+    "I",
+]
+ignore = ["E402"]
+
+# 保持默认 __init__ 处理
+
+# isort 风格设置
+[tool.ruff.lint.isort]
+combine-as-imports = true
+force-sort-within-sections = true
+known-first-party = ["app", "tests"]
+split-on-trailing-comma = true
+
+[tool.ruff.format]
+quote-style = "preserve"
+indent-style = "space"
+line-ending = "lf"
+

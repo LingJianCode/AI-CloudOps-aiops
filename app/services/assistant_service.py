@@ -10,31 +10,70 @@ Description: AI-CloudOps智能助手服务
 """
 
 import asyncio
+import json
+import time
+import traceback
+from datetime import datetime
 import logging
 import os
+from typing import TYPE_CHECKING, Any, Dict, Optional, Union, Type
 import uuid
-from datetime import datetime
-from typing import Any, Dict, Optional
+
+from pydantic import BaseModel
+from starlette.websockets import WebSocket
 
 from ..common.exceptions import AssistantError, ValidationError
 from ..config.settings import config
 from ..core.agents.enterprise_assistant import get_enterprise_assistant
 from .base import BaseService
+from .factory import ServiceFactory
+from ..models import AssistantRequest
+from ..models.assistant_models import StreamResponse
+
+if TYPE_CHECKING:
+    from .mcp_service import MCPService
 
 logger = logging.getLogger("aiops.services.assistant")
 
 
 class OptimizedAssistantService(BaseService):
-    """智能助手服务"""
+    """助手服务"""
 
     def __init__(self) -> None:
         super().__init__("assistant")
         self._assistant = None
         self._performance_monitor = PerformanceMonitor()
+        self.websocket = WebSocketManager(self.handle_ws_answer, AssistantRequest)
+
+    async def handle_ws_answer(self, websocket: WebSocket, req: AssistantRequest):
+        """WebSocket 消息处理适配器"""
+        try:
+            result = await self.get_answer(
+                question=req.question,
+                mode=req.mode,
+                session_id=req.session_id
+            )
+            await websocket.send_json(StreamResponse(
+                data=result,
+                success=True,
+                timestamp=datetime.now().isoformat(),
+            ).dict())
+
+        except Exception as e:
+
+            await websocket.send_json(StreamResponse(
+                success=False,
+                timestamp=datetime.now().isoformat(),
+                message=str(e),
+            ).dict())
 
     async def _do_initialize(self) -> None:
         try:
-            self._assistant = await get_enterprise_assistant()
+            # 通过服务注入，避免 Core 直接依赖
+            from app.services.llm import LLMService
+
+            llm_service = LLMService()
+            self._assistant = await get_enterprise_assistant(llm_client=llm_service)
             logger.info("智能助手服务初始化完成")
         except Exception as e:
             logger.warning(f"服务初始化失败: {str(e)}，将在首次使用时重试")
@@ -46,7 +85,12 @@ class OptimizedAssistantService(BaseService):
             # 如果assistant为None，尝试获取但不强制失败
             if not self._assistant:
                 try:
-                    self._assistant = await get_enterprise_assistant()
+                    from app.services.llm import LLMService
+
+                    llm_service = LLMService()
+                    self._assistant = await get_enterprise_assistant(
+                        llm_client=llm_service
+                    )
                 except Exception as e:
                     logger.debug(f"获取助手实例失败: {str(e)}")
                     # 返回部分健康状态，表示服务框架可用但助手未初始化
@@ -69,7 +113,12 @@ class OptimizedAssistantService(BaseService):
         mode: int = 1,
         session_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """获取智能回答"""
+        """获取回答"""
+        # 会话管理（若未提供则自动创建）
+        if not session_id:
+            session_id = str(uuid.uuid4())
+            logger.info(f"为请求创建新会话: {session_id}")
+
         # 参数验证
         self._validate_question(question)
         self._validate_mode(mode)
@@ -285,7 +334,7 @@ class OptimizedAssistantService(BaseService):
 
             # 创建新会话
             if self._assistant and hasattr(self._assistant, "create_session"):
-                result = await self._assistant.create_session(
+                await self._assistant.create_session(
                     session_id,
                     {
                         "mode": mode,
@@ -487,15 +536,18 @@ class OptimizedAssistantService(BaseService):
         """确保服务就绪"""
         if not self._assistant:
             try:
-                # 尝试直接获取助手实例，不依赖initialize
-                self._assistant = await get_enterprise_assistant()
+                # 运行时注入依赖，避免 Core 直接依赖
+                from app.services.llm import LLMService
+
+                llm_service = LLMService()
+                self._assistant = await get_enterprise_assistant(llm_client=llm_service)
                 logger.info("智能助手在运行时成功初始化")
             except Exception as e:
                 logger.error(f"无法初始化智能助手: {str(e)}")
                 raise AssistantError(f"服务暂未就绪: {str(e)}")
 
     def _calculate_timeout(self, question: str) -> float:
-        """智能计算超时时间"""
+        """计算超时时间"""
         # 使用配置文件中的超时时间作为基础超时
         base_timeout = float(config.rag.timeout)
 
@@ -525,7 +577,7 @@ class OptimizedAssistantService(BaseService):
     def _enhance_result(
         self, result: Dict[str, Any], question: str, session_id: Optional[str]
     ) -> Dict[str, Any]:
-        """增强返回结果"""
+        """补充返回结果"""
         enhanced = result.copy()
 
         # 添加元数据
@@ -534,7 +586,9 @@ class OptimizedAssistantService(BaseService):
                 "question": question,
                 "session_id": session_id,
                 "timestamp": datetime.now().isoformat(),
-                "service_version": config.app.version if hasattr(config, 'app') else "1.0.0",
+                "service_version": config.app.version
+                if hasattr(config, "app")
+                else "1.0.0",
             }
         )
 
@@ -556,17 +610,17 @@ class OptimizedAssistantService(BaseService):
     async def _handle_rag_mode(
         self, question: str, session_id: Optional[str]
     ) -> Dict[str, Any]:
-        """处理RAG模式请求"""
+        """处理检索模式请求"""
         # 确保服务就绪
         await self._ensure_ready()
 
         # 记录性能
         with self._performance_monitor.measure("get_answer_rag"):
             try:
-                # 设置智能超时
+                # 计算超时时间
                 timeout = self._calculate_timeout(question)
 
-                # 调用优化的助手
+                # 调用服务接口
                 result = await asyncio.wait_for(
                     self._assistant.get_answer(
                         question=question, session_id=session_id
@@ -593,12 +647,16 @@ class OptimizedAssistantService(BaseService):
     async def _handle_mcp_mode(
         self, question: str, session_id: Optional[str]
     ) -> Dict[str, Any]:
-        """处理MCP模式请求"""
+        """处理工具协议模式请求"""
         try:
-            # 懒加载MCP服务
-            mcp_service = await self._get_mcp_service()
+            # 通过工厂延迟获取服务实例，避免循环依赖
+            from .mcp_service import MCPService
 
-            # 调用MCP服务处理
+            mcp_service: MCPService = await ServiceFactory.get_service(
+                "mcp", MCPService
+            )
+
+            # 调用服务处理
             result = await mcp_service.get_answer(
                 question=question, session_id=session_id
             )
@@ -606,26 +664,26 @@ class OptimizedAssistantService(BaseService):
             # 记录成功指标
             self._performance_monitor.record_success()
 
-            return result
+            # 增强结果，保持返回结构一致
+            enhanced_result = self._enhance_result(result, question, session_id)
+            enhanced_result["mode"] = "mcp"
+            return enhanced_result
 
         except Exception as e:
             self._performance_monitor.record_failure()
             logger.error(f"MCP获取答案失败: {str(e)}")
             return await self._use_mcp_fallback_response(question, session_id, str(e))
 
-    async def _get_mcp_service(self):
-        """懒加载MCP服务"""
-        if not hasattr(self, "_mcp_service") or self._mcp_service is None:
-            from .mcp_service import MCPService
+    async def _get_mcp_service(self) -> "MCPService":
+        """兼容旧接口：通过工厂获取MCP服务单例"""
+        from .mcp_service import MCPService
 
-            self._mcp_service = MCPService()
-            await self._mcp_service.initialize()
-        return self._mcp_service
+        return await ServiceFactory.get_service("mcp", MCPService)
 
     async def _use_mcp_fallback_response(
         self, question: str, session_id: Optional[str], error_reason: str
     ) -> Dict[str, Any]:
-        """MCP模式的备用响应"""
+        """工具协议模式的备用响应"""
         logger.warning(f"使用MCP备用实现处理请求，原因: {error_reason}")
 
         # 简单的关键词匹配
@@ -664,10 +722,10 @@ class OptimizedAssistantService(BaseService):
     async def get_service_health_info_with_mode(self) -> Dict[str, Any]:
         """获取包含两种模式的详细健康信息"""
         try:
-            # 获取RAG健康信息
+            # 获取检索模式健康信息
             rag_health = await self.get_service_health_info()
 
-            # 获取MCP健康信息
+            # 获取工具模式健康信息
             mcp_health = {"status": "unavailable"}
             try:
                 mcp_service = await self._get_mcp_service()
@@ -792,25 +850,31 @@ class OptimizedAssistantService(BaseService):
                     "category": "general",
                     "filename": final_filename,
                     "file_path": file_path,
-                    "upload_time": datetime.now().isoformat()
+                    "upload_time": datetime.now().isoformat(),
                 }
-                
+
                 # 调用助手服务添加到向量存储
                 if self._assistant:
-                    upload_result = await self._assistant.upload_knowledge({
-                        "content": file_content,
-                        "metadata": metadata,
-                        "title": metadata["title"],
-                        "source": "user_upload"
-                    })
-                    
+                    upload_result = await self._assistant.upload_knowledge(
+                        {
+                            "content": file_content,
+                            "metadata": metadata,
+                            "title": metadata["title"],
+                            "source": "user_upload",
+                        }
+                    )
+
                     if upload_result.get("success"):
-                        logger.info(f"文档已添加到向量索引: {final_filename}, 生成块数: {upload_result.get('document_count', 0)}")
+                        logger.info(
+                            f"文档已添加到向量索引: {final_filename}, 生成块数: {upload_result.get('document_count', 0)}"
+                        )
                     else:
-                        logger.warning(f"向量索引更新失败: {upload_result.get('message', '未知错误')}")
+                        logger.warning(
+                            f"向量索引更新失败: {upload_result.get('message', '未知错误')}"
+                        )
                 else:
                     logger.warning("助手服务未初始化，向量索引未更新")
-                    
+
             except Exception as vector_error:
                 # 向量索引更新失败不应该影响文件上传成功
                 logger.error(f"更新向量索引失败: {vector_error}")
@@ -918,25 +982,31 @@ class OptimizedAssistantService(BaseService):
                     "category": payload.get("category", "general"),
                     "filename": final_filename,
                     "file_path": file_path,
-                    "add_time": datetime.now().isoformat()
+                    "add_time": datetime.now().isoformat(),
                 }
-                
+
                 # 调用助手服务添加到向量存储
                 if self._assistant:
-                    upload_result = await self._assistant.upload_knowledge({
-                        "content": file_content,
-                        "metadata": metadata,
-                        "title": title,
-                        "source": "user_add"
-                    })
-                    
+                    upload_result = await self._assistant.upload_knowledge(
+                        {
+                            "content": file_content,
+                            "metadata": metadata,
+                            "title": title,
+                            "source": "user_add",
+                        }
+                    )
+
                     if upload_result.get("success"):
-                        logger.info(f"文档已添加到向量索引: {final_filename}, 生成块数: {upload_result.get('document_count', 0)}")
+                        logger.info(
+                            f"文档已添加到向量索引: {final_filename}, 生成块数: {upload_result.get('document_count', 0)}"
+                        )
                     else:
-                        logger.warning(f"向量索引更新失败: {upload_result.get('message', '未知错误')}")
+                        logger.warning(
+                            f"向量索引更新失败: {upload_result.get('message', '未知错误')}"
+                        )
                 else:
                     logger.warning("助手服务未初始化，向量索引未更新")
-                    
+
             except Exception as vector_error:
                 # 向量索引更新失败不应该影响文档添加成功
                 logger.error(f"更新向量索引失败: {vector_error}")
@@ -971,7 +1041,6 @@ class PerformanceMonitor:
         self._lock = asyncio.Lock()
 
     class Timer:
-
         def __init__(self, monitor, operation):
             self.monitor = monitor
             self.operation = operation
@@ -1040,3 +1109,121 @@ class PerformanceMonitor:
             "total_latency": 0.0,
             "latencies": [],
         }
+
+
+class WebSocketManager:
+
+    def __init__(self, message_handler, message_model: Optional[Type[BaseModel]]=None, heartbeat_interval: float = 30.0):
+        self.message_handler = message_handler
+        self.message_model = message_model
+
+        self.checker = self.Checker(interval=heartbeat_interval)
+
+    async def handle_connection(self, websocket: WebSocket, **kwargs) -> None:
+        await websocket.accept()
+        await self.checker.start(websocket)
+
+        message_queue = asyncio.Queue()
+        receiver_task = asyncio.create_task(
+            self.websocket_receiver(websocket, message_queue)
+        )
+        try:
+            await self.websocket_handler(websocket, message_queue)
+
+        except Exception as e:
+            logger.error(f"Error handling WebSocket connection: {str(e)}")
+            logger.error(traceback.format_exc())
+        finally:
+            receiver_task.cancel()
+            await self.checker.stop(websocket)
+            try:
+                await receiver_task
+            except asyncio.CancelledError:
+                pass
+
+    async def websocket_receiver(self, websocket: WebSocket, message_queue: asyncio.Queue) -> None:
+        """接收客户端消息推入队列"""
+        try:
+            while True:
+                msg = await websocket.receive()
+                logger.debug(f"Received raw WebSocket message: {msg}")
+                if "text" in msg and msg["text"] is not None:
+                    txt = msg["text"]
+                    await self.checker.on_message(websocket, txt)
+                    await message_queue.put(txt)
+                elif "bytes" in msg and msg["bytes"] is not None:
+                    await message_queue.put(msg["bytes"])
+                else:
+                    logger.warning(f"Unknown or empty message: {msg}")
+        except Exception as e:
+            logger.error(f"WebSocket receiver error: {str(e)}")
+        finally:
+            await message_queue.put(None)
+
+    async def websocket_handler(self, websocket: WebSocket, message_queue: asyncio.Queue, **kwargs) -> None:
+        """循环消费消息队列并调用业务处理器"""
+        while True:
+            info_raw = await message_queue.get()
+            if info_raw is None:  # 结束信号
+                break
+            # 尝试解析数据
+            parsed = await self._parse_message(info_raw, websocket)
+            if parsed is None:  # 解析失败，继续下一条
+                continue
+            # 调用业务逻辑
+            if self.message_handler:
+                await self.message_handler(websocket, parsed, **kwargs)
+
+    async def _parse_message(self, info_raw: Union[str, bytes], websocket: WebSocket) -> Optional[BaseModel] | None:
+        """解析原始数据"""
+        try:
+            if isinstance(info_raw, bytes):
+                info_raw = info_raw.decode()
+            data_dict = json.loads(info_raw)
+            if self.message_model:  # 用 Pydantic Model校验
+                return self.message_model(**data_dict)
+            else:
+                return data_dict
+        except Exception as e:
+            logger.error(f"Message parse/validation error: {str(e)}")
+            await websocket.send_json({"error": f"参数校验失败: {str(e)}"})
+            return None
+
+    class Checker:
+        """ws connection 心跳检查"""
+
+        def __init__(self, interval=30.0, timeout=10.0):
+            self.interval = interval
+            self.timeout = timeout
+            self.last_received_time: Dict[WebSocket, float] = {}
+            self.tasks: Dict[WebSocket, asyncio.Task] = {}
+
+        async def start(self, websocket):
+            self.last_received_time[websocket] = time.time()
+
+            async def loop():
+                while True:
+                    await asyncio.sleep(self.interval)
+                    now = time.time()
+                    if now - self.last_received_time[websocket] > self.interval + self.timeout:
+                        await websocket.close()
+                        break
+                    try:
+                        await websocket.send_text("__ping__")
+                    except:
+                        continue
+            self.tasks[websocket] = asyncio.create_task(loop())
+
+        async def stop(self, websocket: WebSocket):
+            task = self.tasks.pop(websocket, None)
+            if task:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+            self.last_received_time.pop(websocket, None)
+
+        async def on_message(self, websocket, message):
+            if message == "__pong__":
+                self.last_received_time[websocket] = time.time()

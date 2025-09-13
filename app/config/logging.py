@@ -11,48 +11,89 @@ Description: 日志配置模块
 
 import logging
 import sys
-from typing import Optional
+from typing import Any, Optional
 
 from app.config.settings import config
 
 
-def setup_logging(app: Optional["FastAPI"] = None) -> None:
-    """设置日志配置"""
+class RequestIdFilter(logging.Filter):
+    """为日志记录注入 request_id 字段（若无则从contextvars获取）"""
 
-    # 日志格式
+    def filter(self, record: logging.LogRecord) -> bool:  # noqa: D401
+        try:
+            if not hasattr(record, "request_id") or not record.request_id:
+                from app.common.logger import request_id_ctx
+
+                rid = request_id_ctx.get()
+                record.request_id = rid or ""
+        except Exception:
+            if not hasattr(record, "request_id"):
+                record.request_id = ""
+        return True
+
+
+def setup_logging(app: Optional[Any] = None) -> None:
+    """设置日志配置（统一格式、按模块分类、支持级别配置）"""
+
+    # 统一日志格式（包含模块与请求ID占位符）
     formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        "%(asctime)s | %(levelname)s | %(name)s | %(request_id)s | %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 
     # 控制台处理器
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setFormatter(formatter)
+    console_handler.addFilter(RequestIdFilter())
     console_handler.setLevel(getattr(logging, config.log_level.upper()))
 
-    # 根日志器配置
+    # 根日志器
     root_logger = logging.getLogger()
     root_logger.setLevel(getattr(logging, config.log_level.upper()))
 
-    # 清除已有的处理器
+    # 清理旧处理器，避免重复输出
     for handler in root_logger.handlers[:]:
         root_logger.removeHandler(handler)
-
     root_logger.addHandler(console_handler)
 
-    # FastAPI应用不需要特殊的日志配置，它使用Python标准logging
+    # 按模块分类日志器（仅设置级别，复用根处理器）
+    module_loggers = {
+        "aiops": config.log_level.upper(),
+        "aiops.services": config.log_level.upper(),
+        "aiops.core": config.log_level.upper(),
+        "aiops.api": config.log_level.upper(),
+        "aiops.routes": config.log_level.upper(),
+        "aiops.error_handler": config.log_level.upper(),
+    }
+    for name, level in module_loggers.items():
+        logger = logging.getLogger(name)
+        logger.setLevel(getattr(logging, level))
+        # 确保不传播到父级，避免重复输出
+        logger.propagate = True
 
-    # 设置特定日志器的级别
-    aiops_logger = logging.getLogger("aiops")
-    aiops_logger.setLevel(getattr(logging, config.log_level.upper()))
+    # 第三方库降噪 - 在开发模式下稍微放宽一些限制
+    if config.env == "development":
+        logging.getLogger("urllib3").setLevel(logging.INFO)
+        logging.getLogger("requests").setLevel(logging.INFO)
+        logging.getLogger("httpx").setLevel(logging.INFO)
+        logging.getLogger("openai").setLevel(logging.INFO)
+        logging.getLogger("uvicorn.error").setLevel(logging.DEBUG)
+        logging.getLogger("uvicorn.access").setLevel(logging.INFO)
+        logging.getLogger("fastapi").setLevel(logging.DEBUG)
+    else:
+        logging.getLogger("urllib3").setLevel(logging.WARNING)
+        logging.getLogger("requests").setLevel(logging.WARNING)
+        logging.getLogger("httpx").setLevel(logging.WARNING)
+        logging.getLogger("openai").setLevel(logging.WARNING)
+        logging.getLogger("uvicorn").setLevel(logging.INFO)
+        logging.getLogger("fastapi").setLevel(logging.INFO)
 
-    # 抑制一些第三方库的冗余日志
-    logging.getLogger("urllib3").setLevel(logging.WARNING)
-    logging.getLogger("requests").setLevel(logging.WARNING)
-    logging.getLogger("httpx").setLevel(logging.WARNING)
-    logging.getLogger("openai").setLevel(logging.WARNING)
-    logging.getLogger("uvicorn").setLevel(logging.INFO)
-    logging.getLogger("fastapi").setLevel(logging.INFO)
+    # 确保uvicorn使用我们的日志配置
+    uvicorn_logger = logging.getLogger("uvicorn")
+    uvicorn_logger.handlers.clear()
+    uvicorn_logger.addHandler(console_handler)
+    uvicorn_logger.setLevel(getattr(logging, config.log_level.upper()))
 
-    logger = logging.getLogger("aiops.logging")
-    logger.info(f"日志系统初始化完成，级别: {config.log_level.upper()}")
+    logging.getLogger("aiops.logging").info(
+        f"日志系统初始化完成，级别: {config.log_level.upper()}, 环境: {config.env}"
+    )
