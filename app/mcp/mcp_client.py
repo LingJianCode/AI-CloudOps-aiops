@@ -11,7 +11,7 @@ Description: MCP客户端
 
 import json
 import logging
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Union, Optional
 
 import aiohttp
 from openai import AsyncOpenAI
@@ -115,6 +115,9 @@ class MCPAssistant:
             timeout=config.llm.request_timeout,
         )
         self.model = config.llm.effective_model
+        # 简易会话上下文：按 session_id 记录最近若干轮 Q/A
+        self._history: Dict[str, List[Dict[str, str]]] = {}
+        self._max_history_turns: int = 6  # 最多保留 6 条（约 3 轮）
 
     def _create_messages(
         self, system_content: str, user_content: str
@@ -124,6 +127,38 @@ class MCPAssistant:
             ChatCompletionSystemMessageParam(role="system", content=system_content),
             ChatCompletionUserMessageParam(role="user", content=user_content),
         ]
+
+    def _build_history_block(self, session_id: Optional[str]) -> str:
+        """将会话历史拼接为可读文本块，便于作为提示注入。"""
+        if not session_id:
+            return ""
+        records = self._history.get(session_id)
+        if not records:
+            return ""
+        # 仅取最近 _max_history_turns 条
+        recent = records[-self._max_history_turns :]
+        lines: List[str] = []
+        for item in recent:
+            q = item.get("q", "")
+            a = item.get("a", "")
+            if q:
+                lines.append(f"- 用户: {q}")
+            if a:
+                lines.append(f"- 助手: {a}")
+        return "\n".join(lines)
+
+    def _append_history_pair(self, session_id: Optional[str], question: str, answer: str) -> None:
+        """将一轮问答追加到会话历史并裁剪长度。"""
+        if not session_id:
+            return
+        pair = {"q": question, "a": answer}
+        bucket = self._history.get(session_id)
+        if bucket is None:
+            self._history[session_id] = [pair]
+        else:
+            bucket.append(pair)
+            if len(bucket) > self._max_history_turns:
+                self._history[session_id] = bucket[-self._max_history_turns :]
 
     async def _format_tool_result(
         self, question: str, tool_name: str, parameters: Dict[str, Any], result: Any
@@ -144,8 +179,8 @@ class MCPAssistant:
 
         return format_response.choices[0].message.content
 
-    async def process_query(self, question: str) -> str:
-        """处理MCP模式下的查询 - 使用AI自主决策调用工具"""
+    async def process_query(self, question: str, session_id: Optional[str] = None) -> str:
+        """处理MCP模式下的查询（带轻量上下文）。"""
         try:
             # 获取可用工具列表
             tools_info = await self.client.get_available_tools()
@@ -166,12 +201,18 @@ class MCPAssistant:
                 )
 
             # 构建系统提示
+            history_block = self._build_history_block(session_id)
             system_content = (
                 """你是一个智能助手，能够根据用户的问题自主选择合适的工具来回答。请分析用户的问题，判断是否需要使用工具，如果需要，选择最合适的工具并生成相应的参数。
 
 可用工具列表：
 """
                 + json.dumps(tools_description, ensure_ascii=False, indent=2)
+                + """
+
+对话历史（如有）：
+"""
+                + (history_block if history_block else "无")
                 + """
 
 请始终以以下JSON格式回复：
@@ -226,14 +267,20 @@ class MCPAssistant:
 
                 if result:
                     # 使用AI格式化结果
-                    return await self._format_tool_result(
+                    final_answer = await self._format_tool_result(
                         question, tool_name, parameters, result
                     )
+                    self._append_history_pair(session_id, question, final_answer)
+                    return final_answer
                 else:
-                    return f"抱歉，工具 {tool_name} 执行失败"
+                    final_answer = f"抱歉，工具 {tool_name} 执行失败"
+                    self._append_history_pair(session_id, question, final_answer)
+                    return final_answer
             else:
                 # 直接回答
-                return decision.get("direct_answer", "我无法回答这个问题")
+                final_answer = decision.get("direct_answer", "我无法回答这个问题")
+                self._append_history_pair(session_id, question, final_answer)
+                return final_answer
 
         except Exception as e:
             logger.error(f"MCP助手处理查询失败: {str(e)}")
@@ -247,10 +294,14 @@ class MCPAssistant:
                 try:
                     result = await self.client.execute_tool("get_current_time")
                     if result:
-                        return f"当前时间是: {result.get('time', '未知')}"
+                        final_answer = f"当前时间是: {result.get('time', '未知')}"
+                        self._append_history_pair(session_id, question, final_answer)
+                        return final_answer
                 except Exception as tool_error:
                     logger.error(f"工具调用失败: {str(tool_error)}")
-            return f"MCP服务暂时不可用: {str(e)}"
+            final_answer = f"MCP服务暂时不可用: {str(e)}"
+            self._append_history_pair(session_id, question, final_answer)
+            return final_answer
 
     async def is_available(self) -> bool:
         """检查MCP服务是否可用"""

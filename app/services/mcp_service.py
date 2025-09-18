@@ -102,7 +102,8 @@ class MCPService(BaseService):
             # 调用MCP助手
             start_time = datetime.now()
             result = await asyncio.wait_for(
-                self._mcp_assistant.process_query(question), timeout=timeout
+                self._mcp_assistant.process_query(question, session_id=session_id),
+                timeout=timeout,
             )
             processing_time = (datetime.now() - start_time).total_seconds()
 
